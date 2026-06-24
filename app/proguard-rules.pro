@@ -1,0 +1,3 @@
+-keep class androidx.room.** { *; }
+-keep @androidx.room.Entity class * { *; }
+-dontwarn org.jsoup.**

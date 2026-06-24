@@ -1,0 +1,3 @@
+HSPLcom/lightreader/app/MainActivity;-><init>()V
+HSPLcom/lightreader/app/ui/ReaderAppKt;->ReaderApp(*)V
+HSPLcom/lightreader/app/ui/LibraryScreenKt;->LibraryScreen(*)V
