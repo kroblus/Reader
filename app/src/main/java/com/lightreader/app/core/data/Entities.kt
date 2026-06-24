@@ -53,6 +53,10 @@ data class ReadingProgressEntity(
     @PrimaryKey val bookId: String,
     val chapterId: Long,
     val charOffset: Int,
+    val chapterIndex: Int,
+    val pageIndex: Int,
+    val chapterTitle: String,
+    val styleHash: Int,
     val updatedAt: Long,
 )
 

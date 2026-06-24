@@ -27,6 +27,10 @@ data class ReadingProgress(
     val bookId: String,
     val chapterId: Long,
     val charOffset: Int,
+    val chapterIndex: Int,
+    val pageIndex: Int,
+    val chapterTitle: String,
+    val styleHash: Int,
     val updatedAt: Long,
 )
 
@@ -45,32 +49,132 @@ data class SearchResult(
     val excerpt: String,
 )
 
-enum class ReaderTheme { DAY, SEPIA, NIGHT, CUSTOM }
-enum class PageAnimation { NONE, SLIDE, COVER }
+enum class ReaderTheme { EYE_CARE, SEPIA, LIGHT_GRAY, WARM_BROWN, NIGHT, CUSTOM }
+enum class PageTurnMode { NONE, HORIZONTAL, SLIDE, VERTICAL, SIMULATION }
 enum class FontFamilyOption { SANS, SERIF, MONOSPACE }
 
 data class ReaderPreferences(
-    val fontSizeSp: Float = 20f,
+    val fontSizeSp: Float = 17f,
     val fontWeight: Int = 400,
-    val lineSpacingMultiplier: Float = 1.55f,
-    val paragraphSpacingSp: Float = 8f,
+    val lineSpacingMultiplier: Float = 1.75f,
+    val paragraphSpacingDp: Float = 10f,
     val firstLineIndent: Boolean = true,
-    val horizontalPaddingDp: Float = 24f,
-    val verticalPaddingDp: Float = 20f,
+    val firstLineIndentEm: Float = 2f,
+    val horizontalPaddingDp: Float = 28f,
+    val verticalPaddingTopDp: Float = 64f,
+    val verticalPaddingBottomDp: Float = 56f,
     val justified: Boolean = false,
-    val theme: ReaderTheme = ReaderTheme.DAY,
-    val customBackground: Long = 0xFFF8F5EE,
-    val customForeground: Long = 0xFF24211D,
+    val theme: ReaderTheme = ReaderTheme.EYE_CARE,
+    val customBackground: Long = 0xFFB8C9A7,
+    val customForeground: Long = 0xFF26301F,
+    val customSecondary: Long = 0xFF6F8063,
     val brightness: Float = -1f,
     val keepScreenOn: Boolean = false,
     val lockPortrait: Boolean = true,
     val showStatus: Boolean = true,
+    val showHeader: Boolean = true,
+    val showRightProgressBar: Boolean = true,
     val volumeKeys: Boolean = true,
     val fontFamily: FontFamilyOption = FontFamilyOption.SERIF,
-    val pageAnimation: PageAnimation = PageAnimation.SLIDE,
+    val pageTurnMode: PageTurnMode = PageTurnMode.HORIZONTAL,
 )
 
-data class PageSlice(val start: Int, val endExclusive: Int, val text: String)
+enum class ParagraphType { NORMAL, TITLE }
+
+data class BookParagraph(
+    val text: String,
+    val type: ParagraphType = ParagraphType.NORMAL,
+    val sourceOffsets: IntArray = IntArray(text.length) { it },
+) {
+    val sourceStart: Int get() = sourceOffsets.firstOrNull() ?: 0
+    val sourceEnd: Int get() = (sourceOffsets.lastOrNull()?.plus(1)) ?: sourceStart
+
+    fun sourceOffset(localIndex: Int): Int = when {
+        sourceOffsets.isEmpty() -> sourceStart
+        localIndex <= 0 -> sourceOffsets.first()
+        localIndex >= sourceOffsets.size -> sourceOffsets.last() + 1
+        else -> sourceOffsets[localIndex]
+    }
+
+    override fun equals(other: Any?): Boolean = other is BookParagraph &&
+        text == other.text && type == other.type && sourceOffsets.contentEquals(other.sourceOffsets)
+
+    override fun hashCode(): Int = 31 * (31 * text.hashCode() + type.hashCode()) + sourceOffsets.contentHashCode()
+}
+
+data class ReaderPalette(
+    val background: Long,
+    val foreground: Long,
+    val secondary: Long,
+    val overlay: Long,
+)
+
+data class ReaderStyle(
+    val fontSizeSp: Float,
+    val fontWeight: Int,
+    val lineHeightMultiplier: Float,
+    val paragraphSpacingDp: Float,
+    val firstLineIndentEm: Float,
+    val horizontalPaddingDp: Float,
+    val verticalPaddingTopDp: Float,
+    val verticalPaddingBottomDp: Float,
+    val justified: Boolean,
+    val fontFamily: FontFamilyOption,
+    val palette: ReaderPalette,
+    val showHeader: Boolean,
+    val showFooter: Boolean,
+    val showRightProgressBar: Boolean,
+) {
+    fun layoutFingerprint(): Int = listOf(
+        fontSizeSp, fontWeight, lineHeightMultiplier, paragraphSpacingDp,
+        firstLineIndentEm, horizontalPaddingDp, verticalPaddingTopDp,
+        verticalPaddingBottomDp, justified, fontFamily,
+    ).hashCode()
+}
+
+data class ReaderViewport(
+    val widthPx: Int,
+    val heightPx: Int,
+    val density: Float,
+    val scaledDensity: Float,
+    val safeTopPx: Int = 0,
+    val safeBottomPx: Int = 0,
+)
+
+data class ReaderLine(
+    val text: String,
+    val paragraphIndex: Int,
+    val sourceStart: Int,
+    val sourceEnd: Int,
+    val xOffsetPx: Float,
+    val availableWidthPx: Float,
+    val baselinePx: Float,
+    val widthPx: Float,
+    val lineHeightPx: Float,
+    val isFirstLineOfParagraph: Boolean,
+    val isLastLineOfParagraph: Boolean,
+    val isChapterTitle: Boolean = false,
+)
+
+data class ReaderPage(
+    val chapterIndex: Int,
+    val pageIndex: Int,
+    val chapterTitle: String,
+    val lines: List<ReaderLine>,
+    val startOffset: Int,
+    val endOffset: Int,
+    val progressInChapter: Float,
+) {
+    val text: String get() = lines.joinToString("\n", transform = ReaderLine::text)
+}
+
+data class ReaderLayoutResult(
+    val chapterIndex: Int,
+    val chapterTitle: String,
+    val pages: List<ReaderPage>,
+    val viewport: ReaderViewport,
+    val layoutFingerprint: Int,
+)
 
 data class WebChapter(val title: String, val url: String)
 

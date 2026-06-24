@@ -13,13 +13,10 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import android.view.WindowManager
 import com.lightreader.app.core.data.BookEntity
 import com.lightreader.app.core.data.ChapterEntity
 import com.lightreader.app.core.model.BookFormat
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -88,18 +85,10 @@ class ReaderUiInstrumentedTest {
         composeRule.mainClock.advanceTimeBy(3_500)
         composeRule.waitForIdle()
         composeRule.onAllNodesWithContentDescription("目录").assertCountEquals(0)
-        Thread.sleep(750)
-        composeRule.runOnIdle {
-            assertTrue(composeRule.activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_FULLSCREEN != 0)
-        }
         composeRule.onRoot().performTouchInput { click(Offset(center.x, center.y)) }
         composeRule.mainClock.advanceTimeBy(500)
         composeRule.waitForIdle()
         composeRule.onNodeWithContentDescription("目录").assertIsDisplayed()
-        Thread.sleep(750)
-        composeRule.runOnIdle {
-            assertFalse(composeRule.activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_FULLSCREEN != 0)
-        }
     }
 
     private fun seedBook(title: String) = runBlocking {

@@ -2,19 +2,26 @@ package com.lightreader.app.ui
 
 import android.content.pm.ActivityInfo
 import android.view.WindowManager
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -42,6 +49,8 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -49,111 +58,128 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.activity.compose.LocalActivity
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.ParagraphStyle
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.lightreader.app.core.model.Bookmark
-import com.lightreader.app.core.model.FontFamilyOption
-import com.lightreader.app.core.model.ReaderPreferences
-import com.lightreader.app.core.model.ReaderTheme
-import com.lightreader.app.core.model.PageAnimation
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.core.view.WindowCompat
+import com.lightreader.app.core.model.Bookmark
+import com.lightreader.app.core.model.PageTurnMode
+import com.lightreader.app.core.model.ReaderPreferences
+import com.lightreader.app.core.reader.palette
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
     val state by viewModel.readerState.collectAsState()
     var showToc by remember { mutableStateOf(false) }
     var showBookmarks by remember { mutableStateOf(false) }
-    var showSettings by remember { mutableStateOf(false) }
-    val colors = readerColors(preferences)
-    ApplyWindowPreferences(preferences)
-    ApplyReaderStatusBar(state.toolbarVisible)
+    var currentTime by remember { mutableStateOf(currentTime()) }
+    val palette = preferences.palette()
+    val background = Color(palette.background)
+    val foreground = Color(palette.foreground)
 
-    LaunchedEffect(state.toolbarVisible, showToc, showBookmarks, showSettings) {
-        if (state.toolbarVisible && !showToc && !showBookmarks && !showSettings) {
+    ApplyWindowPreferences(preferences)
+    ApplyReaderSystemBars(preferences, state.toolbarVisible)
+    DisposableEffect(viewModel) { onDispose(viewModel::onReaderStopped) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            currentTime = currentTime()
+            delay(30_000)
+        }
+    }
+    LaunchedEffect(state.toolbarVisible, showToc, showBookmarks, state.settingsVisible) {
+        if (state.toolbarVisible && !showToc && !showBookmarks && !state.settingsVisible) {
             delay(3_000)
             viewModel.hideToolbar()
         }
     }
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(colors.first)) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(background)) {
         val density = LocalDensity.current
-        val widthPx = with(density) { (maxWidth - preferences.horizontalPaddingDp.dp * 2).roundToPx() }
-        val heightPx = with(density) { (maxHeight - preferences.verticalPaddingDp.dp * 2 - 36.dp).roundToPx() }
-        LaunchedEffect(widthPx, heightPx, density.density, density.fontScale) {
-            viewModel.setViewport(widthPx.coerceAtLeast(1), heightPx.coerceAtLeast(1), density.density * density.fontScale)
+        val safeTopPx = WindowInsets.systemBarsIgnoringVisibility.getTop(density)
+        val safeBottomPx = WindowInsets.systemBarsIgnoringVisibility.getBottom(density)
+        val widthPx = with(density) { maxWidth.roundToPx() }
+        val heightPx = with(density) { maxHeight.roundToPx() }
+        LaunchedEffect(widthPx, heightPx, density.density, density.fontScale, safeTopPx, safeBottomPx) {
+            viewModel.setViewport(
+                widthPx.coerceAtLeast(1),
+                heightPx.coerceAtLeast(1),
+                density.density,
+                density.density * density.fontScale,
+                safeTopPx,
+                safeBottomPx,
+            )
         }
 
         when {
-            state.loading && state.pages.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center), color = colors.second)
-            state.error != null -> Text(state.error.orEmpty(), Modifier.align(Alignment.Center), color = colors.second)
+            state.loading && state.pages.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center), color = foreground)
+            state.error != null -> Text(state.error.orEmpty(), Modifier.align(Alignment.Center), color = foreground)
             state.pages.isNotEmpty() -> {
-                androidx.compose.runtime.key(state.chapters.getOrNull(state.chapterIndex)?.id, state.pages.size) {
-                    val pagerState = rememberPagerState(initialPage = state.pageIndex.coerceIn(state.pages.indices)) { state.pages.size }
+                key(state.chapters.getOrNull(state.chapterIndex)?.id, state.layoutVersion, state.pages.size) {
+                    val pagerState = rememberPagerState(state.pageIndex.coerceIn(state.pages.indices)) { state.pages.size }
                     LaunchedEffect(pagerState) {
                         snapshotFlow { pagerState.currentPage }.distinctUntilChanged().collect(viewModel::pageSelected)
                     }
-                    LaunchedEffect(state.pageIndex) {
+                    LaunchedEffect(state.pageIndex, preferences.pageTurnMode) {
                         if (state.pageIndex in state.pages.indices && state.pageIndex != pagerState.currentPage) {
-                            pagerState.scrollToPage(state.pageIndex)
+                            if (preferences.pageTurnMode == PageTurnMode.SLIDE) pagerState.animateScrollToPage(state.pageIndex)
+                            else pagerState.scrollToPage(state.pageIndex)
                         }
                     }
                     HorizontalPager(
                         state = pagerState,
                         modifier = Modifier.fillMaxSize(),
-                        userScrollEnabled = preferences.pageAnimation != PageAnimation.NONE,
+                        userScrollEnabled = preferences.pageTurnMode == PageTurnMode.HORIZONTAL ||
+                            preferences.pageTurnMode == PageTurnMode.SLIDE,
                     ) { pageIndex ->
                         val page = state.pages[pageIndex]
-                        Text(
-                            text = styledPage(page.text, preferences),
+                        var dragDistance by remember(pageIndex) { mutableFloatStateOf(0f) }
+                        val manualSwipe = if (preferences.pageTurnMode == PageTurnMode.NONE) {
+                            Modifier.pointerInput(pageIndex) {
+                                detectHorizontalDragGestures(
+                                    onDragStart = { dragDistance = 0f },
+                                    onHorizontalDrag = { change, amount -> change.consume(); dragDistance += amount },
+                                    onDragEnd = {
+                                        when {
+                                            dragDistance < -64.dp.toPx() -> viewModel.nextPage()
+                                            dragDistance > 64.dp.toPx() -> viewModel.previousPage()
+                                        }
+                                    },
+                                )
+                            }
+                        } else Modifier
+                        ReaderPageCanvas(
+                            page = page,
+                            pageCount = state.pages.size,
+                            layoutPreferences = state.layoutPreferences ?: preferences,
+                            displayPreferences = preferences,
+                            overallProgress = overallProgress(state, page.progressInChapter),
+                            currentTime = currentTime,
+                            safeTopPx = safeTopPx,
+                            safeBottomPx = safeBottomPx,
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(
-                                    horizontal = preferences.horizontalPaddingDp.dp,
-                                    vertical = preferences.verticalPaddingDp.dp,
-                                )
-                                .graphicsLayer {
-                                    if (preferences.pageAnimation == PageAnimation.COVER) {
-                                        val pageOffset = (pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction
-                                        alpha = (1f - kotlin.math.abs(pageOffset) * .18f).coerceIn(.75f, 1f)
-                                        scaleX = (1f - kotlin.math.abs(pageOffset) * .025f).coerceAtLeast(.97f)
-                                        scaleY = scaleX
-                                        shadowElevation = if (kotlin.math.abs(pageOffset) < 1f) 12f else 0f
-                                    }
-                                }
-                                .pointerInput(pageIndex) {
+                                .then(manualSwipe)
+                                .pointerInput(pageIndex, state.toolbarVisible) {
                                     detectTapGestures { point ->
-                                        when {
-                                            point.x < size.width / 3f -> viewModel.previousPage()
-                                            point.x > size.width * 2f / 3f -> viewModel.nextPage()
-                                            else -> viewModel.toggleToolbar()
+                                        if (!state.toolbarVisible) {
+                                            when {
+                                                point.x < size.width * .3f -> viewModel.previousPage()
+                                                point.x > size.width * .7f -> viewModel.nextPage()
+                                                else -> viewModel.toggleToolbar()
+                                            }
+                                        } else if (point.x in size.width * .3f..size.width * .7f) {
+                                            viewModel.toggleToolbar()
                                         }
                                     }
                                 },
-                            color = colors.second,
-                            fontSize = preferences.fontSizeSp.sp,
-                            fontWeight = if (preferences.fontWeight >= 500) FontWeight.SemiBold else FontWeight.Normal,
-                            fontFamily = when (preferences.fontFamily) {
-                                FontFamilyOption.SANS -> FontFamily.SansSerif
-                                FontFamilyOption.SERIF -> FontFamily.Serif
-                                FontFamilyOption.MONOSPACE -> FontFamily.Monospace
-                            },
-                            lineHeight = (preferences.fontSizeSp * preferences.lineSpacingMultiplier).sp,
-                            textAlign = if (preferences.justified) TextAlign.Justify else TextAlign.Start,
                         )
                     }
                 }
@@ -162,46 +188,54 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
 
         AnimatedVisibility(state.toolbarVisible, Modifier.align(Alignment.TopCenter)) {
             Row(
-                Modifier.fillMaxWidth().background(colors.first.copy(alpha = .96f)).padding(top = 6.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .background(Color(palette.overlay))
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = viewModel::goBack) { Icon(Icons.Outlined.ArrowBack, "返回", tint = colors.second) }
+                IconButton(onClick = viewModel::goBack) { Icon(Icons.Outlined.ArrowBack, "返回", tint = foreground) }
                 Text(
                     state.chapters.getOrNull(state.chapterIndex)?.title ?: state.book?.title.orEmpty(),
                     Modifier.weight(1f),
                     maxLines = 1,
-                    color = colors.second,
+                    color = foreground,
                 )
                 IconButton(onClick = { showToc = true }, enabled = state.chapters.isNotEmpty() && !state.loading) {
-                    Icon(Icons.Outlined.FormatListBulleted, "目录", tint = colors.second)
+                    Icon(Icons.Outlined.FormatListBulleted, "目录", tint = foreground)
                 }
                 IconButton(
                     onClick = { state.book?.let { viewModel.navigate(AppScreen.Search(it.id)) } },
                     enabled = state.book != null && !state.loading,
-                ) { Icon(Icons.Outlined.Search, "搜索", tint = colors.second) }
+                ) { Icon(Icons.Outlined.Search, "搜索", tint = foreground) }
                 IconButton(onClick = viewModel::addBookmark, enabled = state.pages.isNotEmpty() && !state.loading) {
-                    Icon(Icons.Outlined.BookmarkAdd, "添加书签", tint = colors.second)
+                    Icon(Icons.Outlined.BookmarkAdd, "添加书签", tint = foreground)
                 }
             }
         }
 
         AnimatedVisibility(state.toolbarVisible, Modifier.align(Alignment.BottomCenter)) {
             Row(
-                Modifier.fillMaxWidth().background(colors.first.copy(alpha = .96f)).padding(horizontal = 12.dp, vertical = 8.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .background(Color(palette.overlay))
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = { showBookmarks = true }, enabled = state.book != null && !state.loading) {
-                    Icon(Icons.Outlined.Bookmarks, "书签", tint = colors.second)
+                    Icon(Icons.Outlined.Bookmarks, "书签", tint = foreground)
                 }
-                if (preferences.showStatus) {
-                    Text(
-                        "${state.chapterIndex + 1}/${state.chapters.size} · ${state.pageIndex + 1}/${state.pages.size}",
-                        color = colors.second,
-                        style = MaterialTheme.typography.labelMedium,
-                    )
+                Text(
+                    "${state.chapterIndex + 1}/${state.chapters.size} · ${state.pageIndex + 1}/${state.pages.size}",
+                    color = foreground,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+                IconButton(onClick = viewModel::showSettings) {
+                    Icon(Icons.Outlined.TextFields, "阅读设置", tint = foreground)
                 }
-                IconButton(onClick = { showSettings = true }) { Icon(Icons.Outlined.TextFields, "阅读设置", tint = colors.second) }
             }
         }
     }
@@ -216,10 +250,7 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                         ListItem(
                             headlineContent = { Text(chapter.title, maxLines = 2) },
                             supportingContent = { Text("${chapter.charCount} 字") },
-                            modifier = Modifier.clickable {
-                                viewModel.selectChapter(chapter.orderIndex)
-                                showToc = false
-                            },
+                            modifier = Modifier.clickable { viewModel.selectChapter(chapter.orderIndex); showToc = false },
                         )
                     }
                 }
@@ -235,35 +266,42 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
             onDelete = viewModel::deleteBookmark,
         )
     }
-    if (showSettings) {
-        ModalBottomSheet(onDismissRequest = { showSettings = false }) {
-            ReaderSettingsPanel(preferences, viewModel::savePreferences, onClose = { showSettings = false })
+    if (state.settingsVisible) {
+        ModalBottomSheet(
+            onDismissRequest = viewModel::hideSettings,
+            containerColor = Color(palette.overlay),
+            scrimColor = Color.Black.copy(alpha = .24f),
+        ) {
+            ReaderSettingsPanel(preferences, viewModel::savePreferences, viewModel::hideSettings)
         }
     }
 }
 
 @Composable
 @Suppress("DEPRECATION")
-private fun ApplyReaderStatusBar(visible: Boolean) {
+private fun ApplyReaderSystemBars(preferences: ReaderPreferences, visible: Boolean) {
     val activity = LocalActivity.current ?: return
+    val palette = preferences.palette()
     val controller = remember(activity) { WindowCompat.getInsetsController(activity.window, activity.window.decorView) }
-    DisposableEffect(controller) {
+    DisposableEffect(activity, controller) {
+        WindowCompat.setDecorFitsSystemWindows(activity.window, false)
         val previousBehavior = controller.systemBarsBehavior
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         onDispose {
-            activity.window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-            controller.show(WindowInsetsCompat.Type.statusBars())
+            controller.show(WindowInsetsCompat.Type.systemBars())
             controller.systemBarsBehavior = previousBehavior
+            WindowCompat.setDecorFitsSystemWindows(activity.window, true)
         }
     }
-    LaunchedEffect(controller, visible) {
-        if (visible) {
-            activity.window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-            controller.show(WindowInsetsCompat.Type.statusBars())
-        } else {
-            activity.window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-            controller.hide(WindowInsetsCompat.Type.statusBars())
-        }
+    LaunchedEffect(controller, visible, palette.background) {
+        @Suppress("DEPRECATION")
+        activity.window.statusBarColor = palette.background.toInt()
+        @Suppress("DEPRECATION")
+        activity.window.navigationBarColor = palette.background.toInt()
+        controller.isAppearanceLightStatusBars = preferences.theme != com.lightreader.app.core.model.ReaderTheme.NIGHT
+        controller.isAppearanceLightNavigationBars = controller.isAppearanceLightStatusBars
+        if (visible) controller.show(WindowInsetsCompat.Type.systemBars())
+        else controller.hide(WindowInsetsCompat.Type.systemBars())
     }
 }
 
@@ -286,26 +324,14 @@ private fun ApplyWindowPreferences(preferences: ReaderPreferences) {
     }
 }
 
-private fun readerColors(preferences: ReaderPreferences): Pair<Color, Color> = when (preferences.theme) {
-    ReaderTheme.DAY -> Color(0xFFFAF9F6) to Color(0xFF242421)
-    ReaderTheme.SEPIA -> Color(0xFFF3E8CE) to Color(0xFF3C3125)
-    ReaderTheme.NIGHT -> Color(0xFF121412) to Color(0xFFD4D7D1)
-    ReaderTheme.CUSTOM -> Color(preferences.customBackground) to Color(preferences.customForeground)
+private fun overallProgress(state: ReaderUiState, chapterProgress: Float): Float {
+    val total = state.chapters.sumOf { it.charCount.toLong() }.coerceAtLeast(1L)
+    val before = state.chapters.take(state.chapterIndex).sumOf { it.charCount.toLong() }
+    val currentLength = state.chapters.getOrNull(state.chapterIndex)?.charCount ?: 0
+    return ((before + currentLength * chapterProgress) / total.toDouble()).toFloat().coerceIn(0f, 1f)
 }
 
-private fun styledPage(text: String, preferences: ReaderPreferences): AnnotatedString {
-    if (!preferences.firstLineIndent) return AnnotatedString(text)
-    val builder = AnnotatedString.Builder(text)
-    var start = 0
-    text.forEachIndexed { index, character ->
-        if (character == '\n') {
-            if (index > start) builder.addStyle(ParagraphStyle(textIndent = TextIndent(firstLine = (preferences.fontSizeSp * 2).sp)), start, index)
-            start = index + 1
-        }
-    }
-    if (start < text.length) builder.addStyle(ParagraphStyle(textIndent = TextIndent(firstLine = (preferences.fontSizeSp * 2).sp)), start, text.length)
-    return builder.toAnnotatedString()
-}
+private fun currentTime(): String = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
 
 @Composable
 private fun BookmarksDialog(

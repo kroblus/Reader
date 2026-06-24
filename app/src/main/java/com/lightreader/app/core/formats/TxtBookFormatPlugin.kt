@@ -3,6 +3,8 @@ package com.lightreader.app.core.formats
 import android.content.Context
 import android.net.Uri
 import com.lightreader.app.core.model.BookFormat
+import com.lightreader.app.core.reader.BookTextNormalizer
+import com.lightreader.app.core.reader.ChapterParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
@@ -20,6 +22,9 @@ import java.nio.charset.StandardCharsets
 import org.mozilla.universalchardet.UniversalDetector
 
 class TxtBookFormatPlugin : BookFormatPlugin {
+    private val normalizer = BookTextNormalizer()
+    private val chapterParser = ChapterParser(normalizer)
+
     override fun supports(displayName: String, mimeType: String?): Boolean =
         displayName.endsWith(".txt", ignoreCase = true) || mimeType == "text/plain"
 
@@ -66,16 +71,17 @@ class TxtBookFormatPlugin : BookFormatPlugin {
         resolver.openInputStream(source)?.use { input ->
             BufferedReader(InputStreamReader(input, charset), DEFAULT_BUFFER_SIZE).useLines { lines ->
                 lines.forEach { rawLine ->
-                    val line = rawLine.removePrefix("\uFEFF").trimEnd()
-                    if (CHAPTER_PATTERN.matches(line.trim()) && charCount > 0) {
+                    val line = normalizer.normalizeLine(rawLine)?.text
+                    val chapterHeading = line?.let(chapterParser::chapterTitle)
+                    if (chapterHeading != null) {
                         closeChapter()
                         continuation = 1
-                        openChapter(line.trim())
-                    } else if (charCount >= MAX_CHAPTER_CHARS && line.isBlank()) {
+                        openChapter(chapterHeading)
+                    } else if (charCount >= MAX_CHAPTER_CHARS && line == null) {
                         val continuedTitle = "$title（续${continuation++}）"
                         closeChapter()
                         openChapter(continuedTitle)
-                    } else {
+                    } else if (line != null) {
                         writer?.append(line)?.append('\n')
                         charCount += line.length + 1
                     }
@@ -90,10 +96,7 @@ class TxtBookFormatPlugin : BookFormatPlugin {
     companion object {
         internal const val MAX_CHAPTER_CHARS = 256_000
         internal const val CHARSET_SAMPLE_SIZE = 256 * 1024
-        internal val CHAPTER_PATTERN = Regex(
-            "^(?:第[0-9０-９零〇一二三四五六七八九十百千万两]+[章回节卷部篇](?:[ 　:：.-].{0,50})?|序章|楔子|引子|前言|后记|尾声|番外(?:[ 　0-9一二三四五六七八九十].{0,40})?)$",
-            RegexOption.IGNORE_CASE,
-        )
+        internal val CHAPTER_PATTERN = ChapterParser.CHAPTER_PATTERN
 
         internal fun detectCharset(input: InputStream): Charset {
             val output = ByteArrayOutputStream(CHARSET_SAMPLE_SIZE)

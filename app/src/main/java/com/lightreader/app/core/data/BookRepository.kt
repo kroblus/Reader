@@ -77,12 +77,28 @@ class BookRepository(
     }
 
     suspend fun progress(bookId: String): ReadingProgress? = dao.progress(bookId)?.let {
-        ReadingProgress(it.bookId, it.chapterId, it.charOffset, it.updatedAt)
+        ReadingProgress(
+            it.bookId, it.chapterId, it.charOffset, it.chapterIndex,
+            it.pageIndex, it.chapterTitle, it.styleHash, it.updatedAt,
+        )
     }
 
-    suspend fun saveProgress(bookId: String, chapterId: Long, charOffset: Int) {
+    suspend fun saveProgress(
+        bookId: String,
+        chapterId: Long,
+        charOffset: Int,
+        chapterIndex: Int,
+        pageIndex: Int,
+        chapterTitle: String,
+        styleHash: Int,
+    ) {
         val now = System.currentTimeMillis()
-        dao.saveProgress(ReadingProgressEntity(bookId, chapterId, charOffset, now))
+        dao.saveProgress(
+            ReadingProgressEntity(
+                bookId, chapterId, charOffset, chapterIndex, pageIndex,
+                chapterTitle, styleHash, now,
+            ),
+        )
         dao.book(bookId)?.let { dao.updateBook(it.copy(lastReadAt = now)) }
     }
 

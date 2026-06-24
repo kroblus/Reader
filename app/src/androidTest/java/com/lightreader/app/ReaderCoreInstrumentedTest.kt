@@ -5,11 +5,17 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.room.Room
 import com.lightreader.app.core.data.BookRepository
+import com.lightreader.app.core.data.BookEntity
+import com.lightreader.app.core.data.ChapterEntity
 import com.lightreader.app.core.data.ReaderDatabase
 import com.lightreader.app.core.formats.EpubBookFormatPlugin
 import com.lightreader.app.core.formats.TxtBookFormatPlugin
+import com.lightreader.app.core.model.BookFormat
 import com.lightreader.app.core.model.ReaderPreferences
-import com.lightreader.app.core.reader.StaticLayoutPaginationEngine
+import com.lightreader.app.core.model.ReaderViewport
+import com.lightreader.app.core.reader.BookTextNormalizer
+import com.lightreader.app.core.reader.PaintReaderLayoutEngine
+import com.lightreader.app.core.reader.toReaderStyle
 import com.lightreader.app.core.security.EncryptedApiKeyStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -38,11 +44,14 @@ class ReaderCoreInstrumentedTest {
     @Test
     fun paginationProducesContinuousBoundaries() {
         val text = (1..500).joinToString("\n") { "第 $it 行，这是一段用于分页验证的文字。" }
-        val pages = StaticLayoutPaginationEngine().paginate(text, 720, 1080, 3f, ReaderPreferences())
+        val paragraphs = BookTextNormalizer().normalize(text)
+        val pages = PaintReaderLayoutEngine().paginate(
+            0, "正文", paragraphs, ReaderViewport(720, 1080, 3f, 3f), ReaderPreferences().toReaderStyle(),
+        ).pages
         assertTrue(pages.size > 1)
-        assertEquals(0, pages.first().start)
-        assertEquals(text.length, pages.last().endExclusive)
-        pages.zipWithNext().forEach { (left, right) -> assertEquals(left.endExclusive, right.start) }
+        assertEquals(paragraphs.joinToString("") { it.text }, pages.flatMap { it.lines }.joinToString("") { it.text })
+        assertTrue(pages.flatMap { it.lines }.all { it.widthPx <= it.availableWidthPx + .5f })
+        assertTrue(pages.flatMap { it.lines }.filter { it.isFirstLineOfParagraph }.all { it.xOffsetPx > 84f })
     }
 
     @Test
@@ -50,14 +59,16 @@ class ReaderCoreInstrumentedTest {
         val text = buildString(256_000) {
             while (length < 256_000) append("山中修行，自此开始。天地玄黄，宇宙洪荒。\n")
         }
-        lateinit var pages: List<com.lightreader.app.core.model.PageSlice>
+        lateinit var pages: List<com.lightreader.app.core.model.ReaderPage>
         val elapsed = measureTimeMillis {
-            pages = StaticLayoutPaginationEngine().paginate(text, 720, 1080, 3f, ReaderPreferences())
+            val paragraphs = BookTextNormalizer().normalize(text)
+            pages = PaintReaderLayoutEngine().paginate(
+                0, "正文", paragraphs, ReaderViewport(720, 1080, 3f, 3f), ReaderPreferences().toReaderStyle(),
+            ).pages
         }
         assertTrue("分页耗时 ${elapsed}ms", elapsed < 10_000)
-        assertEquals(0, pages.first().start)
-        assertEquals(text.length, pages.last().endExclusive)
-        pages.zipWithNext().forEach { (left, right) -> assertEquals(left.endExclusive, right.start) }
+        val normalizedText = BookTextNormalizer().normalize(text).joinToString("") { it.text }
+        assertEquals(normalizedText, pages.flatMap { it.lines }.joinToString("") { it.text })
     }
 
     @Test
@@ -83,11 +94,32 @@ class ReaderCoreInstrumentedTest {
             assertEquals(0L, database.readerDao().indexedCharacterCount(book.id))
             val chapter = repository.chapters(book.id).single()
             assertTrue(repository.readChapter(chapter).contains("山中修行"))
-            assertTrue(repository.search(book.id, "第一章").isNotEmpty())
+            assertTrue(repository.search(book.id, "山中").isNotEmpty())
             assertEquals(book.totalChars, database.readerDao().indexedCharacterCount(book.id))
         } finally {
             database.close()
             source.delete()
+        }
+    }
+
+    @Test
+    fun readingProgressRoundTripsStableOffsetAndDiagnostics() = kotlinx.coroutines.runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(context, ReaderDatabase::class.java).build()
+        val repository = BookRepository(context, database.readerDao())
+        val now = System.currentTimeMillis()
+        try {
+            val ids = database.readerDao().insertBookWithChapters(
+                BookEntity("progress-book", "进度测试", null, BookFormat.TXT.name, context.cacheDir.path, now, null, 2000, 1, null),
+                listOf(ChapterEntity(bookId = "progress-book", orderIndex = 0, title = "第一章", contentPath = "unused", charCount = 2000)),
+            )
+            repository.saveProgress("progress-book", ids.single(), 1234, 0, 4, "第一章", 42)
+            val progress = repository.progress("progress-book")!!
+            assertEquals(1234, progress.charOffset)
+            assertEquals(4, progress.pageIndex)
+            assertEquals("第一章", progress.chapterTitle)
+            assertEquals(42, progress.styleHash)
+        } finally {
+            database.close()
         }
     }
 

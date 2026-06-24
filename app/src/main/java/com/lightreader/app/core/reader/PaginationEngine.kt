@@ -1,77 +1,165 @@
 package com.lightreader.app.core.reader
 
-import android.annotation.SuppressLint
 import android.graphics.Typeface
-import android.graphics.text.LineBreaker
-import android.text.Layout
-import android.text.StaticLayout
 import android.text.TextPaint
+import com.lightreader.app.core.model.BookParagraph
 import com.lightreader.app.core.model.FontFamilyOption
-import com.lightreader.app.core.model.PageSlice
-import com.lightreader.app.core.model.ReaderPreferences
+import com.lightreader.app.core.model.ReaderLayoutResult
+import com.lightreader.app.core.model.ReaderLine
+import com.lightreader.app.core.model.ReaderPage
+import com.lightreader.app.core.model.ReaderStyle
+import com.lightreader.app.core.model.ReaderViewport
+import kotlin.math.max
 
-interface PaginationEngine {
+interface ReaderLayoutEngine {
     fun paginate(
-        text: String,
-        widthPx: Int,
-        heightPx: Int,
-        scaledDensity: Float,
-        preferences: ReaderPreferences,
-    ): List<PageSlice>
+        chapterIndex: Int,
+        chapterTitle: String,
+        paragraphs: List<BookParagraph>,
+        viewport: ReaderViewport,
+        style: ReaderStyle,
+    ): ReaderLayoutResult
 }
 
-class StaticLayoutPaginationEngine : PaginationEngine {
-    @SuppressLint("InlinedApi")
+class PaintReaderLayoutEngine : ReaderLayoutEngine {
     override fun paginate(
-        text: String,
-        widthPx: Int,
-        heightPx: Int,
-        scaledDensity: Float,
-        preferences: ReaderPreferences,
-    ): List<PageSlice> {
-        if (text.isEmpty()) return listOf(PageSlice(0, 0, ""))
-        require(widthPx > 0 && heightPx > 0)
-        val paint = TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
-            textSize = preferences.fontSizeSp * scaledDensity
-            typeface = Typeface.create(
-                when (preferences.fontFamily) {
-                    FontFamilyOption.SANS -> Typeface.SANS_SERIF
-                    FontFamilyOption.SERIF -> Typeface.SERIF
-                    FontFamilyOption.MONOSPACE -> Typeface.MONOSPACE
-                },
-                if (preferences.fontWeight >= 500) Typeface.BOLD else Typeface.NORMAL,
-            )
-        }
-        val layout = StaticLayout.Builder.obtain(text, 0, text.length, paint, widthPx)
-            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
-            .setIncludePad(false)
-            .setLineSpacing(
-                preferences.paragraphSpacingSp * scaledDensity * 0.15f,
-                preferences.lineSpacingMultiplier,
-            )
-            // These are compile-time integer constants accepted by StaticLayout on API 26+.
-            .setBreakStrategy(LineBreaker.BREAK_STRATEGY_HIGH_QUALITY)
-            .setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE)
-            .apply {
-                if (preferences.justified) setJustificationMode(LineBreaker.JUSTIFICATION_MODE_INTER_WORD)
-            }
-            .build()
+        chapterIndex: Int,
+        chapterTitle: String,
+        paragraphs: List<BookParagraph>,
+        viewport: ReaderViewport,
+        style: ReaderStyle,
+    ): ReaderLayoutResult {
+        require(viewport.widthPx > 0 && viewport.heightPx > 0)
+        val contentLeft = style.horizontalPaddingDp * viewport.density
+        val contentRight = viewport.widthPx - contentLeft
+        val contentTop = max(
+            style.verticalPaddingTopDp * viewport.density,
+            viewport.safeTopPx + 32f * viewport.density,
+        )
+        val bottomReserved = max(
+            style.verticalPaddingBottomDp * viewport.density,
+            viewport.safeBottomPx + 28f * viewport.density,
+        )
+        val contentBottom = viewport.heightPx - bottomReserved
+        val contentWidth = (contentRight - contentLeft).coerceAtLeast(1f)
+        val contentHeight = (contentBottom - contentTop).coerceAtLeast(1f)
+        val paint = createPaint(style, viewport)
+        val fontMetrics = paint.fontMetrics
+        val fontHeight = fontMetrics.descent - fontMetrics.ascent
+        val requestedLineHeight = style.fontSizeSp * viewport.scaledDensity * style.lineHeightMultiplier
+        val lineHeight = max(fontHeight, requestedLineHeight).coerceAtMost(contentHeight)
+        val baselineOffset = ((lineHeight - fontHeight) / 2f) - fontMetrics.ascent
+        val paragraphSpacing = style.paragraphSpacingDp * viewport.density
+        val indent = style.firstLineIndentEm * style.fontSizeSp * viewport.scaledDensity
 
-        val pages = ArrayList<PageSlice>()
-        var firstLine = 0
-        var start = 0
-        while (firstLine < layout.lineCount && start < text.length) {
-            val pageTop = layout.getLineTop(firstLine)
-            val pageBottom = pageTop + heightPx
-            var lastLine = layout.getLineForVertical(pageBottom).coerceAtMost(layout.lineCount - 1)
-            while (lastLine > firstLine && layout.getLineBottom(lastLine) > pageBottom) lastLine--
-            if (lastLine < firstLine) lastLine = firstLine
-            var end = layout.getLineEnd(lastLine)
-            if (end <= start) end = (start + 1).coerceAtMost(text.length)
-            pages += PageSlice(start, end, text.substring(start, end))
-            start = end
-            firstLine = lastLine + 1
+        val pages = ArrayList<MutableList<ReaderLine>>()
+        var pageLines = ArrayList<ReaderLine>()
+        var yTop = contentTop
+
+        fun commitPage() {
+            if (pageLines.isNotEmpty()) pages += pageLines
+            pageLines = ArrayList()
+            yTop = contentTop
         }
-        return pages
+
+        paragraphs.forEachIndexed { paragraphIndex, paragraph ->
+            if (paragraph.text.isEmpty()) return@forEachIndexed
+            var localStart = 0
+            var firstLine = true
+            while (localStart < paragraph.text.length) {
+                val lineIndent = if (firstLine) indent else 0f
+                val availableWidth = (contentWidth - lineIndent).coerceAtLeast(1f)
+                var localEnd = findLineEnd(paint, paragraph.text, localStart, availableWidth)
+                localEnd = adjustForChinesePunctuation(paragraph.text, localStart, localEnd)
+                if (localEnd <= localStart) localEnd = (localStart + 1).coerceAtMost(paragraph.text.length)
+
+                if (pageLines.isNotEmpty() && yTop + lineHeight > contentBottom + .5f) commitPage()
+                val lineText = paragraph.text.substring(localStart, localEnd)
+                pageLines += ReaderLine(
+                    text = lineText,
+                    paragraphIndex = paragraphIndex,
+                    sourceStart = paragraph.sourceOffset(localStart),
+                    sourceEnd = paragraph.sourceOffset(localEnd),
+                    xOffsetPx = contentLeft + lineIndent,
+                    availableWidthPx = availableWidth,
+                    baselinePx = yTop + baselineOffset,
+                    widthPx = paint.measureText(lineText),
+                    lineHeightPx = lineHeight,
+                    isFirstLineOfParagraph = firstLine,
+                    isLastLineOfParagraph = localEnd == paragraph.text.length,
+                )
+                yTop += lineHeight
+                localStart = localEnd
+                firstLine = false
+            }
+            yTop += paragraphSpacing
+        }
+        commitPage()
+
+        val totalSourceLength = paragraphs.maxOfOrNull(BookParagraph::sourceEnd)?.coerceAtLeast(1) ?: 1
+        val immutablePages = if (pages.isEmpty()) {
+            listOf(ReaderPage(chapterIndex, 0, chapterTitle, emptyList(), 0, 0, 0f))
+        } else {
+            pages.mapIndexed { pageIndex, lines ->
+                val startOffset = lines.first().sourceStart
+                val endOffset = lines.last().sourceEnd
+                ReaderPage(
+                    chapterIndex = chapterIndex,
+                    pageIndex = pageIndex,
+                    chapterTitle = chapterTitle,
+                    lines = lines,
+                    startOffset = startOffset,
+                    endOffset = endOffset,
+                    progressInChapter = (endOffset.toFloat() / totalSourceLength).coerceIn(0f, 1f),
+                )
+            }
+        }
+        return ReaderLayoutResult(
+            chapterIndex = chapterIndex,
+            chapterTitle = chapterTitle,
+            pages = immutablePages,
+            viewport = viewport,
+            layoutFingerprint = style.layoutFingerprint(),
+        )
+    }
+
+    private fun createPaint(style: ReaderStyle, viewport: ReaderViewport) = TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
+        textSize = style.fontSizeSp * viewport.scaledDensity
+        typeface = Typeface.create(
+            when (style.fontFamily) {
+                FontFamilyOption.SANS -> Typeface.SANS_SERIF
+                FontFamilyOption.SERIF -> Typeface.SERIF
+                FontFamilyOption.MONOSPACE -> Typeface.MONOSPACE
+            },
+            if (style.fontWeight >= 500) Typeface.BOLD else Typeface.NORMAL,
+        )
+    }
+
+    private fun findLineEnd(paint: TextPaint, text: String, start: Int, width: Float): Int {
+        var low = start + 1
+        var high = text.length
+        var best = start
+        while (low <= high) {
+            val middle = (low + high) ushr 1
+            if (paint.measureText(text, start, middle) <= width) {
+                best = middle
+                low = middle + 1
+            } else {
+                high = middle - 1
+            }
+        }
+        return if (best == start) (start + 1).coerceAtMost(text.length) else best
+    }
+
+    private fun adjustForChinesePunctuation(text: String, start: Int, proposedEnd: Int): Int {
+        var end = proposedEnd
+        if (end < text.length && text[end] in FORBIDDEN_LINE_START && end - start > 1) end--
+        if (end - start > 1 && text[end - 1] in FORBIDDEN_LINE_END) end--
+        return end
+    }
+
+    private companion object {
+        const val FORBIDDEN_LINE_START = "，。！？；：、”’）】》〉」』…"
+        const val FORBIDDEN_LINE_END = "“‘（【《〈「『"
     }
 }
