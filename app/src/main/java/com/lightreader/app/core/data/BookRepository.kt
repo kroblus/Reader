@@ -119,9 +119,48 @@ class BookRepository(
         if (tokens.isEmpty()) return emptyList()
         ensureSearchIndex(bookId)
         val fts = tokens.joinToString(" AND ") { "\"${it.replace("\"", "\"\"")}\"*" }
-        return dao.search(bookId, fts).map {
-            SearchResult(it.chapterId.toLong(), it.chapterTitle, it.excerpt)
+        val nextSearchOffset = mutableMapOf<Long, Int>()
+        val chapterText = mutableMapOf<Long, String>()
+        val primaryToken = tokens.first()
+        val indexedResults = dao.search(bookId, fts).map {
+            val chapterId = it.chapterId.toLong()
+            val text = chapterText.getOrPut(chapterId) {
+                dao.chapter(chapterId)?.let { chapter -> File(chapter.contentPath).readText() }.orEmpty()
+            }
+            val fromIndex = nextSearchOffset[chapterId] ?: 0
+            val matchIndex = text.indexOf(primaryToken, fromIndex, ignoreCase = true)
+                .takeIf { index -> index >= 0 }
+                ?: text.indexOf(primaryToken, ignoreCase = true).coerceAtLeast(0)
+            nextSearchOffset[chapterId] = (matchIndex + primaryToken.length).coerceAtMost(text.length)
+            SearchResult(chapterId, it.chapterTitle, it.excerpt, matchIndex)
         }
+        return indexedResults.ifEmpty { fallbackSearch(bookId, query.trim()) }
+    }
+
+    private suspend fun fallbackSearch(bookId: String, query: String): List<SearchResult> = withContext(Dispatchers.IO) {
+        if (query.isBlank()) return@withContext emptyList()
+        val results = ArrayList<SearchResult>()
+        dao.chapters(bookId).forEach { chapter ->
+            if (results.size >= 100) return@forEach
+            val text = File(chapter.contentPath).readText()
+            var fromIndex = 0
+            while (fromIndex < text.length && results.size < 100) {
+                val match = text.indexOf(query, fromIndex, ignoreCase = true)
+                if (match < 0) break
+                val excerptStart = (match - 28).coerceAtLeast(0)
+                val excerptEnd = (match + query.length + 42).coerceAtMost(text.length)
+                val excerpt = buildString {
+                    if (excerptStart > 0) append('…')
+                    append(text.substring(excerptStart, match))
+                    append("<b>").append(text.substring(match, match + query.length)).append("</b>")
+                    append(text.substring(match + query.length, excerptEnd))
+                    if (excerptEnd < text.length) append('…')
+                }
+                results += SearchResult(chapter.id, chapter.title, excerpt, match)
+                fromIndex = (match + query.length).coerceAtLeast(match + 1)
+            }
+        }
+        results
     }
 
     suspend fun deleteBook(id: String) = withContext(Dispatchers.IO) {

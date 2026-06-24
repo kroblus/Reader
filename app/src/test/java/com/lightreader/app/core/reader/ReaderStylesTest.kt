@@ -12,7 +12,7 @@ class ReaderStylesTest {
         val base = ReaderPreferences()
         assertEquals(
             base.toReaderStyle().layoutFingerprint(),
-            base.copy(theme = ReaderTheme.NIGHT, showHeader = false, showStatus = false, showRightProgressBar = false)
+            base.copy(theme = ReaderTheme.NIGHT, showHeader = false, showStatus = false, showRightProgressBar = false, minimalMode = true)
                 .toReaderStyle().layoutFingerprint(),
         )
     }

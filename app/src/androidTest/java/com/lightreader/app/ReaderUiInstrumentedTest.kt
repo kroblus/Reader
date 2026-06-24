@@ -63,7 +63,7 @@ class ReaderUiInstrumentedTest {
     }
 
     @Test
-    fun readerControlsOpenAndAutoHideAfterThreeSeconds() {
+    fun readerControlsOpenAndAutoHideAfterFiveSeconds() {
         seedBook("按钮测试小说")
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithText("按钮测试小说").fetchSemanticsNodes().isNotEmpty()
@@ -72,6 +72,7 @@ class ReaderUiInstrumentedTest {
         composeRule.onNodeWithText("按钮测试小说").performClick()
         composeRule.mainClock.advanceTimeBy(1_000)
         composeRule.waitForIdle()
+        composeRule.onAllNodesWithContentDescription("空白页面").assertCountEquals(0)
         composeRule.onNodeWithContentDescription("目录").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("阅读设置").performClick()
         composeRule.mainClock.advanceTimeBy(500)
@@ -82,7 +83,7 @@ class ReaderUiInstrumentedTest {
         composeRule.onNodeWithText("关闭").performClick()
         composeRule.mainClock.advanceTimeBy(500)
         composeRule.waitForIdle()
-        composeRule.mainClock.advanceTimeBy(3_500)
+        composeRule.mainClock.advanceTimeBy(5_500)
         composeRule.waitForIdle()
         composeRule.onAllNodesWithContentDescription("目录").assertCountEquals(0)
         composeRule.onRoot().performTouchInput { click(Offset(center.x, center.y)) }

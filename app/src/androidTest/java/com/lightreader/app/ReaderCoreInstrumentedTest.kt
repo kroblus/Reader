@@ -94,7 +94,8 @@ class ReaderCoreInstrumentedTest {
             assertEquals(0L, database.readerDao().indexedCharacterCount(book.id))
             val chapter = repository.chapters(book.id).single()
             assertTrue(repository.readChapter(chapter).contains("山中修行"))
-            assertTrue(repository.search(book.id, "山中").isNotEmpty())
+            val searchResult = repository.search(book.id, "山中").first()
+            assertEquals(repository.readChapter(chapter).indexOf("山中"), searchResult.charOffset)
             assertEquals(book.totalChars, database.readerDao().indexedCharacterCount(book.id))
         } finally {
             database.close()

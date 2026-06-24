@@ -13,7 +13,9 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -67,7 +69,7 @@ fun ReaderSettingsPanel(value: ReaderPreferences, onChange: (ReaderPreferences) 
                 FilterChip(
                     selected = value.fontFamily == option,
                     onClick = { onChange(value.copy(fontFamily = option)) },
-                    label = { Text(when (option) { FontFamilyOption.SANS -> "黑体"; FontFamilyOption.SERIF -> "宋体"; FontFamilyOption.MONOSPACE -> "等宽" }) },
+                    label = { Text(when (option) { FontFamilyOption.SYSTEM -> "系统"; FontFamilyOption.SANS -> "黑体"; FontFamilyOption.SERIF -> "宋体"; FontFamilyOption.MONOSPACE -> "等宽" }) },
                     shape = RoundedCornerShape(50),
                     colors = chipColors,
                 )
@@ -117,11 +119,9 @@ fun ReaderSettingsPanel(value: ReaderPreferences, onChange: (ReaderPreferences) 
         Text("翻页效果")
         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PageTurnMode.entries.forEach { mode ->
-                val implemented = mode == PageTurnMode.NONE || mode == PageTurnMode.HORIZONTAL || mode == PageTurnMode.SLIDE
                 FilterChip(
                     selected = value.pageTurnMode == mode,
-                    onClick = { if (implemented) onChange(value.copy(pageTurnMode = mode)) },
-                    enabled = implemented,
+                    onClick = { onChange(value.copy(pageTurnMode = mode)) },
                     label = { Text(mode.label()) },
                     shape = RoundedCornerShape(50),
                     colors = chipColors,
@@ -140,6 +140,13 @@ fun ReaderSettingsPanel(value: ReaderPreferences, onChange: (ReaderPreferences) 
         ToggleSetting("显示阅读进度", value.showStatus) { onChange(value.copy(showStatus = it)) }
         ToggleSetting("显示章节标题", value.showHeader) { onChange(value.copy(showHeader = it)) }
         ToggleSetting("显示右侧进度条", value.showRightProgressBar) { onChange(value.copy(showRightProgressBar = it)) }
+        ToggleSetting("极简模式", value.minimalMode) { onChange(value.copy(minimalMode = it)) }
+        SettingSlider(
+            "自动阅读速度",
+            "${value.autoReadIntervalSeconds} 秒/页",
+            value.autoReadIntervalSeconds.toFloat(),
+            3f..30f,
+        ) { onChange(value.copy(autoReadIntervalSeconds = it.roundToInt())) }
         ToggleSetting("音量键翻页", value.volumeKeys) { onChange(value.copy(volumeKeys = it)) }
         ToggleSetting("跟随系统亮度", value.brightness < 0f) {
             onChange(value.copy(brightness = if (it) -1f else .5f))
@@ -164,8 +171,8 @@ private fun PageTurnMode.label(): String = when (this) {
     PageTurnMode.NONE -> "无动画"
     PageTurnMode.HORIZONTAL -> "左右"
     PageTurnMode.SLIDE -> "平移"
-    PageTurnMode.VERTICAL -> "上下（待支持）"
-    PageTurnMode.SIMULATION -> "仿真（待支持）"
+    PageTurnMode.VERTICAL -> "上下"
+    PageTurnMode.SIMULATION -> "仿真"
 }
 
 @Composable
@@ -175,7 +182,19 @@ private fun SettingSlider(label: String, valueText: String, value: Float, range:
             Text(label)
             Text(valueText, color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Slider(value = value, onValueChange = onValue, valueRange = range)
+        val primary = androidx.compose.material3.MaterialTheme.colorScheme.primary
+        Slider(
+            value = value,
+            onValueChange = onValue,
+            valueRange = range,
+            colors = SliderDefaults.colors(
+                thumbColor = primary,
+                activeTrackColor = primary,
+                inactiveTrackColor = primary.copy(alpha = .18f),
+                activeTickColor = Color.Transparent,
+                inactiveTickColor = Color.Transparent,
+            ),
+        )
     }
 }
 
@@ -183,6 +202,17 @@ private fun SettingSlider(label: String, valueText: String, value: Float, range:
 private fun ToggleSetting(label: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Text(label)
-        Switch(checked = checked, onCheckedChange = onChecked)
+        val primary = androidx.compose.material3.MaterialTheme.colorScheme.primary
+        Switch(
+            checked = checked,
+            onCheckedChange = onChecked,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = primary,
+                uncheckedThumbColor = primary.copy(alpha = .62f),
+                uncheckedTrackColor = primary.copy(alpha = .14f),
+                uncheckedBorderColor = primary.copy(alpha = .5f),
+            ),
+        )
     }
 }

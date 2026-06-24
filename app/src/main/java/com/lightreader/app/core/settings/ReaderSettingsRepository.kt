@@ -40,6 +40,8 @@ class ReaderSettingsRepository(private val context: Context) {
             showStatus = values[SHOW_STATUS] ?: true,
             showHeader = values[SHOW_HEADER] ?: true,
             showRightProgressBar = values[SHOW_RIGHT_PROGRESS] ?: true,
+            minimalMode = values[MINIMAL_MODE] ?: false,
+            autoReadIntervalSeconds = (values[AUTO_READ_INTERVAL] ?: 8).coerceIn(3, 60),
             volumeKeys = values[VOLUME_KEYS] ?: true,
             fontFamily = enumValue(values[FONT_FAMILY], FontFamilyOption.SERIF),
             pageTurnMode = pageTurnMode(values[PAGE_TURN_MODE] ?: values[PAGE_ANIMATION]),
@@ -68,6 +70,8 @@ class ReaderSettingsRepository(private val context: Context) {
             values[SHOW_STATUS] = value.showStatus
             values[SHOW_HEADER] = value.showHeader
             values[SHOW_RIGHT_PROGRESS] = value.showRightProgressBar
+            values[MINIMAL_MODE] = value.minimalMode
+            values[AUTO_READ_INTERVAL] = value.autoReadIntervalSeconds.coerceIn(3, 60)
             values[VOLUME_KEYS] = value.volumeKeys
             values[FONT_FAMILY] = value.fontFamily.name
             values[PAGE_TURN_MODE] = value.pageTurnMode.name
@@ -96,6 +100,8 @@ class ReaderSettingsRepository(private val context: Context) {
         val SHOW_STATUS = booleanPreferencesKey("show_status")
         val SHOW_HEADER = booleanPreferencesKey("show_header")
         val SHOW_RIGHT_PROGRESS = booleanPreferencesKey("show_right_progress")
+        val MINIMAL_MODE = booleanPreferencesKey("minimal_mode")
+        val AUTO_READ_INTERVAL = intPreferencesKey("auto_read_interval")
         val VOLUME_KEYS = booleanPreferencesKey("volume_keys")
         val FONT_FAMILY = stringPreferencesKey("font_family")
         val PAGE_ANIMATION = stringPreferencesKey("page_animation")

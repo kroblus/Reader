@@ -53,6 +53,7 @@ data class ReaderUiState(
     val pageIndex: Int = 0,
     val toolbarVisible: Boolean = true,
     val settingsVisible: Boolean = false,
+    val autoReading: Boolean = false,
     val loading: Boolean = false,
     val error: String? = null,
     val bookmarks: List<Bookmark> = emptyList(),
@@ -100,6 +101,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var viewport = ReaderViewport(0, 0, 1f, 1f)
     private var chapterText = ""
     private var chapterParagraphs: List<BookParagraph> = emptyList()
+    private var loadedChapterId: Long? = null
     private var requestedOffset = 0
     private var currentLayoutFingerprint = 0
     private var paginationJob: Job? = null
@@ -144,6 +146,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun goBack() {
         if (screen.value is AppScreen.Reader) saveCurrentProgress()
+        if (screen.value is AppScreen.Reader) setAutoReading(false)
         screen.value = when (screen.value) {
             is AppScreen.Search -> AppScreen.Reader((screen.value as AppScreen.Search).bookId)
             else -> AppScreen.Library
@@ -156,7 +159,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         prefetchJob?.cancel()
         chapterText = ""
         chapterParagraphs = emptyList()
+        loadedChapterId = null
         currentLayoutFingerprint = 0
+        setAutoReading(false)
         viewModelScope.launch {
             readerState.value = ReaderUiState(loading = true)
             val book = container.bookRepository.book(bookId) ?: run {
@@ -191,7 +196,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val next = ReaderViewport(width, height, density, scaledDensity, safeTopPx, safeBottomPx)
         if (next == viewport) return
         viewport = next
-        if (chapterText.isNotEmpty() || chapterParagraphs.isNotEmpty()) {
+        if (loadedChapterId != null) {
             requestedOffset = currentPageOffset()
             repaginate(uiState.value.preferences)
         }
@@ -209,15 +214,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         prefetchJob?.cancel()
         paginationJob = viewModelScope.launch {
             val chapter = readerState.value.chapters.getOrNull(index) ?: return@launch
+            loadedChapterId = null
+            chapterText = ""
+            chapterParagraphs = emptyList()
             readerState.value = readerState.value.copy(chapterIndex = index, loading = true, error = null, pages = emptyList(), pageIndex = 0)
             val rawText = runCatching { container.bookRepository.readChapter(chapter) }
                 .getOrElse {
                     readerState.value = readerState.value.copy(loading = false, error = it.message ?: "章节读取失败")
                     return@launch
                 }
+            val paragraphs = withContext(Dispatchers.Default) { normalizer.normalize(rawText) }
             chapterText = rawText
-            chapterParagraphs = withContext(Dispatchers.Default) { normalizer.normalize(rawText) }
-            paginateAndApply(index, chapter, chapterParagraphs, uiState.value.preferences)
+            chapterParagraphs = paragraphs
+            loadedChapterId = chapter.id
+            paginateAndApply(index, chapter, paragraphs, uiState.value.preferences)
         }
     }
 
@@ -257,6 +267,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             layoutPreferences = preferences,
         )
         requestedOffset = 0
+        saveCurrentProgress()
         prefetchAdjacent(chapterIndex, preferences)
     }
 
@@ -300,6 +311,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         when {
             state.pageIndex < state.pages.lastIndex -> pageSelected(state.pageIndex + 1)
             state.chapterIndex < state.chapters.lastIndex -> selectChapter(state.chapterIndex + 1)
+            else -> setAutoReading(false)
         }
     }
 
@@ -329,6 +341,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun showSettings() { readerState.value = readerState.value.copy(settingsVisible = true, toolbarVisible = true) }
     fun hideSettings() { readerState.value = readerState.value.copy(settingsVisible = false) }
+
+    fun toggleAutoReading() = setAutoReading(!readerState.value.autoReading)
+
+    fun setAutoReading(enabled: Boolean) {
+        if (readerState.value.autoReading != enabled) {
+            readerState.value = readerState.value.copy(autoReading = enabled, toolbarVisible = if (enabled) false else readerState.value.toolbarVisible)
+        }
+    }
 
     fun jumpToProgress(progress: Float) {
         val state = readerState.value
@@ -373,6 +393,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun toggleCurrentPageBookmark() {
+        val state = readerState.value
+        val book = state.book ?: return
+        val chapter = state.chapters.getOrNull(state.chapterIndex) ?: return
+        val page = state.pages.getOrNull(state.pageIndex) ?: return
+        val existing = state.bookmarks.firstOrNull {
+            it.chapterId == chapter.id && it.charOffset >= page.startOffset && it.charOffset < page.endOffset.coerceAtLeast(page.startOffset + 1)
+        }
+        if (existing != null) {
+            viewModelScope.launch {
+                container.bookRepository.deleteBookmark(existing.id)
+                message.value = "已取消书签"
+            }
+        } else {
+            viewModelScope.launch {
+                container.bookRepository.addBookmark(book.id, chapter.id, page.startOffset, page.text.trim())
+                message.value = "已添加书签"
+            }
+        }
+    }
+
     fun deleteBookmark(id: String) { viewModelScope.launch { container.bookRepository.deleteBookmark(id) } }
 
     fun jumpToBookmark(bookmark: Bookmark) {
@@ -409,7 +450,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         screen.value = AppScreen.Reader((screen.value as AppScreen.Search).bookId)
         val index = readerState.value.chapters.indexOfFirst { it.id == result.chapterId }
         if (index >= 0) {
-            requestedOffset = 0
+            requestedOffset = result.charOffset
             loadChapter(index)
         }
     }

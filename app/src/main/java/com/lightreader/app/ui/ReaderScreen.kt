@@ -9,6 +9,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Box
@@ -25,14 +27,18 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.FormatListBulleted
 import androidx.compose.material.icons.outlined.BookmarkAdd
+import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.Bookmarks
-import androidx.compose.material.icons.outlined.FormatListBulleted
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.TextFields
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -58,7 +64,10 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -72,6 +81,7 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlin.math.abs
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -96,8 +106,23 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
     }
     LaunchedEffect(state.toolbarVisible, showToc, showBookmarks, state.settingsVisible) {
         if (state.toolbarVisible && !showToc && !showBookmarks && !state.settingsVisible) {
-            delay(3_000)
+            delay(5_000)
             viewModel.hideToolbar()
+        }
+    }
+    LaunchedEffect(
+        state.autoReading,
+        state.pageIndex,
+        state.chapterIndex,
+        state.toolbarVisible,
+        showToc,
+        showBookmarks,
+        state.settingsVisible,
+        preferences.autoReadIntervalSeconds,
+    ) {
+        if (state.autoReading && !state.toolbarVisible && !showToc && !showBookmarks && !state.settingsVisible) {
+            delay(preferences.autoReadIntervalSeconds.coerceIn(3, 60) * 1_000L)
+            viewModel.nextPage()
         }
     }
 
@@ -129,16 +154,11 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                     }
                     LaunchedEffect(state.pageIndex, preferences.pageTurnMode) {
                         if (state.pageIndex in state.pages.indices && state.pageIndex != pagerState.currentPage) {
-                            if (preferences.pageTurnMode == PageTurnMode.SLIDE) pagerState.animateScrollToPage(state.pageIndex)
+                            if (preferences.pageTurnMode != PageTurnMode.NONE) pagerState.animateScrollToPage(state.pageIndex)
                             else pagerState.scrollToPage(state.pageIndex)
                         }
                     }
-                    HorizontalPager(
-                        state = pagerState,
-                        modifier = Modifier.fillMaxSize(),
-                        userScrollEnabled = preferences.pageTurnMode == PageTurnMode.HORIZONTAL ||
-                            preferences.pageTurnMode == PageTurnMode.SLIDE,
-                    ) { pageIndex ->
+                    val pageContent: @Composable (Int) -> Unit = { pageIndex ->
                         val page = state.pages[pageIndex]
                         var dragDistance by remember(pageIndex) { mutableFloatStateOf(0f) }
                         val manualSwipe = if (preferences.pageTurnMode == PageTurnMode.NONE) {
@@ -155,6 +175,52 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                                 )
                             }
                         } else Modifier
+                        val pageEffect = Modifier.graphicsLayer {
+                            val pageOffset = (pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction
+                            when (preferences.pageTurnMode) {
+                                PageTurnMode.SIMULATION -> {
+                                    rotationY = (-pageOffset * 22f).coerceIn(-22f, 22f)
+                                    transformOrigin = TransformOrigin(if (pageOffset < 0f) 0f else 1f, .5f)
+                                    cameraDistance = 14f * density.density
+                                    shadowElevation = if (abs(pageOffset) < 1f) 18f else 0f
+                                    alpha = (1f - abs(pageOffset) * .12f).coerceIn(.82f, 1f)
+                                }
+                                PageTurnMode.SLIDE -> alpha = (1f - abs(pageOffset) * .08f).coerceIn(.9f, 1f)
+                                else -> Unit
+                            }
+                        }
+                        val boundarySwipe = if (preferences.pageTurnMode != PageTurnMode.NONE) {
+                            Modifier.pointerInput(
+                                pageIndex,
+                                state.chapterIndex,
+                                preferences.pageTurnMode,
+                            ) {
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                                    var lastPosition = down.position
+                                    var pointerPressed = true
+                                    while (pointerPressed) {
+                                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                        lastPosition = change.position
+                                        pointerPressed = change.pressed
+                                    }
+                                    val delta = lastPosition - down.position
+                                    val threshold = 72.dp.toPx()
+                                    if (preferences.pageTurnMode == PageTurnMode.VERTICAL) {
+                                        when {
+                                            pageIndex == state.pages.lastIndex && delta.y < -threshold -> viewModel.nextPage()
+                                            pageIndex == 0 && delta.y > threshold -> viewModel.previousPage()
+                                        }
+                                    } else {
+                                        when {
+                                            pageIndex == state.pages.lastIndex && delta.x < -threshold -> viewModel.nextPage()
+                                            pageIndex == 0 && delta.x > threshold -> viewModel.previousPage()
+                                        }
+                                    }
+                                }
+                            }
+                        } else Modifier
                         ReaderPageCanvas(
                             page = page,
                             pageCount = state.pages.size,
@@ -166,6 +232,8 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                             safeBottomPx = safeBottomPx,
                             modifier = Modifier
                                 .fillMaxSize()
+                                .then(pageEffect)
+                                .then(boundarySwipe)
                                 .then(manualSwipe)
                                 .pointerInput(pageIndex, state.toolbarVisible) {
                                     detectTapGestures { point ->
@@ -182,6 +250,19 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                                 },
                         )
                     }
+                    if (preferences.pageTurnMode == PageTurnMode.VERTICAL) {
+                        VerticalPager(
+                            state = pagerState,
+                            modifier = Modifier.fillMaxSize(),
+                            userScrollEnabled = true,
+                        ) { pageContent(it) }
+                    } else {
+                        HorizontalPager(
+                            state = pagerState,
+                            modifier = Modifier.fillMaxSize(),
+                            userScrollEnabled = preferences.pageTurnMode != PageTurnMode.NONE,
+                        ) { pageContent(it) }
+                    }
                 }
             }
         }
@@ -195,7 +276,7 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                     .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = viewModel::goBack) { Icon(Icons.Outlined.ArrowBack, "返回", tint = foreground) }
+                IconButton(onClick = viewModel::goBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回", tint = foreground) }
                 Text(
                     state.chapters.getOrNull(state.chapterIndex)?.title ?: state.book?.title.orEmpty(),
                     Modifier.weight(1f),
@@ -203,14 +284,24 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                     color = foreground,
                 )
                 IconButton(onClick = { showToc = true }, enabled = state.chapters.isNotEmpty() && !state.loading) {
-                    Icon(Icons.Outlined.FormatListBulleted, "目录", tint = foreground)
+                    Icon(Icons.AutoMirrored.Outlined.FormatListBulleted, "目录", tint = foreground)
                 }
                 IconButton(
                     onClick = { state.book?.let { viewModel.navigate(AppScreen.Search(it.id)) } },
                     enabled = state.book != null && !state.loading,
                 ) { Icon(Icons.Outlined.Search, "搜索", tint = foreground) }
-                IconButton(onClick = viewModel::addBookmark, enabled = state.pages.isNotEmpty() && !state.loading) {
-                    Icon(Icons.Outlined.BookmarkAdd, "添加书签", tint = foreground)
+                val currentPage = state.pages.getOrNull(state.pageIndex)
+                val currentChapter = state.chapters.getOrNull(state.chapterIndex)
+                val isBookmarked = currentPage != null && currentChapter != null && state.bookmarks.any {
+                    it.chapterId == currentChapter.id && it.charOffset >= currentPage.startOffset &&
+                        it.charOffset < currentPage.endOffset.coerceAtLeast(currentPage.startOffset + 1)
+                }
+                IconButton(onClick = viewModel::toggleCurrentPageBookmark, enabled = currentPage != null && !state.loading) {
+                    Icon(
+                        if (isBookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkAdd,
+                        if (isBookmarked) "取消书签" else "添加书签",
+                        tint = foreground,
+                    )
                 }
             }
         }
@@ -227,6 +318,13 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
             ) {
                 IconButton(onClick = { showBookmarks = true }, enabled = state.book != null && !state.loading) {
                     Icon(Icons.Outlined.Bookmarks, "书签", tint = foreground)
+                }
+                IconButton(onClick = viewModel::toggleAutoReading, enabled = state.pages.isNotEmpty() && !state.loading) {
+                    Icon(
+                        if (state.autoReading) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                        if (state.autoReading) "暂停自动阅读" else "开始自动阅读",
+                        tint = foreground,
+                    )
                 }
                 Text(
                     "${state.chapterIndex + 1}/${state.chapters.size} · ${state.pageIndex + 1}/${state.pages.size}",

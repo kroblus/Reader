@@ -17,9 +17,9 @@ fun ReaderPreferences.toReaderStyle(): ReaderStyle = ReaderStyle(
     justified = justified,
     fontFamily = fontFamily,
     palette = palette(),
-    showHeader = showHeader,
-    showFooter = showStatus,
-    showRightProgressBar = showRightProgressBar,
+    showHeader = showHeader && !minimalMode,
+    showFooter = showStatus && !minimalMode,
+    showRightProgressBar = showRightProgressBar && !minimalMode,
 )
 
 fun ReaderPreferences.palette(): ReaderPalette = when (theme) {

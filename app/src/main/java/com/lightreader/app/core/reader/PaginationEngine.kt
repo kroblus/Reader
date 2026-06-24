@@ -10,6 +10,7 @@ import com.lightreader.app.core.model.ReaderPage
 import com.lightreader.app.core.model.ReaderStyle
 import com.lightreader.app.core.model.ReaderViewport
 import kotlin.math.max
+import kotlin.math.min
 
 interface ReaderLayoutEngine {
     fun paginate(
@@ -30,15 +31,19 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
         style: ReaderStyle,
     ): ReaderLayoutResult {
         require(viewport.widthPx > 0 && viewport.heightPx > 0)
-        val contentLeft = style.horizontalPaddingDp * viewport.density
-        val contentRight = viewport.widthPx - contentLeft
+        val minimumHorizontalPadding = style.horizontalPaddingDp * viewport.density
+        val contentWidthLimit = style.maxContentWidthDp * viewport.density
+        val contentWidthAvailable = (viewport.widthPx - minimumHorizontalPadding * 2f).coerceAtLeast(1f)
+        val centeredContentWidth = min(contentWidthAvailable, contentWidthLimit)
+        val contentLeft = (viewport.widthPx - centeredContentWidth) / 2f
+        val contentRight = contentLeft + centeredContentWidth
         val contentTop = max(
             style.verticalPaddingTopDp * viewport.density,
-            viewport.safeTopPx + 32f * viewport.density,
+            viewport.safeTopPx + 64f * viewport.density,
         )
         val bottomReserved = max(
             style.verticalPaddingBottomDp * viewport.density,
-            viewport.safeBottomPx + 28f * viewport.density,
+            viewport.safeBottomPx + 64f * viewport.density,
         )
         val contentBottom = viewport.heightPx - bottomReserved
         val contentWidth = (contentRight - contentLeft).coerceAtLeast(1f)
@@ -127,6 +132,7 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
         textSize = style.fontSizeSp * viewport.scaledDensity
         typeface = Typeface.create(
             when (style.fontFamily) {
+                FontFamilyOption.SYSTEM -> Typeface.DEFAULT
                 FontFamilyOption.SANS -> Typeface.SANS_SERIF
                 FontFamilyOption.SERIF -> Typeface.SERIF
                 FontFamilyOption.MONOSPACE -> Typeface.MONOSPACE
@@ -154,12 +160,14 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
     private fun adjustForChinesePunctuation(text: String, start: Int, proposedEnd: Int): Int {
         var end = proposedEnd
         if (end < text.length && text[end] in FORBIDDEN_LINE_START && end - start > 1) end--
-        if (end - start > 1 && text[end - 1] in FORBIDDEN_LINE_END) end--
+        while (end - start > 1 && text[end - 1] in FORBIDDEN_LINE_END) end--
+        if (end < text.length && end > start + 1 && text[end - 1] == text[end] && text[end] in PAIRED_PUNCTUATION) end--
         return end
     }
 
     private companion object {
-        const val FORBIDDEN_LINE_START = "，。！？；：、”’）】》〉」』…"
-        const val FORBIDDEN_LINE_END = "“‘（【《〈「『"
+        const val FORBIDDEN_LINE_START = "，。！？；：、”’）】》〉」』〕］｝…—·～"
+        const val FORBIDDEN_LINE_END = "“‘（【《〈「『〔［｛"
+        const val PAIRED_PUNCTUATION = "…—"
     }
 }

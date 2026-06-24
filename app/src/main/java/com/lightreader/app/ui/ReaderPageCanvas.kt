@@ -37,6 +37,7 @@ fun ReaderPageCanvas(
         textSize = layoutPreferences.fontSizeSp * density.density * density.fontScale
         typeface = Typeface.create(
             when (layoutPreferences.fontFamily) {
+                FontFamilyOption.SYSTEM -> Typeface.DEFAULT
                 FontFamilyOption.SANS -> Typeface.SANS_SERIF
                 FontFamilyOption.SERIF -> Typeface.SERIF
                 FontFamilyOption.MONOSPACE -> Typeface.MONOSPACE

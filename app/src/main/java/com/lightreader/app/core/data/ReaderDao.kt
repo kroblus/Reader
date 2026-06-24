@@ -65,6 +65,7 @@ interface ReaderDao {
         FROM search_chunks
         JOIN chapters ON chapters.id = CAST(search_chunks.chapterId AS INTEGER)
         WHERE search_chunks MATCH :ftsQuery AND search_chunks.bookId = :bookId
+        ORDER BY search_chunks.rowid
         LIMIT 100
     """)
     suspend fun search(bookId: String, ftsQuery: String): List<SearchRow>

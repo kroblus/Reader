@@ -47,11 +47,12 @@ data class SearchResult(
     val chapterId: Long,
     val chapterTitle: String,
     val excerpt: String,
+    val charOffset: Int = 0,
 )
 
 enum class ReaderTheme { EYE_CARE, SEPIA, LIGHT_GRAY, WARM_BROWN, NIGHT, CUSTOM }
 enum class PageTurnMode { NONE, HORIZONTAL, SLIDE, VERTICAL, SIMULATION }
-enum class FontFamilyOption { SANS, SERIF, MONOSPACE }
+enum class FontFamilyOption { SYSTEM, SANS, SERIF, MONOSPACE }
 
 data class ReaderPreferences(
     val fontSizeSp: Float = 17f,
@@ -74,6 +75,8 @@ data class ReaderPreferences(
     val showStatus: Boolean = true,
     val showHeader: Boolean = true,
     val showRightProgressBar: Boolean = true,
+    val minimalMode: Boolean = false,
+    val autoReadIntervalSeconds: Int = 8,
     val volumeKeys: Boolean = true,
     val fontFamily: FontFamilyOption = FontFamilyOption.SERIF,
     val pageTurnMode: PageTurnMode = PageTurnMode.HORIZONTAL,
@@ -124,11 +127,13 @@ data class ReaderStyle(
     val showHeader: Boolean,
     val showFooter: Boolean,
     val showRightProgressBar: Boolean,
+    val maxContentWidthDp: Float = 720f,
 ) {
     fun layoutFingerprint(): Int = listOf(
         fontSizeSp, fontWeight, lineHeightMultiplier, paragraphSpacingDp,
         firstLineIndentEm, horizontalPaddingDp, verticalPaddingTopDp,
         verticalPaddingBottomDp, justified, fontFamily,
+        maxContentWidthDp,
     ).hashCode()
 }
 
