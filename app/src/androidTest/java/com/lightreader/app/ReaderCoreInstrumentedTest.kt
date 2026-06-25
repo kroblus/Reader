@@ -49,9 +49,70 @@ class ReaderCoreInstrumentedTest {
             0, "正文", paragraphs, ReaderViewport(720, 1080, 3f, 3f), ReaderPreferences().toReaderStyle(),
         ).pages
         assertTrue(pages.size > 1)
-        assertEquals(paragraphs.joinToString("") { it.text }, pages.flatMap { it.lines }.joinToString("") { it.text })
+        val bodyLines = pages.flatMap { it.lines }.filterNot { it.isChapterTitle }
+        assertEquals(paragraphs.joinToString("") { it.text }, bodyLines.joinToString("") { it.text })
         assertTrue(pages.flatMap { it.lines }.all { it.widthPx <= it.availableWidthPx + .5f })
-        assertTrue(pages.flatMap { it.lines }.filter { it.isFirstLineOfParagraph }.all { it.xOffsetPx > 84f })
+        assertTrue(bodyLines.filter { it.isFirstLineOfParagraph }.all { it.xOffsetPx > 84f })
+    }
+
+    @Test
+    fun defaultPaginationUsesUcLikeContentBounds() {
+        val text = (1..24).joinToString("\n") {
+            "This paragraph is long enough to wrap across multiple measured reader lines for layout bounds verification."
+        }
+        val paragraphs = BookTextNormalizer().normalize(text)
+        val viewport = ReaderViewport(576, 1280, 1f, 1f, 0, 0)
+        val engine = PaintReaderLayoutEngine()
+        val compactPages = engine.paginate(
+            0,
+            "正文",
+            paragraphs,
+            viewport,
+            ReaderPreferences(firstLineIndent = false).toReaderStyle(),
+        ).pages
+        val titleLine = compactPages.first().lines.first { it.isChapterTitle }
+        val compactFirstLine = compactPages.first().lines.first { !it.isChapterTitle }
+
+        assertEquals(20f, titleLine.xOffsetPx, .5f)
+        assertEquals(20f, compactFirstLine.xOffsetPx, .5f)
+        assertTrue(titleLine.baselinePx < compactFirstLine.baselinePx)
+        assertTrue(compactPages.flatMap { it.lines }.all { it.baselinePx < viewport.heightPx - 42f })
+    }
+
+    @Test
+    fun chapterTitleAppearsOnlyOnFirstPageAndDoesNotBreakTextContinuity() {
+        val text = (1..80).joinToString("\n") { "正文段落 $it，会跨越多页以验证章节标题只出现在第一页。" }
+        val paragraphs = BookTextNormalizer().normalize(text)
+        val pages = PaintReaderLayoutEngine().paginate(
+            7,
+            "第二百三十三章 借力打力",
+            paragraphs,
+            ReaderViewport(576, 1280, 1f, 1f),
+            ReaderPreferences(firstLineIndent = false).toReaderStyle(),
+        ).pages
+
+        assertTrue(pages.size > 1)
+        assertTrue(pages.first().lines.any { it.isChapterTitle && it.text.contains("第二百三十三章") })
+        assertEquals(0, pages.drop(1).flatMap { it.lines }.count { it.isChapterTitle })
+        assertEquals(paragraphs.joinToString("") { it.text }, pages.flatMap { it.lines }.filterNot { it.isChapterTitle }.joinToString("") { it.text })
+    }
+
+    @Test
+    fun existingChapterTitleParagraphIsRenderedOnce() {
+        val text = "第二百三十三章 借力打力\n正文第一段。\n正文第二段。"
+        val paragraphs = BookTextNormalizer().normalize(text)
+        val pages = PaintReaderLayoutEngine().paginate(
+            0,
+            "第二百三十三章 借力打力",
+            paragraphs,
+            ReaderViewport(576, 1280, 1f, 1f),
+            ReaderPreferences(firstLineIndent = false).toReaderStyle(),
+        ).pages
+        val titleLines = pages.flatMap { it.lines }.filter { it.isChapterTitle }
+
+        assertEquals(1, titleLines.size)
+        assertEquals("第二百三十三章 借力打力", titleLines.single().text)
+        assertEquals("正文第一段。正文第二段。", pages.flatMap { it.lines }.filterNot { it.isChapterTitle }.joinToString("") { it.text })
     }
 
     @Test
@@ -68,7 +129,7 @@ class ReaderCoreInstrumentedTest {
         }
         assertTrue("分页耗时 ${elapsed}ms", elapsed < 10_000)
         val normalizedText = BookTextNormalizer().normalize(text).joinToString("") { it.text }
-        assertEquals(normalizedText, pages.flatMap { it.lines }.joinToString("") { it.text })
+        assertEquals(normalizedText, pages.flatMap { it.lines }.filterNot { it.isChapterTitle }.joinToString("") { it.text })
     }
 
     @Test

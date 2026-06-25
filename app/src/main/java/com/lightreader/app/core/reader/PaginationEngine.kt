@@ -39,21 +39,30 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
         val contentRight = contentLeft + centeredContentWidth
         val contentTop = max(
             style.verticalPaddingTopDp * viewport.density,
-            viewport.safeTopPx + 64f * viewport.density,
+            viewport.safeTopPx + HEADER_SAFE_RESERVE_DP * viewport.density,
         )
         val bottomReserved = max(
             style.verticalPaddingBottomDp * viewport.density,
-            viewport.safeBottomPx + 64f * viewport.density,
+            viewport.safeBottomPx + FOOTER_SAFE_RESERVE_DP * viewport.density,
         )
         val contentBottom = viewport.heightPx - bottomReserved
         val contentWidth = (contentRight - contentLeft).coerceAtLeast(1f)
         val contentHeight = (contentBottom - contentTop).coerceAtLeast(1f)
         val paint = createPaint(style, viewport)
+        val titlePaint = createPaint(style, viewport).apply {
+            textSize = style.fontSizeSp * viewport.scaledDensity * TITLE_TEXT_SCALE
+            typeface = Typeface.create(typeface, Typeface.BOLD)
+        }
         val fontMetrics = paint.fontMetrics
         val fontHeight = fontMetrics.descent - fontMetrics.ascent
         val requestedLineHeight = style.fontSizeSp * viewport.scaledDensity * style.lineHeightMultiplier
         val lineHeight = max(fontHeight, requestedLineHeight).coerceAtMost(contentHeight)
         val baselineOffset = ((lineHeight - fontHeight) / 2f) - fontMetrics.ascent
+        val titleFontMetrics = titlePaint.fontMetrics
+        val titleFontHeight = titleFontMetrics.descent - titleFontMetrics.ascent
+        val titleLineHeight = max(titleFontHeight, titlePaint.textSize * TITLE_LINE_HEIGHT_MULTIPLIER).coerceAtMost(contentHeight)
+        val titleBaselineOffset = ((titleLineHeight - titleFontHeight) / 2f) - titleFontMetrics.ascent
+        val titleBottomSpacing = TITLE_BOTTOM_SPACING_DP * viewport.density
         val paragraphSpacing = style.paragraphSpacingDp * viewport.density
         val indent = style.firstLineIndentEm * style.fontSizeSp * viewport.scaledDensity
 
@@ -67,7 +76,47 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
             yTop = contentTop
         }
 
-        paragraphs.forEachIndexed { paragraphIndex, paragraph ->
+        val normalizedChapterTitle = chapterTitle.trim()
+        val firstParagraphIsTitle = paragraphs.firstOrNull()?.text?.trim() == normalizedChapterTitle
+        val bodyParagraphStartIndex = if (firstParagraphIsTitle) 1 else 0
+        val titleSourceStart = paragraphs.firstOrNull()?.sourceStart ?: 0
+        val titleSourceEnd = if (firstParagraphIsTitle) paragraphs.first().sourceEnd else titleSourceStart
+
+        fun appendChapterTitle() {
+            if (normalizedChapterTitle.isBlank()) return
+            var localStart = 0
+            var firstTitleLine = true
+            while (localStart < normalizedChapterTitle.length) {
+                var localEnd = findLineEnd(titlePaint, normalizedChapterTitle, localStart, contentWidth)
+                localEnd = adjustForChinesePunctuation(normalizedChapterTitle, localStart, localEnd)
+                if (localEnd <= localStart) localEnd = (localStart + 1).coerceAtMost(normalizedChapterTitle.length)
+                if (pageLines.isNotEmpty() && yTop + titleLineHeight > contentBottom + .5f) commitPage()
+                val lineText = normalizedChapterTitle.substring(localStart, localEnd)
+                pageLines += ReaderLine(
+                    text = lineText,
+                    paragraphIndex = -1,
+                    sourceStart = titleSourceStart,
+                    sourceEnd = titleSourceEnd,
+                    xOffsetPx = contentLeft,
+                    availableWidthPx = contentWidth,
+                    baselinePx = yTop + titleBaselineOffset,
+                    widthPx = titlePaint.measureText(lineText),
+                    lineHeightPx = titleLineHeight,
+                    isFirstLineOfParagraph = firstTitleLine,
+                    isLastLineOfParagraph = localEnd == normalizedChapterTitle.length,
+                    isChapterTitle = true,
+                )
+                yTop += titleLineHeight
+                localStart = localEnd
+                firstTitleLine = false
+            }
+            yTop += titleBottomSpacing
+        }
+
+        appendChapterTitle()
+
+        paragraphs.drop(bodyParagraphStartIndex).forEachIndexed { bodyIndex, paragraph ->
+            val paragraphIndex = bodyIndex + bodyParagraphStartIndex
             if (paragraph.text.isEmpty()) return@forEachIndexed
             var localStart = 0
             var firstLine = true
@@ -106,8 +155,9 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
             listOf(ReaderPage(chapterIndex, 0, chapterTitle, emptyList(), 0, 0, 0f))
         } else {
             pages.mapIndexed { pageIndex, lines ->
-                val startOffset = lines.first().sourceStart
-                val endOffset = lines.last().sourceEnd
+                val contentLines = lines.filterNot { it.isChapterTitle }
+                val startOffset = contentLines.firstOrNull()?.sourceStart ?: lines.first().sourceStart
+                val endOffset = contentLines.lastOrNull()?.sourceEnd ?: startOffset
                 ReaderPage(
                     chapterIndex = chapterIndex,
                     pageIndex = pageIndex,
@@ -166,6 +216,11 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
     }
 
     private companion object {
+        const val HEADER_SAFE_RESERVE_DP = 32f
+        const val FOOTER_SAFE_RESERVE_DP = 44f
+        const val TITLE_TEXT_SCALE = 1.45f
+        const val TITLE_LINE_HEIGHT_MULTIPLIER = 1.2f
+        const val TITLE_BOTTOM_SPACING_DP = 30f
         const val FORBIDDEN_LINE_START = "，。！？；：、”’）】》〉」』〕］｝…—·～"
         const val FORBIDDEN_LINE_END = "“‘（【《〈「『〔［｛"
         const val PAIRED_PUNCTUATION = "…—"

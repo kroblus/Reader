@@ -50,6 +50,19 @@ fun ReaderPageCanvas(
         textSize = 12f * density.density * density.fontScale
         typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
     }
+    val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = palette.foreground.toInt()
+        textSize = layoutPreferences.fontSizeSp * 1.45f * density.density * density.fontScale
+        typeface = Typeface.create(
+            when (layoutPreferences.fontFamily) {
+                FontFamilyOption.SYSTEM -> Typeface.DEFAULT
+                FontFamilyOption.SANS -> Typeface.SANS_SERIF
+                FontFamilyOption.SERIF -> Typeface.SERIF
+                FontFamilyOption.MONOSPACE -> Typeface.MONOSPACE
+            },
+            Typeface.BOLD,
+        )
+    }
     val horizontalPaddingPx = layoutPreferences.horizontalPaddingDp * density.density
 
     Canvas(
@@ -61,17 +74,18 @@ fun ReaderPageCanvas(
         drawIntoCanvas { canvas ->
             page.lines.forEach { line ->
                 val x = line.xOffsetPx
-                if (layoutPreferences.justified && !line.isLastLineOfParagraph && line.text.length > 1) {
+                val paint = if (line.isChapterTitle) titlePaint else textPaint
+                if (!line.isChapterTitle && layoutPreferences.justified && !line.isLastLineOfParagraph && line.text.length > 1) {
                     val targetWidth = line.availableWidthPx
                     val gap = ((targetWidth - line.widthPx) / (line.text.length - 1)).coerceAtLeast(0f)
                     var cursorX = x
                     line.text.forEach { character ->
                         val value = character.toString()
-                        canvas.nativeCanvas.drawText(value, cursorX, line.baselinePx, textPaint)
-                        cursorX += textPaint.measureText(value) + gap
+                        canvas.nativeCanvas.drawText(value, cursorX, line.baselinePx, paint)
+                        cursorX += paint.measureText(value) + gap
                     }
                 } else {
-                    canvas.nativeCanvas.drawText(line.text, x, line.baselinePx, textPaint)
+                    canvas.nativeCanvas.drawText(line.text, x, line.baselinePx, paint)
                 }
             }
 
