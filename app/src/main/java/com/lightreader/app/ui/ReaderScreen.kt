@@ -4,6 +4,13 @@ import android.content.pm.ActivityInfo
 import android.view.WindowManager
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -11,43 +18,55 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.FormatListBulleted
 import androidx.compose.material.icons.outlined.BookmarkAdd
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.Bookmarks
+import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -63,17 +82,27 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.lightreader.app.core.model.Bookmark
+import com.lightreader.app.core.model.Chapter
 import com.lightreader.app.core.model.PageTurnMode
 import com.lightreader.app.core.model.ReaderPreferences
 import com.lightreader.app.core.reader.palette
@@ -89,6 +118,7 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
     val state by viewModel.readerState.collectAsState()
     var showToc by remember { mutableStateOf(false) }
     var showBookmarks by remember { mutableStateOf(false) }
+    var tocAscending by remember { mutableStateOf(true) }
     var currentTime by remember { mutableStateOf(currentTime()) }
     val palette = preferences.palette()
     val background = Color(palette.background)
@@ -267,28 +297,39 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
             }
         }
 
-        AnimatedVisibility(state.toolbarVisible, Modifier.align(Alignment.TopCenter)) {
+        AnimatedVisibility(
+            visible = state.toolbarVisible,
+            modifier = Modifier.align(Alignment.TopCenter),
+            enter = slideInVertically(animationSpec = tween(140)) { -it } + fadeIn(tween(120)),
+            exit = slideOutVertically(animationSpec = tween(120)) { -it } + fadeOut(tween(100)),
+        ) {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .background(Color(palette.overlay))
+                    .background(Color(palette.overlay).copy(alpha = 1f))
                     .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(vertical = 4.dp),
+                    .padding(horizontal = 8.dp, vertical = 0.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = viewModel::goBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回", tint = foreground) }
+                IconButton(onClick = viewModel::goBack, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回", tint = foreground)
+                }
                 Text(
                     state.chapters.getOrNull(state.chapterIndex)?.title ?: state.book?.title.orEmpty(),
                     Modifier.weight(1f),
                     maxLines = 1,
                     color = foreground,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontFamily = FontFamily.SansSerif,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 15.sp,
+                    ),
                 )
-                IconButton(onClick = { showToc = true }, enabled = state.chapters.isNotEmpty() && !state.loading) {
-                    Icon(Icons.AutoMirrored.Outlined.FormatListBulleted, "目录", tint = foreground)
-                }
                 IconButton(
                     onClick = { state.book?.let { viewModel.navigate(AppScreen.Search(it.id)) } },
                     enabled = state.book != null && !state.loading,
+                    modifier = Modifier.size(40.dp),
                 ) { Icon(Icons.Outlined.Search, "搜索", tint = foreground) }
                 val currentPage = state.pages.getOrNull(state.pageIndex)
                 val currentChapter = state.chapters.getOrNull(state.chapterIndex)
@@ -296,7 +337,11 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                     it.chapterId == currentChapter.id && it.charOffset >= currentPage.startOffset &&
                         it.charOffset < currentPage.endOffset.coerceAtLeast(currentPage.startOffset + 1)
                 }
-                IconButton(onClick = viewModel::toggleCurrentPageBookmark, enabled = currentPage != null && !state.loading) {
+                IconButton(
+                    onClick = viewModel::toggleCurrentPageBookmark,
+                    enabled = currentPage != null && !state.loading,
+                    modifier = Modifier.size(40.dp),
+                ) {
                     Icon(
                         if (isBookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkAdd,
                         if (isBookmarked) "取消书签" else "添加书签",
@@ -306,72 +351,207 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
             }
         }
 
-        AnimatedVisibility(state.toolbarVisible, Modifier.align(Alignment.BottomCenter)) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .background(Color(palette.overlay))
-                    .windowInsetsPadding(WindowInsets.navigationBars)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = { showBookmarks = true }, enabled = state.book != null && !state.loading) {
-                    Icon(Icons.Outlined.Bookmarks, "书签", tint = foreground)
-                }
-                IconButton(onClick = viewModel::toggleAutoReading, enabled = state.pages.isNotEmpty() && !state.loading) {
-                    Icon(
-                        if (state.autoReading) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                        if (state.autoReading) "暂停自动阅读" else "开始自动阅读",
-                        tint = foreground,
-                    )
-                }
-                Text(
-                    "${state.chapterIndex + 1}/${state.chapters.size} · ${state.pageIndex + 1}/${state.pages.size}",
-                    color = foreground,
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                IconButton(onClick = viewModel::showSettings) {
-                    Icon(Icons.Outlined.TextFields, "阅读设置", tint = foreground)
-                }
-            }
+        AnimatedVisibility(
+            visible = state.toolbarVisible && state.settingsVisible,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = slideInVertically(animationSpec = tween(150)) { it / 2 } + fadeIn(tween(120)),
+            exit = slideOutVertically(animationSpec = tween(130)) { it / 2 } + fadeOut(tween(100)),
+        ) {
+            ReaderSettingsDock(
+                preferences = preferences,
+                autoReading = state.autoReading,
+                onChange = viewModel::savePreferences,
+                onToggleAutoReading = viewModel::toggleAutoReading,
+                onOpenMoreSettings = viewModel::openReaderSettingsDetail,
+            )
         }
-    }
 
-    if (showToc) {
-        AlertDialog(
-            onDismissRequest = { showToc = false },
-            title = { Text("目录") },
-            text = {
-                LazyColumn {
-                    items(state.chapters, key = { it.id }) { chapter ->
-                        ListItem(
-                            headlineContent = { Text(chapter.title, maxLines = 2) },
-                            supportingContent = { Text("${chapter.charCount} 字") },
-                            modifier = Modifier.clickable { viewModel.selectChapter(chapter.orderIndex); showToc = false },
-                        )
-                    }
-                }
+        AnimatedVisibility(
+            visible = state.toolbarVisible,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = slideInVertically(animationSpec = tween(140)) { it } + fadeIn(tween(120)),
+            exit = slideOutVertically(animationSpec = tween(120)) { it } + fadeOut(tween(100)),
+        ) {
+            ReaderBottomControls(
+                state = state,
+                preferences = preferences,
+                viewModel = viewModel,
+                onShowToc = { showToc = true },
+                onShowBookmarks = { showBookmarks = true },
+            )
+        }
+
+        ChapterListOverlay(
+            visible = showToc,
+            state = state,
+            preferences = preferences,
+            ascending = tocAscending,
+            onToggleSort = { tocAscending = !tocAscending },
+            onDismiss = { showToc = false },
+            onSelectChapter = { chapter ->
+                viewModel.selectChapter(chapter.orderIndex)
+                showToc = false
             },
-            confirmButton = { TextButton(onClick = { showToc = false }) { Text("关闭") } },
         )
-    }
-    if (showBookmarks) {
-        BookmarksDialog(
-            state.bookmarks,
+        BookmarksOverlay(
+            visible = showBookmarks,
+            state = state,
+            preferences = preferences,
             onDismiss = { showBookmarks = false },
             onJump = { viewModel.jumpToBookmark(it); showBookmarks = false },
             onDelete = viewModel::deleteBookmark,
         )
     }
-    if (state.settingsVisible) {
-        ModalBottomSheet(
-            onDismissRequest = viewModel::hideSettings,
-            containerColor = Color(palette.overlay),
-            scrimColor = Color.Black.copy(alpha = .24f),
-        ) {
-            ReaderSettingsPanel(preferences, viewModel::savePreferences, viewModel::hideSettings)
+}
+
+@Composable
+private fun ReaderSettingsDock(
+    preferences: ReaderPreferences,
+    autoReading: Boolean,
+    onChange: (ReaderPreferences) -> Unit,
+    onToggleAutoReading: () -> Unit,
+    onOpenMoreSettings: () -> Unit,
+) {
+    val palette = preferences.palette()
+    Surface(
+        modifier = Modifier.fillMaxWidth().fillMaxHeight(.48f),
+        color = Color(palette.overlay).copy(alpha = .97f),
+        shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
+        shadowElevation = 4.dp,
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            HorizontalDivider(color = Color(palette.secondary).copy(alpha = .12f))
+            ReaderSettingsPanel(
+                value = preferences,
+                onChange = onChange,
+                autoReading = autoReading,
+                onToggleAutoReading = onToggleAutoReading,
+                onOpenMoreSettings = onOpenMoreSettings,
+                bottomPadding = 78.dp,
+            )
         }
+    }
+}
+
+@Composable
+private fun ReaderBottomControls(
+    state: ReaderUiState,
+    preferences: ReaderPreferences,
+    viewModel: MainViewModel,
+    onShowToc: () -> Unit,
+    onShowBookmarks: () -> Unit,
+) {
+    val palette = preferences.palette()
+    val foreground = Color(palette.foreground)
+    val secondary = Color(palette.secondary)
+    val current = state.pages.getOrNull(state.pageIndex)?.let { overallProgress(state, it.progressInChapter) } ?: 0f
+    var sliderValue by remember(state.chapterIndex, state.pageIndex) { mutableFloatStateOf(current) }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color(palette.overlay).copy(alpha = 1f),
+        shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
+        shadowElevation = 8.dp,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 3.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth().height(34.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(
+                    onClick = viewModel::previousChapter,
+                    enabled = state.chapterIndex > 0 && !state.loading,
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                ) {
+                    Text(
+                        "上一章",
+                        color = if (state.chapterIndex > 0) foreground else secondary.copy(alpha = .45f),
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.SansSerif, fontSize = 12.sp),
+                    )
+                }
+                Slider(
+                    value = sliderValue,
+                    onValueChange = { sliderValue = it },
+                    onValueChangeFinished = { viewModel.jumpToProgress(sliderValue) },
+                    modifier = Modifier.weight(1f).height(32.dp),
+                    enabled = state.pages.isNotEmpty() && !state.loading,
+                    colors = SliderDefaults.colors(
+                        thumbColor = secondary,
+                        activeTrackColor = secondary,
+                        inactiveTrackColor = secondary.copy(alpha = .2f),
+                    ),
+                )
+                TextButton(
+                    onClick = viewModel::nextChapter,
+                    enabled = state.chapterIndex < state.chapters.lastIndex && !state.loading,
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                ) {
+                    Text(
+                        "下一章",
+                        color = if (state.chapterIndex < state.chapters.lastIndex) foreground else secondary.copy(alpha = .45f),
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.SansSerif, fontSize = 12.sp),
+                    )
+                }
+            }
+            Text(
+                "全书 ${(sliderValue * 100).coerceIn(0f, 100f).toInt()}% · 本章 ${state.pageIndex + 1}/${state.pages.size.coerceAtLeast(1)}",
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+                color = secondary,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontFamily = FontFamily.SansSerif,
+                    fontSize = 11.sp,
+                    lineHeight = 13.sp,
+                ),
+            )
+            Spacer(Modifier.height(2.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceAround,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ReaderAction(Icons.AutoMirrored.Outlined.FormatListBulleted, "目录", foreground, onShowToc)
+                ReaderAction(Icons.Outlined.DarkMode, "夜间", foreground, viewModel::toggleNightMode)
+                ReaderAction(Icons.Outlined.TextFields, "设置", foreground, viewModel::toggleSettings, "阅读设置")
+                ReaderAction(
+                    if (state.autoReading) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                    if (state.autoReading) "暂停" else "自动",
+                    foreground,
+                    viewModel::toggleAutoReading,
+                )
+                ReaderAction(Icons.Outlined.Bookmarks, "书签", foreground, onShowBookmarks)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderAction(
+    icon: ImageVector,
+    label: String,
+    tint: Color,
+    onClick: () -> Unit,
+    contentDescription: String = label,
+) {
+    Column(
+        modifier = Modifier.width(54.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        IconButton(onClick = onClick, Modifier.size(34.dp)) {
+            Icon(icon, contentDescription, modifier = Modifier.size(22.dp), tint = tint)
+        }
+        Text(
+            label,
+            color = tint,
+            maxLines = 1,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontFamily = FontFamily.SansSerif,
+                fontSize = 11.sp,
+                lineHeight = 13.sp,
+            ),
+        )
     }
 }
 
@@ -432,27 +612,288 @@ private fun overallProgress(state: ReaderUiState, chapterProgress: Float): Float
 private fun currentTime(): String = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
 
 @Composable
-private fun BookmarksDialog(
-    bookmarks: List<Bookmark>,
+private fun ChapterListOverlay(
+    visible: Boolean,
+    state: ReaderUiState,
+    preferences: ReaderPreferences,
+    ascending: Boolean,
+    onToggleSort: () -> Unit,
+    onDismiss: () -> Unit,
+    onSelectChapter: (Chapter) -> Unit,
+) {
+    val chapters = remember(state.chapters, ascending) {
+        if (ascending) state.chapters else state.chapters.asReversed()
+    }
+    val currentIndex = chapters.indexOfFirst { it.orderIndex == state.chapterIndex }.coerceAtLeast(0)
+    val centeredFirstVisible = (currentIndex - 7).coerceIn(0, (chapters.size - 1).coerceAtLeast(0))
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = centeredFirstVisible)
+    LaunchedEffect(visible, currentIndex, chapters.size) {
+        if (visible && chapters.isNotEmpty()) {
+            listState.scrollToItem(centeredFirstVisible)
+        }
+    }
+    val palette = preferences.palette()
+    val foreground = Color(palette.foreground)
+    val secondary = Color(palette.secondary)
+    val readPercent = ((state.pages.getOrNull(state.pageIndex)?.progressInChapter ?: 0f) * 100)
+        .toInt()
+        .coerceIn(0, 100)
+
+    ReaderListOverlay(
+        visible = visible,
+        title = "目录",
+        preferences = preferences,
+        onDismiss = onDismiss,
+        action = {
+            TextButton(
+                onClick = onToggleSort,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            ) {
+                Text(
+                    if (ascending) "正序" else "倒序",
+                    color = foreground,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontFamily = FontFamily.SansSerif,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                )
+            }
+        },
+    ) {
+        LazyColumn(Modifier.fillMaxSize(), state = listState) {
+            items(chapters, key = { it.id }) { chapter ->
+                val selected = chapter.orderIndex == state.chapterIndex
+                ChapterOverlayRow(
+                    chapter = chapter,
+                    selected = selected,
+                    readPercent = readPercent,
+                    foreground = foreground,
+                    secondary = secondary,
+                    onClick = { onSelectChapter(chapter) },
+                )
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = 58.dp, end = 24.dp),
+                    color = secondary.copy(alpha = .055f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChapterOverlayRow(
+    chapter: Chapter,
+    selected: Boolean,
+    readPercent: Int,
+    foreground: Color,
+    secondary: Color,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 24.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(6.dp)
+                .clip(CircleShape)
+                .background(if (selected) foreground else Color.Transparent),
+        )
+        Spacer(Modifier.width(16.dp))
+        Text(
+            chapter.title,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = if (selected) foreground else secondary.copy(alpha = .72f),
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontFamily = FontFamily.SansSerif,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                fontSize = 15.sp,
+                lineHeight = 21.sp,
+            ),
+        )
+        if (selected) {
+            Spacer(Modifier.width(12.dp))
+            Text(
+                "已读$readPercent%",
+                color = foreground.copy(alpha = .72f),
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontFamily = FontFamily.SansSerif,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                ),
+            )
+        }
+    }
+}
+
+@Composable
+private fun BookmarksOverlay(
+    visible: Boolean,
+    state: ReaderUiState,
+    preferences: ReaderPreferences,
     onDismiss: () -> Unit,
     onJump: (Bookmark) -> Unit,
     onDelete: (String) -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("书签") },
-        text = {
-            if (bookmarks.isEmpty()) Text("还没有书签") else LazyColumn {
-                items(bookmarks, key = { it.id }) { bookmark ->
-                    ListItem(
-                        headlineContent = { Text(bookmark.excerpt, maxLines = 2) },
-                        trailingContent = { TextButton(onClick = { onDelete(bookmark.id) }) { Text("删除") } },
-                        modifier = Modifier.clickable { onJump(bookmark) },
+    val palette = preferences.palette()
+    val foreground = Color(palette.foreground)
+    val secondary = Color(palette.secondary)
+
+    ReaderListOverlay(
+        visible = visible,
+        title = "书签",
+        preferences = preferences,
+        onDismiss = onDismiss,
+    ) {
+        if (state.bookmarks.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    "还没有书签",
+                    color = secondary.copy(alpha = .74f),
+                    style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.SansSerif),
+                )
+            }
+        } else {
+            LazyColumn(Modifier.fillMaxSize()) {
+                items(state.bookmarks, key = { it.id }) { bookmark ->
+                    val chapterTitle = state.chapters.firstOrNull { it.id == bookmark.chapterId }?.title ?: "书签位置"
+                    BookmarkOverlayRow(
+                        bookmark = bookmark,
+                        chapterTitle = chapterTitle,
+                        foreground = foreground,
+                        secondary = secondary,
+                        onJump = { onJump(bookmark) },
+                        onDelete = { onDelete(bookmark.id) },
                     )
-                    HorizontalDivider()
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 30.dp, end = 28.dp),
+                        color = secondary.copy(alpha = .08f),
+                    )
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
-    )
+        }
+    }
+}
+
+@Composable
+private fun BookmarkOverlayRow(
+    bookmark: Bookmark,
+    chapterTitle: String,
+    foreground: Color,
+    secondary: Color,
+    onJump: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onJump).padding(start = 30.dp, end = 18.dp, top = 16.dp, bottom = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                bookmark.excerpt,
+                color = foreground.copy(alpha = .86f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontFamily = FontFamily.SansSerif,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 16.sp,
+                    lineHeight = 22.sp,
+                ),
+            )
+            Spacer(Modifier.height(5.dp))
+            Text(
+                chapterTitle,
+                color = secondary.copy(alpha = .72f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.SansSerif),
+            )
+        }
+        IconButton(onClick = onDelete, modifier = Modifier.size(38.dp)) {
+            Icon(
+                Icons.Outlined.DeleteOutline,
+                "删除书签",
+                modifier = Modifier.size(20.dp),
+                tint = secondary.copy(alpha = .82f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReaderListOverlay(
+    visible: Boolean,
+    title: String,
+    preferences: ReaderPreferences,
+    onDismiss: () -> Unit,
+    action: @Composable () -> Unit = {},
+    content: @Composable () -> Unit,
+) {
+    val palette = preferences.palette()
+    val foreground = Color(palette.foreground)
+    val secondary = Color(palette.secondary)
+    val outsideInteraction = remember { MutableInteractionSource() }
+    val cardInteraction = remember { MutableInteractionSource() }
+    val closeLayer = if (visible) {
+        Modifier
+            .semantics { contentDescription = "关闭浮层" }
+            .clickable(
+                interactionSource = outsideInteraction,
+                indication = null,
+                onClick = onDismiss,
+            )
+    } else {
+        Modifier
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize().then(closeLayer)) {
+        AnimatedVisibility(
+            visible = visible,
+            modifier = Modifier.align(Alignment.CenterStart),
+            enter = slideInHorizontally(animationSpec = tween(80)) { -it },
+            exit = slideOutHorizontally(animationSpec = tween(70)) { -it },
+        ) {
+            Surface(
+                modifier = Modifier
+                    .padding(start = 2.dp, top = 10.dp, bottom = 10.dp)
+                    .width(maxWidth * .88f)
+                    .fillMaxHeight(.96f)
+                    .clickable(
+                        interactionSource = cardInteraction,
+                        indication = null,
+                        onClick = {},
+                    ),
+                color = Color(palette.background),
+                shape = RoundedCornerShape(8.dp),
+                shadowElevation = 3.dp,
+            ) {
+                Column(Modifier.fillMaxSize()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 26.dp, end = 18.dp, top = 22.dp, bottom = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            title,
+                            modifier = Modifier.weight(1f),
+                            color = foreground,
+                            style = MaterialTheme.typography.headlineMedium.copy(
+                                fontFamily = FontFamily.SansSerif,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 24.sp,
+                                lineHeight = 29.sp,
+                            ),
+                        )
+                        action()
+                    }
+                    HorizontalDivider(color = secondary.copy(alpha = .12f))
+                    Box(Modifier.fillMaxSize()) {
+                        content()
+                    }
+                }
+            }
+        }
+    }
 }

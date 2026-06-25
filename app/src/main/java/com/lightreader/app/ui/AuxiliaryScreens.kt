@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -27,6 +27,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -35,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -52,8 +54,9 @@ fun SearchScreen(viewModel: MainViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
                 title = { Text("书内搜索") },
-                navigationIcon = { IconButton(onClick = viewModel::goBack) { Icon(Icons.Outlined.ArrowBack, "返回") } },
+                navigationIcon = { IconButton(onClick = viewModel::goBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") } },
             )
         },
     ) { padding ->
@@ -102,8 +105,9 @@ fun WebImportScreen(tasks: List<DownloadTaskEntity>, viewModel: MainViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
                 title = { Text("网页小说") },
-                navigationIcon = { IconButton(onClick = viewModel::goBack) { Icon(Icons.Outlined.ArrowBack, "返回") } },
+                navigationIcon = { IconButton(onClick = viewModel::goBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") } },
                 actions = { IconButton(onClick = { viewModel.navigate(AppScreen.ApiSettings) }) { Icon(Icons.Outlined.Key, "API Key") } },
             )
         },
@@ -185,8 +189,9 @@ fun ApiSettingsScreen(viewModel: MainViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
                 title = { Text("DeepSeek 设置") },
-                navigationIcon = { IconButton(onClick = viewModel::goBack) { Icon(Icons.Outlined.ArrowBack, "返回") } },
+                navigationIcon = { IconButton(onClick = viewModel::goBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") } },
             )
         },
     ) { padding ->

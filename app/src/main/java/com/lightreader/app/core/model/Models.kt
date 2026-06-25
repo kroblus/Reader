@@ -50,22 +50,25 @@ data class SearchResult(
     val charOffset: Int = 0,
 )
 
-enum class ReaderTheme { EYE_CARE, SEPIA, LIGHT_GRAY, WARM_BROWN, NIGHT, CUSTOM }
+enum class ReaderTheme { EYE_CARE, SEPIA, LIGHT_GRAY, WARM_BROWN, FROST_BLUE, SAKURA_PINK, NIGHT, CUSTOM }
+enum class AppSkin { MINT, OCEAN, APRICOT, SAKURA }
 enum class PageTurnMode { NONE, HORIZONTAL, SLIDE, VERTICAL, SIMULATION }
 enum class FontFamilyOption { SYSTEM, SANS, SERIF, MONOSPACE }
 
 data class ReaderPreferences(
+    val appSkin: AppSkin = AppSkin.MINT,
     val fontSizeSp: Float = 17f,
     val fontWeight: Int = 400,
     val lineSpacingMultiplier: Float = 1.75f,
     val paragraphSpacingDp: Float = 10f,
     val firstLineIndent: Boolean = true,
     val firstLineIndentEm: Float = 2f,
-    val horizontalPaddingDp: Float = 28f,
-    val verticalPaddingTopDp: Float = 64f,
-    val verticalPaddingBottomDp: Float = 56f,
+    val horizontalPaddingDp: Float = 20f,
+    val verticalPaddingTopDp: Float = 52f,
+    val verticalPaddingBottomDp: Float = 42f,
     val justified: Boolean = false,
     val theme: ReaderTheme = ReaderTheme.EYE_CARE,
+    val lastNonNightTheme: ReaderTheme = ReaderTheme.EYE_CARE,
     val customBackground: Long = 0xFFB8C9A7,
     val customForeground: Long = 0xFF26301F,
     val customSecondary: Long = 0xFF6F8063,

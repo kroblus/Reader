@@ -15,7 +15,9 @@ import androidx.compose.ui.test.click
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.lightreader.app.core.data.BookEntity
 import com.lightreader.app.core.data.ChapterEntity
+import com.lightreader.app.core.data.ReadingProgressEntity
 import com.lightreader.app.core.model.BookFormat
+import com.lightreader.app.core.model.ReaderPreferences
 import kotlinx.coroutines.runBlocking
 import org.junit.Before
 import org.junit.Rule
@@ -34,6 +36,16 @@ class ReaderUiInstrumentedTest {
     fun resetAppData() = runBlocking {
         application.container.database.clearAllTables()
         application.container.keyStore.clear()
+        application.container.settingsRepository.save(ReaderPreferences())
+    }
+
+    @Test
+    fun globalSkinCanBeChangedFromLibrary() {
+        composeRule.onNodeWithContentDescription("更换皮肤").performClick()
+        composeRule.onNodeWithText("换一种阅读心情").assertIsDisplayed()
+        composeRule.onNodeWithText("海盐蓝白").performClick()
+        composeRule.onNodeWithText("海盐蓝白").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("已选择").assertIsDisplayed()
     }
 
     @Test
@@ -74,15 +86,59 @@ class ReaderUiInstrumentedTest {
         composeRule.waitForIdle()
         composeRule.onAllNodesWithContentDescription("空白页面").assertCountEquals(0)
         composeRule.onNodeWithContentDescription("目录").assertIsDisplayed()
+
         composeRule.onNodeWithContentDescription("阅读设置").performClick()
         composeRule.mainClock.advanceTimeBy(500)
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("阅读设置").fetchSemanticsNode()
-        composeRule.mainClock.advanceTimeBy(4_000)
-        composeRule.onNodeWithContentDescription("目录").assertIsDisplayed()
-        composeRule.onNodeWithText("关闭").performClick()
+        composeRule.onNodeWithText("亮度").assertIsDisplayed()
+        composeRule.onNodeWithText("字号").assertIsDisplayed()
+        composeRule.onNodeWithText("背景").assertIsDisplayed()
+        composeRule.onNodeWithText("翻页").assertIsDisplayed()
+        composeRule.onNodeWithText("更多设置").assertIsDisplayed()
+        composeRule.onAllNodesWithContentDescription("阅读背景", substring = true).assertCountEquals(6)
+        composeRule.onAllNodesWithText("关闭").assertCountEquals(0)
+        composeRule.onAllNodesWithText("更多背景").assertCountEquals(0)
+        composeRule.onAllNodesWithText("极简").assertCountEquals(0)
+
+        composeRule.onRoot().performTouchInput { click(Offset(center.x, center.y)) }
         composeRule.mainClock.advanceTimeBy(500)
         composeRule.waitForIdle()
+        composeRule.onAllNodesWithText("亮度").assertCountEquals(0)
+        composeRule.onAllNodesWithContentDescription("目录").assertCountEquals(0)
+        composeRule.onRoot().performTouchInput { click(Offset(center.x, center.y)) }
+        composeRule.mainClock.advanceTimeBy(500)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("目录").assertIsDisplayed()
+        composeRule.onAllNodesWithText("亮度").assertCountEquals(0)
+
+        composeRule.onNodeWithContentDescription("阅读设置").performClick()
+        composeRule.mainClock.advanceTimeBy(500)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("更多设置").performClick()
+        composeRule.mainClock.advanceTimeBy(500)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("更多设置").assertIsDisplayed()
+        composeRule.onNodeWithText("排版").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("返回").performClick()
+        composeRule.mainClock.advanceTimeBy(500)
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithContentDescription("阅读设置").performClick()
+        composeRule.mainClock.advanceTimeBy(500)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("自动阅读").performClick()
+        composeRule.mainClock.advanceTimeBy(500)
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithContentDescription("目录").assertCountEquals(0)
+
+        composeRule.onRoot().performTouchInput { click(Offset(center.x, center.y)) }
+        composeRule.mainClock.advanceTimeBy(500)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("暂停").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("暂停").performClick()
+        composeRule.mainClock.advanceTimeBy(500)
+        composeRule.waitForIdle()
+
         composeRule.mainClock.advanceTimeBy(5_500)
         composeRule.waitForIdle()
         composeRule.onAllNodesWithContentDescription("目录").assertCountEquals(0)
@@ -92,15 +148,60 @@ class ReaderUiInstrumentedTest {
         composeRule.onNodeWithContentDescription("目录").assertIsDisplayed()
     }
 
-    private fun seedBook(title: String) = runBlocking {
+    @Test
+    fun readerDirectoryAndBookmarksUseUnifiedOverlay() {
+        seedBook("浮层测试小说", chapterCount = 260, progressChapterIndex = 234)
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("浮层测试小说").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("浮层测试小说").performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithContentDescription("目录").fetchSemanticsNodes().isNotEmpty()
+        }
+
+        composeRule.onNodeWithContentDescription("目录").performClick()
+        composeRule.onNodeWithText("正序").assertIsDisplayed()
+        composeRule.onNodeWithText("已读", substring = true).assertIsDisplayed()
+        composeRule.onAllNodesWithText("Chapter 235").assertCountEquals(2)
+        composeRule.onAllNodesWithText("Chapter 001").assertCountEquals(0)
+        composeRule.onNodeWithContentDescription("关闭浮层").performTouchInput { click(Offset(center.x * 1.9f, center.y)) }
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("正序").fetchSemanticsNodes().isEmpty()
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithContentDescription("书签").performClick()
+        composeRule.onNodeWithText("还没有书签").assertIsDisplayed()
+    }
+
+    private fun seedBook(title: String, chapterCount: Int = 1, progressChapterIndex: Int = 0) = runBlocking {
         val id = "ui-${System.nanoTime()}"
         val directory = java.io.File(application.filesDir, "books/$id/chapters").apply { mkdirs() }
-        val content = "第一章 入山\n" + "山中修行，自此开始。".repeat(200)
-        val chapterFile = java.io.File(directory, "00000.txt").apply { writeText(content) }
+        val chapters = (0 until chapterCount).map { index ->
+            val chapterTitle = if (chapterCount == 1) "第一章 入山" else "Chapter %03d".format(index + 1)
+            val content = "$chapterTitle\n" + "山中修行，自此开始。".repeat(200)
+            val chapterFile = java.io.File(directory, "%05d.txt".format(index)).apply { writeText(content) }
+            ChapterEntity(bookId = id, orderIndex = index, title = chapterTitle, contentPath = chapterFile.absolutePath, charCount = content.length)
+        }
         val now = System.currentTimeMillis()
-        application.container.database.readerDao().insertBookWithChapters(
-            BookEntity(id, title, null, BookFormat.TXT.name, directory.parentFile!!.absolutePath, now, null, content.length.toLong(), 1, null),
-            listOf(ChapterEntity(bookId = id, orderIndex = 0, title = "第一章 入山", contentPath = chapterFile.absolutePath, charCount = content.length)),
+        val chapterIds = application.container.database.readerDao().insertBookWithChapters(
+            BookEntity(id, title, null, BookFormat.TXT.name, directory.parentFile!!.absolutePath, now, null, chapters.sumOf { it.charCount.toLong() }, chapterCount, null),
+            chapters,
         )
+        val progressIndex = progressChapterIndex.coerceIn(0, chapterCount - 1)
+        if (progressIndex > 0) {
+            application.container.database.readerDao().saveProgress(
+                ReadingProgressEntity(
+                    bookId = id,
+                    chapterId = chapterIds[progressIndex],
+                    charOffset = 0,
+                    chapterIndex = progressIndex,
+                    pageIndex = 0,
+                    chapterTitle = chapters[progressIndex].title,
+                    styleHash = 0,
+                    updatedAt = now,
+                ),
+            )
+        }
     }
 }

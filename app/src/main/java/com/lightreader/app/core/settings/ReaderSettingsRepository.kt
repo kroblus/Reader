@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.lightreader.app.core.model.FontFamilyOption
+import com.lightreader.app.core.model.AppSkin
 import com.lightreader.app.core.model.PageTurnMode
 import com.lightreader.app.core.model.ReaderPreferences
 import com.lightreader.app.core.model.ReaderTheme
@@ -19,18 +20,37 @@ private val Context.readerDataStore by preferencesDataStore("reader_preferences"
 
 class ReaderSettingsRepository(private val context: Context) {
     val preferences: Flow<ReaderPreferences> = context.readerDataStore.data.map { values ->
+        val usesModernLayoutDefaults = (values[LAYOUT_DEFAULTS_VERSION] ?: 0) >= CURRENT_LAYOUT_DEFAULTS_VERSION
         ReaderPreferences(
+            appSkin = enumValue(values[APP_SKIN], AppSkin.MINT),
             fontSizeSp = values[FONT_SIZE] ?: 17f,
             fontWeight = values[FONT_WEIGHT] ?: 400,
             lineSpacingMultiplier = values[LINE_SPACING] ?: 1.75f,
             paragraphSpacingDp = values[PARAGRAPH_SPACING] ?: 10f,
             firstLineIndent = values[FIRST_INDENT] ?: true,
             firstLineIndentEm = values[FIRST_INDENT_EM] ?: 2f,
-            horizontalPaddingDp = values[H_PADDING] ?: 28f,
-            verticalPaddingTopDp = values[V_PADDING_TOP] ?: values[LEGACY_V_PADDING]?.plus(44f) ?: 64f,
-            verticalPaddingBottomDp = values[V_PADDING_BOTTOM] ?: values[LEGACY_V_PADDING]?.plus(36f) ?: 56f,
+            horizontalPaddingDp = migratedLayoutValue(
+                raw = values[H_PADDING],
+                usesModernDefaults = usesModernLayoutDefaults,
+                historicalDefault = HISTORICAL_HORIZONTAL_PADDING_DP,
+                newDefault = DEFAULT_HORIZONTAL_PADDING_DP,
+            ),
+            verticalPaddingTopDp = migratedLayoutValue(
+                raw = values[V_PADDING_TOP] ?: values[LEGACY_V_PADDING]?.plus(44f),
+                usesModernDefaults = usesModernLayoutDefaults,
+                historicalDefaults = listOf(HISTORICAL_VERTICAL_PADDING_TOP_DP, COMPACT_VERTICAL_PADDING_TOP_DP),
+                newDefault = DEFAULT_VERTICAL_PADDING_TOP_DP,
+            ),
+            verticalPaddingBottomDp = migratedLayoutValue(
+                raw = values[V_PADDING_BOTTOM] ?: values[LEGACY_V_PADDING]?.plus(36f),
+                usesModernDefaults = usesModernLayoutDefaults,
+                historicalDefaults = listOf(HISTORICAL_VERTICAL_PADDING_BOTTOM_DP, COMPACT_VERTICAL_PADDING_BOTTOM_DP),
+                newDefault = DEFAULT_VERTICAL_PADDING_BOTTOM_DP,
+            ),
             justified = values[JUSTIFIED] ?: false,
             theme = readerTheme(values[THEME]),
+            lastNonNightTheme = readerTheme(values[LAST_NON_NIGHT_THEME]).takeUnless { it == ReaderTheme.NIGHT }
+                ?: ReaderTheme.EYE_CARE,
             customBackground = values[CUSTOM_BG] ?: 0xFFB8C9A7,
             customForeground = values[CUSTOM_FG] ?: 0xFF26301F,
             customSecondary = values[CUSTOM_SECONDARY] ?: 0xFF6F8063,
@@ -50,6 +70,7 @@ class ReaderSettingsRepository(private val context: Context) {
 
     suspend fun save(value: ReaderPreferences) {
         context.readerDataStore.edit { values ->
+            values[APP_SKIN] = value.appSkin.name
             values[FONT_SIZE] = value.fontSizeSp
             values[FONT_WEIGHT] = value.fontWeight
             values[LINE_SPACING] = value.lineSpacingMultiplier
@@ -59,8 +80,10 @@ class ReaderSettingsRepository(private val context: Context) {
             values[H_PADDING] = value.horizontalPaddingDp
             values[V_PADDING_TOP] = value.verticalPaddingTopDp
             values[V_PADDING_BOTTOM] = value.verticalPaddingBottomDp
+            values[LAYOUT_DEFAULTS_VERSION] = CURRENT_LAYOUT_DEFAULTS_VERSION
             values[JUSTIFIED] = value.justified
             values[THEME] = value.theme.name
+            values[LAST_NON_NIGHT_THEME] = value.lastNonNightTheme.name
             values[CUSTOM_BG] = value.customBackground
             values[CUSTOM_FG] = value.customForeground
             values[CUSTOM_SECONDARY] = value.customSecondary
@@ -79,6 +102,7 @@ class ReaderSettingsRepository(private val context: Context) {
     }
 
     private companion object {
+        val APP_SKIN = stringPreferencesKey("app_skin")
         val FONT_SIZE = floatPreferencesKey("font_size")
         val FONT_WEIGHT = intPreferencesKey("font_weight")
         val LINE_SPACING = floatPreferencesKey("line_spacing")
@@ -89,8 +113,10 @@ class ReaderSettingsRepository(private val context: Context) {
         val V_PADDING_TOP = floatPreferencesKey("vertical_padding_top")
         val V_PADDING_BOTTOM = floatPreferencesKey("vertical_padding_bottom")
         val LEGACY_V_PADDING = floatPreferencesKey("vertical_padding")
+        val LAYOUT_DEFAULTS_VERSION = intPreferencesKey("layout_defaults_version")
         val JUSTIFIED = booleanPreferencesKey("justified")
         val THEME = stringPreferencesKey("theme")
+        val LAST_NON_NIGHT_THEME = stringPreferencesKey("last_non_night_theme")
         val CUSTOM_BG = longPreferencesKey("custom_background")
         val CUSTOM_FG = longPreferencesKey("custom_foreground")
         val CUSTOM_SECONDARY = longPreferencesKey("custom_secondary")
@@ -106,6 +132,15 @@ class ReaderSettingsRepository(private val context: Context) {
         val FONT_FAMILY = stringPreferencesKey("font_family")
         val PAGE_ANIMATION = stringPreferencesKey("page_animation")
         val PAGE_TURN_MODE = stringPreferencesKey("page_turn_mode")
+        const val CURRENT_LAYOUT_DEFAULTS_VERSION = 3
+        const val DEFAULT_HORIZONTAL_PADDING_DP = 20f
+        const val DEFAULT_VERTICAL_PADDING_TOP_DP = 52f
+        const val DEFAULT_VERTICAL_PADDING_BOTTOM_DP = 42f
+        const val HISTORICAL_HORIZONTAL_PADDING_DP = 28f
+        const val HISTORICAL_VERTICAL_PADDING_TOP_DP = 64f
+        const val HISTORICAL_VERTICAL_PADDING_BOTTOM_DP = 56f
+        const val COMPACT_VERTICAL_PADDING_TOP_DP = 48f
+        const val COMPACT_VERTICAL_PADDING_BOTTOM_DP = 48f
     }
 }
 
@@ -123,3 +158,21 @@ private fun pageTurnMode(raw: String?): PageTurnMode = when (raw) {
 
 private inline fun <reified T : Enum<T>> enumValue(raw: String?, fallback: T): T =
     raw?.let { runCatching { enumValueOf<T>(it) }.getOrNull() } ?: fallback
+
+internal fun migratedLayoutValue(
+    raw: Float?,
+    usesModernDefaults: Boolean,
+    historicalDefault: Float,
+    newDefault: Float,
+): Float = migratedLayoutValue(raw, usesModernDefaults, listOf(historicalDefault), newDefault)
+
+internal fun migratedLayoutValue(
+    raw: Float?,
+    usesModernDefaults: Boolean,
+    historicalDefaults: List<Float>,
+    newDefault: Float,
+): Float = when {
+    raw == null -> newDefault
+    !usesModernDefaults && historicalDefaults.any { kotlin.math.abs(raw - it) < 0.001f } -> newDefault
+    else -> raw
+}
