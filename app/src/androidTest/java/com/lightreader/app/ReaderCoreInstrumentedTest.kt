@@ -76,7 +76,7 @@ class ReaderCoreInstrumentedTest {
         assertEquals(20f, titleLine.xOffsetPx, .5f)
         assertEquals(20f, compactFirstLine.xOffsetPx, .5f)
         assertTrue(titleLine.baselinePx < compactFirstLine.baselinePx)
-        assertTrue(compactPages.flatMap { it.lines }.all { it.baselinePx < viewport.heightPx - 42f })
+        assertTrue(compactPages.flatMap { it.lines }.all { it.baselinePx < viewport.heightPx - 46f })
     }
 
     @Test

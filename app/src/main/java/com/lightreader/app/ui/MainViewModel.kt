@@ -52,6 +52,9 @@ data class ReaderUiState(
     val chapters: List<Chapter> = emptyList(),
     val chapterIndex: Int = 0,
     val pages: List<ReaderPage> = emptyList(),
+    val previousPreview: AdjacentChapterPreview? = null,
+    val nextPreview: AdjacentChapterPreview? = null,
+    val boundaryTurnRequest: BoundaryTurnRequest? = null,
     val pageIndex: Int = 0,
     val toolbarVisible: Boolean = true,
     val settingsVisible: Boolean = false,
@@ -62,6 +65,44 @@ data class ReaderUiState(
     val layoutVersion: Int = 0,
     val layoutPreferences: ReaderPreferences? = null,
 )
+
+data class AdjacentChapterPreview(
+    val chapterIndex: Int,
+    val page: ReaderPage,
+    val pageCount: Int,
+)
+
+data class BoundaryTurnRequest(
+    val next: Boolean,
+    val nonce: Long,
+    val sourceChapterIndex: Int,
+)
+
+internal class PendingPageTurnQueue(private val maxSize: Int = 3) {
+    var pendingDelta: Int = 0
+        private set
+
+    fun enqueue(next: Boolean) {
+        val delta = if (next) 1 else -1
+        pendingDelta = (pendingDelta + delta).coerceIn(-maxSize, maxSize)
+    }
+
+    fun poll(): Boolean? = when {
+        pendingDelta > 0 -> {
+            pendingDelta -= 1
+            true
+        }
+        pendingDelta < 0 -> {
+            pendingDelta += 1
+            false
+        }
+        else -> null
+    }
+
+    fun clear() {
+        pendingDelta = 0
+    }
+}
 
 data class SearchUiState(
     val query: String = "",
@@ -106,14 +147,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var loadedChapterId: Long? = null
     private var requestedOffset = 0
     private var currentLayoutFingerprint = 0
+    private var boundaryTurnNonce = 0L
+    private var boundaryCommitSourceChapterIndex: Int? = null
+    private var drainingQueuedTurns = false
+    private val pendingPageTurns = PendingPageTurnQueue()
     private var paginationJob: Job? = null
     private var prefetchJob: Job? = null
     private var bookmarkJob: Job? = null
     private val chapterContentCache = object : LinkedHashMap<ChapterContentCacheKey, ChapterContent>(6, .75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<ChapterContentCacheKey, ChapterContent>): Boolean = size > 6
     }
-    private val pageCache = object : LinkedHashMap<LayoutCacheKey, List<ReaderPage>>(4, .75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<LayoutCacheKey, List<ReaderPage>>): Boolean = size > 5
+    private val pageCache = object : LinkedHashMap<LayoutCacheKey, List<ReaderPage>>(8, .75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<LayoutCacheKey, List<ReaderPage>>): Boolean = size > 8
     }
 
     init {
@@ -162,8 +207,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun openReaderSettingsDetail() {
         val bookId = readerState.value.book?.id ?: return
         saveCurrentProgress()
-        setAutoReading(false)
-        readerState.value = readerState.value.copy(settingsVisible = false)
+        val state = readerState.value
+        readerState.value = state.copy(
+            settingsVisible = false,
+            toolbarVisible = if (state.autoReading) false else state.toolbarVisible,
+        )
         screen.value = AppScreen.ReaderSettingsDetail(bookId)
     }
 
@@ -175,6 +223,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         chapterParagraphs = emptyList()
         loadedChapterId = null
         currentLayoutFingerprint = 0
+        boundaryCommitSourceChapterIndex = null
+        pendingPageTurns.clear()
         setAutoReading(false)
         viewModelScope.launch {
             readerState.value = ReaderUiState(loading = true)
@@ -281,7 +331,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun prefetchAdjacent(chapterIndex: Int, preferences: ReaderPreferences) {
         val chapters = readerState.value.chapters
         val targetViewport = viewport
-        prefetchJob?.cancel()
         prefetchJob = viewModelScope.launch {
             listOf(chapterIndex + 1, chapterIndex - 1, chapterIndex + 2).filter { it in chapters.indices }.distinct().forEach { index ->
                 val chapter = chapters[index]
@@ -293,6 +342,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     pageCache[key] = pages
                 }
+                refreshAdjacentPreviews(preferences, targetViewport)
             }
         }
     }
@@ -321,17 +371,51 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val pageIndex = pageForOffset(pages, requestedOffset)
         val fingerprint = preferences.toReaderStyle().layoutFingerprint()
         currentLayoutFingerprint = fingerprint
+        boundaryCommitSourceChapterIndex = null
         readerState.value = readerState.value.copy(
             chapterIndex = chapterIndex,
             pages = pages,
+            previousPreview = null,
+            nextPreview = null,
+            boundaryTurnRequest = null,
             pageIndex = pageIndex,
             loading = false,
             error = null,
             layoutVersion = readerState.value.layoutVersion + if (fromCache) 0 else 1,
             layoutPreferences = preferences,
         )
+        refreshAdjacentPreviews(preferences)
         requestedOffset = 0
         saveCurrentProgress()
+        drainQueuedPageTurns()
+    }
+
+    private fun refreshAdjacentPreviews(
+        preferences: ReaderPreferences,
+        targetViewport: ReaderViewport = viewport,
+    ) {
+        if (targetViewport.widthPx <= 0 || targetViewport.heightPx <= 0) return
+        val state = readerState.value
+        val currentPreferences = state.layoutPreferences ?: uiState.value.preferences
+        if (targetViewport != viewport || currentPreferences.toReaderStyle().layoutFingerprint() != preferences.toReaderStyle().layoutFingerprint()) return
+        val previous = adjacentPreview(state, state.chapterIndex - 1, preferences, targetViewport, useLastPage = true)
+        val next = adjacentPreview(state, state.chapterIndex + 1, preferences, targetViewport, useLastPage = false)
+        if (state.previousPreview != previous || state.nextPreview != next) {
+            readerState.value = state.copy(previousPreview = previous, nextPreview = next)
+        }
+    }
+
+    private fun adjacentPreview(
+        state: ReaderUiState,
+        index: Int,
+        preferences: ReaderPreferences,
+        targetViewport: ReaderViewport,
+        useLastPage: Boolean,
+    ): AdjacentChapterPreview? {
+        val chapter = state.chapters.getOrNull(index) ?: return null
+        val pages = pageCache[layoutCacheKey(chapter, preferences, targetViewport)] ?: return null
+        val page = if (useLastPage) pages.lastOrNull() else pages.firstOrNull()
+        return page?.let { AdjacentChapterPreview(index, it, pages.size) }
     }
 
     private fun layoutCacheKey(
@@ -354,24 +438,133 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         saveCurrentProgress()
     }
 
-    fun nextPage() {
+    fun consumeBoundaryTurnRequest(nonce: Long) {
         val state = readerState.value
-        when {
-            state.pageIndex < state.pages.lastIndex -> pageSelected(state.pageIndex + 1)
-            state.chapterIndex < state.chapters.lastIndex -> selectChapter(state.chapterIndex + 1)
-            else -> setAutoReading(false)
+        if (state.boundaryTurnRequest?.nonce == nonce) {
+            readerState.value = state.copy(boundaryTurnRequest = null)
         }
     }
 
-    fun previousPage() {
+    fun commitAdjacentPreview(
+        next: Boolean,
+        nonce: Long? = null,
+        sourceChapterIndex: Int? = null,
+        targetChapterIndex: Int? = null,
+    ) {
         val state = readerState.value
+        val request = state.boundaryTurnRequest
+        if (nonce != null && request?.nonce != nonce) return
+        if (request != null && request.sourceChapterIndex != state.chapterIndex) return
+        if (nonce == null && (request != null || boundaryCommitSourceChapterIndex == state.chapterIndex)) return
+        if (nonce == null && sourceChapterIndex != null && sourceChapterIndex != state.chapterIndex) return
+        val targetNext = request?.next ?: next
+        val preview = if (targetNext) state.nextPreview else state.previousPreview
+        if (preview == null || preview.chapterIndex !in state.chapters.indices) return
+        if (nonce == null && targetChapterIndex != null && targetChapterIndex != preview.chapterIndex) return
+        saveCurrentProgress()
+        requestedOffset = preview.page.startOffset
+        boundaryCommitSourceChapterIndex = state.chapterIndex
+        readerState.value = state.copy(boundaryTurnRequest = null)
+        loadChapter(preview.chapterIndex)
+    }
+
+    fun nextPage() {
+        turnPage(next = true)
+    }
+
+    fun previousPage() {
+        turnPage(next = false)
+    }
+
+    private fun turnPage(next: Boolean) {
+        val state = readerState.value
+        if (state.boundaryTurnRequest != null || boundaryCommitSourceChapterIndex != null) {
+            pendingPageTurns.enqueue(next)
+            return
+        }
+        if (!performPageTurn(next)) pendingPageTurns.clear()
+    }
+
+    private fun performPageTurn(next: Boolean): Boolean {
+        val state = readerState.value
+        return if (next) {
+            performNextPageTurn(state)
+        } else {
+            performPreviousPageTurn(state)
+        }
+    }
+
+    private fun performNextPageTurn(state: ReaderUiState): Boolean {
         when {
-            state.pageIndex > 0 -> pageSelected(state.pageIndex - 1)
-            state.chapterIndex > 0 -> {
-                val previous = state.chapters[state.chapterIndex - 1]
-                requestedOffset = (previous.charCount - 1).coerceAtLeast(0)
-                loadChapter(state.chapterIndex - 1)
+            state.pageIndex < state.pages.lastIndex -> {
+                pageSelected(state.pageIndex + 1)
+                return true
             }
+            state.chapterIndex < state.chapters.lastIndex -> {
+                if (!requestBoundaryTurn(next = true)) selectChapter(state.chapterIndex + 1)
+                return true
+            }
+            else -> {
+                setAutoReading(false)
+                return false
+            }
+        }
+    }
+
+    private fun performPreviousPageTurn(state: ReaderUiState): Boolean {
+        when {
+            state.pageIndex > 0 -> {
+                pageSelected(state.pageIndex - 1)
+                return true
+            }
+            state.chapterIndex > 0 -> {
+                if (!requestBoundaryTurn(next = false)) {
+                    val previous = state.chapters[state.chapterIndex - 1]
+                    requestedOffset = (previous.charCount - 1).coerceAtLeast(0)
+                    loadChapter(state.chapterIndex - 1)
+                }
+                return true
+            }
+            else -> return false
+        }
+    }
+
+    private fun requestBoundaryTurn(next: Boolean): Boolean {
+        val state = readerState.value
+        val preferences = uiState.value.preferences
+        if (preferences.pageTurnMode == com.lightreader.app.core.model.PageTurnMode.NONE ||
+            preferences.pageTurnMode == com.lightreader.app.core.model.PageTurnMode.VERTICAL
+        ) {
+            return false
+        }
+        val preview = if (next) state.nextPreview else state.previousPreview
+        if (preview == null) return false
+        if (state.boundaryTurnRequest != null) return true
+        boundaryTurnNonce += 1
+        readerState.value = state.copy(boundaryTurnRequest = BoundaryTurnRequest(next, boundaryTurnNonce, state.chapterIndex))
+        return true
+    }
+
+    private fun drainQueuedPageTurns() {
+        if (drainingQueuedTurns) return
+        drainingQueuedTurns = true
+        try {
+            var consumed = 0
+            while (consumed < 3) {
+                val next = pendingPageTurns.poll() ?: break
+                if (readerState.value.boundaryTurnRequest != null || boundaryCommitSourceChapterIndex != null) {
+                    pendingPageTurns.enqueue(next)
+                    break
+                }
+                if (!performPageTurn(next)) {
+                    pendingPageTurns.clear()
+                    break
+                }
+                consumed += 1
+                if (readerState.value.boundaryTurnRequest != null || boundaryCommitSourceChapterIndex != null) break
+            }
+        } finally {
+            drainingQueuedTurns = false
         }
     }
 

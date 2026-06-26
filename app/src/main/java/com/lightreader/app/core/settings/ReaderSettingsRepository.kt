@@ -38,16 +38,24 @@ class ReaderSettingsRepository(private val context: Context) {
             verticalPaddingTopDp = migratedLayoutValue(
                 raw = values[V_PADDING_TOP] ?: values[LEGACY_V_PADDING]?.plus(44f),
                 usesModernDefaults = usesModernLayoutDefaults,
-                historicalDefaults = listOf(HISTORICAL_VERTICAL_PADDING_TOP_DP, COMPACT_VERTICAL_PADDING_TOP_DP),
+                historicalDefaults = listOf(
+                    HISTORICAL_VERTICAL_PADDING_TOP_DP,
+                    COMPACT_VERTICAL_PADDING_TOP_DP,
+                    TITLE_SPACING_VERTICAL_PADDING_TOP_DP,
+                ),
                 newDefault = DEFAULT_VERTICAL_PADDING_TOP_DP,
             ),
             verticalPaddingBottomDp = migratedLayoutValue(
                 raw = values[V_PADDING_BOTTOM] ?: values[LEGACY_V_PADDING]?.plus(36f),
                 usesModernDefaults = usesModernLayoutDefaults,
-                historicalDefaults = listOf(HISTORICAL_VERTICAL_PADDING_BOTTOM_DP, COMPACT_VERTICAL_PADDING_BOTTOM_DP),
+                historicalDefaults = listOf(
+                    HISTORICAL_VERTICAL_PADDING_BOTTOM_DP,
+                    COMPACT_VERTICAL_PADDING_BOTTOM_DP,
+                    TITLE_SPACING_VERTICAL_PADDING_BOTTOM_DP,
+                ),
                 newDefault = DEFAULT_VERTICAL_PADDING_BOTTOM_DP,
             ),
-            justified = values[JUSTIFIED] ?: false,
+            justified = migratedJustifiedValue(values[JUSTIFIED], usesModernLayoutDefaults),
             theme = readerTheme(values[THEME]),
             lastNonNightTheme = readerTheme(values[LAST_NON_NIGHT_THEME]).takeUnless { it == ReaderTheme.NIGHT }
                 ?: ReaderTheme.EYE_CARE,
@@ -132,15 +140,17 @@ class ReaderSettingsRepository(private val context: Context) {
         val FONT_FAMILY = stringPreferencesKey("font_family")
         val PAGE_ANIMATION = stringPreferencesKey("page_animation")
         val PAGE_TURN_MODE = stringPreferencesKey("page_turn_mode")
-        const val CURRENT_LAYOUT_DEFAULTS_VERSION = 3
+        const val CURRENT_LAYOUT_DEFAULTS_VERSION = 4
         const val DEFAULT_HORIZONTAL_PADDING_DP = 20f
-        const val DEFAULT_VERTICAL_PADDING_TOP_DP = 52f
-        const val DEFAULT_VERTICAL_PADDING_BOTTOM_DP = 42f
+        const val DEFAULT_VERTICAL_PADDING_TOP_DP = 46f
+        const val DEFAULT_VERTICAL_PADDING_BOTTOM_DP = 46f
         const val HISTORICAL_HORIZONTAL_PADDING_DP = 28f
         const val HISTORICAL_VERTICAL_PADDING_TOP_DP = 64f
         const val HISTORICAL_VERTICAL_PADDING_BOTTOM_DP = 56f
         const val COMPACT_VERTICAL_PADDING_TOP_DP = 48f
         const val COMPACT_VERTICAL_PADDING_BOTTOM_DP = 48f
+        const val TITLE_SPACING_VERTICAL_PADDING_TOP_DP = 52f
+        const val TITLE_SPACING_VERTICAL_PADDING_BOTTOM_DP = 42f
     }
 }
 
@@ -174,5 +184,11 @@ internal fun migratedLayoutValue(
 ): Float = when {
     raw == null -> newDefault
     !usesModernDefaults && historicalDefaults.any { kotlin.math.abs(raw - it) < 0.001f } -> newDefault
+    else -> raw
+}
+
+internal fun migratedJustifiedValue(raw: Boolean?, usesModernDefaults: Boolean): Boolean = when {
+    raw == null -> true
+    !usesModernDefaults && !raw -> true
     else -> raw
 }

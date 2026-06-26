@@ -216,8 +216,8 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
     }
 
     private companion object {
-        const val HEADER_SAFE_RESERVE_DP = 32f
-        const val FOOTER_SAFE_RESERVE_DP = 44f
+        const val HEADER_SAFE_RESERVE_DP = 20f
+        const val FOOTER_SAFE_RESERVE_DP = 22f
         const val TITLE_TEXT_SCALE = 1.45f
         const val TITLE_LINE_HEIGHT_MULTIPLIER = 1.2f
         const val TITLE_BOTTOM_SPACING_DP = 30f

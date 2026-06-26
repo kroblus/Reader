@@ -21,6 +21,7 @@ import com.lightreader.app.core.reader.palette
 @Composable
 fun ReaderPageCanvas(
     page: ReaderPage,
+    bookTitle: String,
     pageCount: Int,
     layoutPreferences: ReaderPreferences,
     displayPreferences: ReaderPreferences,
@@ -91,11 +92,11 @@ fun ReaderPageCanvas(
 
             if (displayPreferences.showHeader) {
                 val maxWidth = size.width - horizontalPaddingPx * 2f
-                val title = TextUtils.ellipsize(page.chapterTitle, secondaryPaint, maxWidth, TextUtils.TruncateAt.END).toString()
+                val title = TextUtils.ellipsize(readerHeaderTitle(page, bookTitle), secondaryPaint, maxWidth, TextUtils.TruncateAt.END).toString()
                 canvas.nativeCanvas.drawText(
                     title,
                     horizontalPaddingPx,
-                    safeTopPx + 22f * density.density,
+                    safeTopPx + HEADER_BASELINE_DP * density.density,
                     secondaryPaint,
                 )
             }
@@ -123,3 +124,12 @@ fun ReaderPageCanvas(
         }
     }
 }
+
+internal fun readerHeaderTitle(page: ReaderPage, bookTitle: String): String =
+    if (bookTitle.isNotBlank() && page.pageIndex == 0 && page.lines.any { it.isChapterTitle }) {
+        bookTitle
+    } else {
+        page.chapterTitle
+    }
+
+private const val HEADER_BASELINE_DP = 14f
