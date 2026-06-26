@@ -164,6 +164,8 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
             .background(background)
             .readerPageTapNavigation(
                 toolbarVisible = state.toolbarVisible,
+                settingsVisible = state.settingsVisible,
+                fullScreenTapNext = preferences.fullScreenTapNext,
                 onPrevious = viewModel::previousPage,
                 onNext = viewModel::nextPage,
                 onCenter = viewModel::toggleToolbar,
@@ -195,7 +197,15 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                 }
                 val previousOffset = if (displayedPages.firstOrNull()?.slot == ReaderPagerSlot.PREVIOUS_PREVIEW) 1 else 0
                 val targetPagerPage = (state.pageIndex + previousOffset).coerceIn(displayedPages.indices)
-                key(state.chapters.getOrNull(state.chapterIndex)?.id, state.layoutVersion, state.pages.size, previousOffset) {
+                key(
+                    state.chapters.getOrNull(state.chapterIndex)?.id,
+                    state.layoutVersion,
+                    state.pages.size,
+                    state.previousPreview?.chapterIndex,
+                    state.nextPreview?.chapterIndex,
+                    state.boundaryTurnRequest?.nonce,
+                    previousOffset,
+                ) {
                     val pagerState = rememberPagerState(targetPagerPage) { displayedPages.size }
                     LaunchedEffect(pagerState, displayedPages, state.boundaryTurnRequest) {
                         snapshotFlow { pagerState.currentPage to pagerState.isScrollInProgress }.distinctUntilChanged().collect { (pagerPage, scrolling) ->
@@ -203,16 +213,28 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                             when (val displayed = displayedPages.getOrNull(pagerPage)) {
                                 null -> Unit
                                 else -> when (displayed.slot) {
-                                    ReaderPagerSlot.PREVIOUS_PREVIEW -> viewModel.commitAdjacentPreview(
-                                        next = false,
-                                        sourceChapterIndex = state.chapterIndex,
-                                        targetChapterIndex = displayed.page.chapterIndex,
-                                    )
-                                    ReaderPagerSlot.NEXT_PREVIEW -> viewModel.commitAdjacentPreview(
-                                        next = true,
-                                        sourceChapterIndex = state.chapterIndex,
-                                        targetChapterIndex = displayed.page.chapterIndex,
-                                    )
+                                    ReaderPagerSlot.PREVIOUS_PREVIEW -> {
+                                        val request = state.boundaryTurnRequest
+                                        viewModel.commitAdjacentPreview(
+                                            next = false,
+                                            nonce = request?.takeIf {
+                                                !it.next && it.targetChapterIndex == displayed.page.chapterIndex
+                                            }?.nonce,
+                                            sourceChapterIndex = state.chapterIndex,
+                                            targetChapterIndex = displayed.page.chapterIndex,
+                                        )
+                                    }
+                                    ReaderPagerSlot.NEXT_PREVIEW -> {
+                                        val request = state.boundaryTurnRequest
+                                        viewModel.commitAdjacentPreview(
+                                            next = true,
+                                            nonce = request?.takeIf {
+                                                it.next && it.targetChapterIndex == displayed.page.chapterIndex
+                                            }?.nonce,
+                                            sourceChapterIndex = state.chapterIndex,
+                                            targetChapterIndex = displayed.page.chapterIndex,
+                                        )
+                                    }
                                     ReaderPagerSlot.CURRENT -> displayed.currentPageIndex?.let(viewModel::pageSelected)
                                 }
                             }
@@ -221,17 +243,40 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                     LaunchedEffect(state.boundaryTurnRequest, displayedPages) {
                         val request = state.boundaryTurnRequest ?: return@LaunchedEffect
                         val target = displayedPages.indexOfFirst {
-                            it.slot == if (request.next) ReaderPagerSlot.NEXT_PREVIEW else ReaderPagerSlot.PREVIOUS_PREVIEW
+                            it.slot == (if (request.next) ReaderPagerSlot.NEXT_PREVIEW else ReaderPagerSlot.PREVIOUS_PREVIEW) &&
+                                it.page.chapterIndex == request.targetChapterIndex
                         }
                         if (target >= 0) {
-                            pagerState.animateScrollToPage(target)
-                            viewModel.commitAdjacentPreview(request.next, request.nonce)
+                            try {
+                                pagerState.animateScrollToPage(target)
+                            } finally {
+                                if (pagerState.currentPage == target) {
+                                    viewModel.commitAdjacentPreview(request.next, request.nonce)
+                                }
+                            }
                         } else {
                             viewModel.consumeBoundaryTurnRequest(request.nonce)
                         }
                     }
+                    LaunchedEffect(
+                        state.boundaryTurnPhase,
+                        state.chapterIndex,
+                        state.pageIndex,
+                        targetPagerPage,
+                        displayedPages.size,
+                    ) {
+                        if (state.boundaryTurnPhase == BoundaryTurnPhase.SETTLING_CHAPTER &&
+                            targetPagerPage in 0 until displayedPages.size
+                        ) {
+                            if (pagerState.currentPage != targetPagerPage) {
+                                pagerState.scrollToPage(targetPagerPage)
+                            }
+                            viewModel.boundaryChapterSettled(state.chapterIndex)
+                        }
+                    }
                     LaunchedEffect(targetPagerPage, preferences.pageTurnMode, displayedPages.size) {
                         if (state.boundaryTurnRequest == null &&
+                            state.boundaryTurnPhase != BoundaryTurnPhase.SETTLING_CHAPTER &&
                             targetPagerPage in 0 until displayedPages.size &&
                             targetPagerPage != pagerState.currentPage
                         ) {
@@ -394,7 +439,7 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
             }
         }
 
-        Column(Modifier.align(Alignment.BottomCenter)) {
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().wrapContentHeight()) {
             AnimatedVisibility(
                 visible = state.toolbarVisible && state.settingsVisible,
                 enter = slideInVertically(animationSpec = tween(150)) { it / 2 } + fadeIn(tween(120)),
@@ -418,6 +463,7 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                     state = state,
                     preferences = preferences,
                     viewModel = viewModel,
+                    attachedToSettings = state.settingsVisible,
                     onShowToc = { showToc = true },
                     onShowBookmarks = { showBookmarks = true },
                 )
@@ -481,6 +527,7 @@ private fun ReaderBottomControls(
     state: ReaderUiState,
     preferences: ReaderPreferences,
     viewModel: MainViewModel,
+    attachedToSettings: Boolean,
     onShowToc: () -> Unit,
     onShowBookmarks: () -> Unit,
 ) {
@@ -493,7 +540,7 @@ private fun ReaderBottomControls(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = Color(palette.overlay).copy(alpha = 1f),
-        shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
+        shape = if (attachedToSettings) RoundedCornerShape(0.dp) else RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
         shadowElevation = 8.dp,
     ) {
         Column(
@@ -706,10 +753,12 @@ private fun currentTime(): String = LocalTime.now().format(DateTimeFormatter.ofP
 
 private fun Modifier.readerPageTapNavigation(
     toolbarVisible: Boolean,
+    settingsVisible: Boolean,
+    fullScreenTapNext: Boolean,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onCenter: () -> Unit,
-): Modifier = pointerInput(toolbarVisible, onPrevious, onNext, onCenter) {
+): Modifier = pointerInput(toolbarVisible, settingsVisible, fullScreenTapNext, onPrevious, onNext, onCenter) {
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
         val start = down.position
@@ -723,12 +772,40 @@ private fun Modifier.readerPageTapNavigation(
             pressed = change.pressed
         }
         if (maxDistance <= 18.dp.toPx()) {
-            when {
-                start.x in size.width * .3f..size.width * .7f && (!toolbarVisible || start.y in size.height * .14f..size.height * .78f) -> onCenter()
-                !toolbarVisible && start.x < size.width * .3f -> onPrevious()
-                !toolbarVisible && start.x > size.width * .7f -> onNext()
+            val xFraction = if (size.width > 0) start.x / size.width else .5f
+            val yFraction = if (size.height > 0) start.y / size.height else .5f
+            when (readerTapAction(xFraction, yFraction, toolbarVisible, settingsVisible, fullScreenTapNext)) {
+                ReaderTapAction.PREVIOUS -> onPrevious()
+                ReaderTapAction.NEXT -> onNext()
+                ReaderTapAction.MENU -> onCenter()
+                ReaderTapAction.NONE -> Unit
             }
         }
+    }
+}
+
+internal enum class ReaderTapAction { PREVIOUS, NEXT, MENU, NONE }
+
+internal fun readerTapAction(
+    xFraction: Float,
+    yFraction: Float,
+    toolbarVisible: Boolean,
+    settingsVisible: Boolean,
+    fullScreenTapNext: Boolean,
+): ReaderTapAction {
+    val x = xFraction.coerceIn(0f, 1f)
+    val y = yFraction.coerceIn(0f, 1f)
+    val menuStart = if (fullScreenTapNext) .42f else .3f
+    val menuEnd = if (fullScreenTapNext) .58f else .7f
+    if (toolbarVisible) {
+        val menuBottom = if (settingsVisible) .5f else .78f
+        return if (x in menuStart..menuEnd && y in 0.14f..menuBottom) ReaderTapAction.MENU else ReaderTapAction.NONE
+    }
+    return when {
+        x in menuStart..menuEnd -> ReaderTapAction.MENU
+        fullScreenTapNext -> ReaderTapAction.NEXT
+        x < menuStart -> ReaderTapAction.PREVIOUS
+        else -> ReaderTapAction.NEXT
     }
 }
 

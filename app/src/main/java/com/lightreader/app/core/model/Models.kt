@@ -83,6 +83,7 @@ data class ReaderPreferences(
     val volumeKeys: Boolean = true,
     val fontFamily: FontFamilyOption = FontFamilyOption.SERIF,
     val pageTurnMode: PageTurnMode = PageTurnMode.HORIZONTAL,
+    val fullScreenTapNext: Boolean = false,
 )
 
 enum class ParagraphType { NORMAL, TITLE }

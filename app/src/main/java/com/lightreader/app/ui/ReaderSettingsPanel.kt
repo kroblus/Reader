@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -166,18 +165,20 @@ fun ReaderSettingsPanel(
             DividerLine(secondary)
 
             Row(
-                Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 SettingsPill("护眼", value.theme == ReaderTheme.EYE_CARE, secondary, modifier = Modifier.weight(.82f)) {
                     onChange(value.copy(theme = ReaderTheme.EYE_CARE))
                 }
-                SettingsPill(if (autoReading) "停止自动" else "自动阅读", autoReading, secondary, modifier = Modifier.weight(1.3f)) {
+                SettingsPill(if (autoReading) "停止自动" else "自动阅读", autoReading, secondary, modifier = Modifier.weight(1.15f)) {
                     onToggleAutoReading?.invoke()
                 }
-                Spacer(Modifier.weight(1f))
-                SettingsPill("更多设置", false, secondary, modifier = Modifier.weight(1.35f), onClick = onOpenMoreSettings)
+                SettingsPill("全屏点击", value.fullScreenTapNext, secondary, modifier = Modifier.weight(1.25f)) {
+                    onChange(value.copy(fullScreenTapNext = !value.fullScreenTapNext))
+                }
+                SettingsPill("更多设置", false, secondary, modifier = Modifier.weight(1.25f), onClick = onOpenMoreSettings)
             }
         }
     }

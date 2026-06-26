@@ -73,6 +73,7 @@ class ReaderSettingsRepository(private val context: Context) {
             volumeKeys = values[VOLUME_KEYS] ?: true,
             fontFamily = enumValue(values[FONT_FAMILY], FontFamilyOption.SERIF),
             pageTurnMode = pageTurnMode(values[PAGE_TURN_MODE] ?: values[PAGE_ANIMATION]),
+            fullScreenTapNext = values[FULL_SCREEN_TAP_NEXT] ?: false,
         )
     }
 
@@ -106,6 +107,7 @@ class ReaderSettingsRepository(private val context: Context) {
             values[VOLUME_KEYS] = value.volumeKeys
             values[FONT_FAMILY] = value.fontFamily.name
             values[PAGE_TURN_MODE] = value.pageTurnMode.name
+            values[FULL_SCREEN_TAP_NEXT] = value.fullScreenTapNext
         }
     }
 
@@ -140,6 +142,7 @@ class ReaderSettingsRepository(private val context: Context) {
         val FONT_FAMILY = stringPreferencesKey("font_family")
         val PAGE_ANIMATION = stringPreferencesKey("page_animation")
         val PAGE_TURN_MODE = stringPreferencesKey("page_turn_mode")
+        val FULL_SCREEN_TAP_NEXT = booleanPreferencesKey("full_screen_tap_next")
         const val CURRENT_LAYOUT_DEFAULTS_VERSION = 4
         const val DEFAULT_HORIZONTAL_PADDING_DP = 20f
         const val DEFAULT_VERTICAL_PADDING_TOP_DP = 46f

@@ -94,6 +94,7 @@ class ReaderUiInstrumentedTest {
         composeRule.onNodeWithText("字号").assertIsDisplayed()
         composeRule.onNodeWithText("背景").assertIsDisplayed()
         composeRule.onNodeWithText("翻页").assertIsDisplayed()
+        composeRule.onNodeWithText("全屏点击").assertIsDisplayed()
         composeRule.onNodeWithText("更多设置").assertIsDisplayed()
         composeRule.onAllNodesWithContentDescription("阅读背景", substring = true).assertCountEquals(6)
         composeRule.onAllNodesWithText("关闭").assertCountEquals(0)

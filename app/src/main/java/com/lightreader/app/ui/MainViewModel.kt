@@ -21,6 +21,7 @@ import com.lightreader.app.core.reader.toReaderStyle
 import com.lightreader.app.core.settings.AiConfiguration
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -55,6 +56,7 @@ data class ReaderUiState(
     val previousPreview: AdjacentChapterPreview? = null,
     val nextPreview: AdjacentChapterPreview? = null,
     val boundaryTurnRequest: BoundaryTurnRequest? = null,
+    val boundaryTurnPhase: BoundaryTurnPhase = BoundaryTurnPhase.IDLE,
     val pageIndex: Int = 0,
     val toolbarVisible: Boolean = true,
     val settingsVisible: Boolean = false,
@@ -76,7 +78,10 @@ data class BoundaryTurnRequest(
     val next: Boolean,
     val nonce: Long,
     val sourceChapterIndex: Int,
+    val targetChapterIndex: Int,
 )
+
+enum class BoundaryTurnPhase { IDLE, ANIMATING_PREVIEW, COMMITTING_CHAPTER, SETTLING_CHAPTER }
 
 internal class PendingPageTurnQueue(private val maxSize: Int = 3) {
     var pendingDelta: Int = 0
@@ -367,27 +372,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         preferences: ReaderPreferences,
         fromCache: Boolean,
     ) {
-        if (readerState.value.chapters.getOrNull(chapterIndex)?.id != chapter.id) return
+        val beforeApply = readerState.value
+        if (beforeApply.chapters.getOrNull(chapterIndex)?.id != chapter.id) return
         val pageIndex = pageForOffset(pages, requestedOffset)
         val fingerprint = preferences.toReaderStyle().layoutFingerprint()
+        val settlingAfterBoundary = beforeApply.boundaryTurnPhase == BoundaryTurnPhase.COMMITTING_CHAPTER ||
+            boundaryCommitSourceChapterIndex != null
         currentLayoutFingerprint = fingerprint
-        boundaryCommitSourceChapterIndex = null
-        readerState.value = readerState.value.copy(
+        readerState.value = beforeApply.copy(
             chapterIndex = chapterIndex,
             pages = pages,
             previousPreview = null,
             nextPreview = null,
             boundaryTurnRequest = null,
+            boundaryTurnPhase = if (settlingAfterBoundary) BoundaryTurnPhase.SETTLING_CHAPTER else BoundaryTurnPhase.IDLE,
             pageIndex = pageIndex,
             loading = false,
             error = null,
-            layoutVersion = readerState.value.layoutVersion + if (fromCache) 0 else 1,
+            layoutVersion = beforeApply.layoutVersion + if (fromCache) 0 else 1,
             layoutPreferences = preferences,
         )
         refreshAdjacentPreviews(preferences)
         requestedOffset = 0
         saveCurrentProgress()
-        drainQueuedPageTurns()
+        if (settlingAfterBoundary) {
+            scheduleBoundarySettleFallback(chapterIndex)
+        } else {
+            drainQueuedPageTurns()
+        }
     }
 
     private fun refreshAdjacentPreviews(
@@ -441,7 +453,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun consumeBoundaryTurnRequest(nonce: Long) {
         val state = readerState.value
         if (state.boundaryTurnRequest?.nonce == nonce) {
-            readerState.value = state.copy(boundaryTurnRequest = null)
+            readerState.value = state.copy(
+                boundaryTurnRequest = null,
+                boundaryTurnPhase = BoundaryTurnPhase.IDLE,
+            )
+            drainQueuedPageTurns()
+        }
+    }
+
+    fun boundaryChapterSettled(chapterIndex: Int) {
+        val state = readerState.value
+        if (state.boundaryTurnPhase != BoundaryTurnPhase.SETTLING_CHAPTER || state.chapterIndex != chapterIndex) return
+        boundaryCommitSourceChapterIndex = null
+        readerState.value = state.copy(boundaryTurnPhase = BoundaryTurnPhase.IDLE)
+        drainQueuedPageTurns()
+    }
+
+    private fun scheduleBoundarySettleFallback(chapterIndex: Int) {
+        viewModelScope.launch {
+            delay(180)
+            val state = readerState.value
+            if (state.boundaryTurnPhase == BoundaryTurnPhase.SETTLING_CHAPTER && state.chapterIndex == chapterIndex) {
+                boundaryChapterSettled(chapterIndex)
+            }
         }
     }
 
@@ -455,16 +489,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val request = state.boundaryTurnRequest
         if (nonce != null && request?.nonce != nonce) return
         if (request != null && request.sourceChapterIndex != state.chapterIndex) return
-        if (nonce == null && (request != null || boundaryCommitSourceChapterIndex == state.chapterIndex)) return
+        if (nonce == null && (request != null || state.boundaryTurnPhase != BoundaryTurnPhase.IDLE || boundaryCommitSourceChapterIndex == state.chapterIndex)) return
         if (nonce == null && sourceChapterIndex != null && sourceChapterIndex != state.chapterIndex) return
         val targetNext = request?.next ?: next
         val preview = if (targetNext) state.nextPreview else state.previousPreview
         if (preview == null || preview.chapterIndex !in state.chapters.indices) return
+        if (request != null && request.targetChapterIndex != preview.chapterIndex) return
         if (nonce == null && targetChapterIndex != null && targetChapterIndex != preview.chapterIndex) return
         saveCurrentProgress()
         requestedOffset = preview.page.startOffset
         boundaryCommitSourceChapterIndex = state.chapterIndex
-        readerState.value = state.copy(boundaryTurnRequest = null)
+        readerState.value = state.copy(
+            boundaryTurnRequest = null,
+            boundaryTurnPhase = BoundaryTurnPhase.COMMITTING_CHAPTER,
+        )
         loadChapter(preview.chapterIndex)
     }
 
@@ -478,7 +516,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun turnPage(next: Boolean) {
         val state = readerState.value
-        if (state.boundaryTurnRequest != null || boundaryCommitSourceChapterIndex != null) {
+        if (state.boundaryTurnPhase != BoundaryTurnPhase.IDLE || state.boundaryTurnRequest != null || boundaryCommitSourceChapterIndex != null) {
             pendingPageTurns.enqueue(next)
             return
         }
@@ -541,8 +579,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (preview == null) return false
         if (state.boundaryTurnRequest != null) return true
         boundaryTurnNonce += 1
-        readerState.value = state.copy(boundaryTurnRequest = BoundaryTurnRequest(next, boundaryTurnNonce, state.chapterIndex))
+        readerState.value = state.copy(
+            boundaryTurnRequest = BoundaryTurnRequest(next, boundaryTurnNonce, state.chapterIndex, preview.chapterIndex),
+            boundaryTurnPhase = BoundaryTurnPhase.ANIMATING_PREVIEW,
+        )
+        scheduleBoundaryAnimationFallback(boundaryTurnNonce)
         return true
+    }
+
+    private fun scheduleBoundaryAnimationFallback(nonce: Long) {
+        viewModelScope.launch {
+            delay(700)
+            val request = readerState.value.boundaryTurnRequest
+            if (request?.nonce == nonce && readerState.value.boundaryTurnPhase == BoundaryTurnPhase.ANIMATING_PREVIEW) {
+                commitAdjacentPreview(request.next, nonce = nonce)
+            }
+        }
     }
 
     private fun drainQueuedPageTurns() {
@@ -552,7 +604,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             var consumed = 0
             while (consumed < 3) {
                 val next = pendingPageTurns.poll() ?: break
-                if (readerState.value.boundaryTurnRequest != null || boundaryCommitSourceChapterIndex != null) {
+                if (readerState.value.boundaryTurnPhase != BoundaryTurnPhase.IDLE ||
+                    readerState.value.boundaryTurnRequest != null ||
+                    boundaryCommitSourceChapterIndex != null
+                ) {
                     pendingPageTurns.enqueue(next)
                     break
                 }
@@ -561,7 +616,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     break
                 }
                 consumed += 1
-                if (readerState.value.boundaryTurnRequest != null || boundaryCommitSourceChapterIndex != null) break
+                if (readerState.value.boundaryTurnPhase != BoundaryTurnPhase.IDLE ||
+                    readerState.value.boundaryTurnRequest != null ||
+                    boundaryCommitSourceChapterIndex != null
+                ) break
             }
         } finally {
             drainingQueuedTurns = false
