@@ -568,7 +568,6 @@ private fun ReaderSettingsDock(
         shadowElevation = 4.dp,
     ) {
         Column(Modifier.fillMaxWidth().wrapContentHeight()) {
-            HorizontalDivider(color = Color(palette.secondary).copy(alpha = .12f))
             ReaderSettingsPanel(
                 value = preferences,
                 onChange = onChange,
