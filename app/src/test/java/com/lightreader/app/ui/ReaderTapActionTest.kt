@@ -53,10 +53,18 @@ class ReaderTapActionTest {
     }
 
     @Test
-    fun visibleSettingsPanelKeepsBottomOverlayFromBeingHandledAsBodyTap() {
+    fun visibleSettingsPanelUsesWholeExposedBodyAsDismissRegion() {
+        assertEquals(
+            ReaderTapAction.MENU,
+            readerTapAction(xFraction = .12f, yFraction = .45f, toolbarVisible = true, settingsVisible = true, fullScreenTapNext = true),
+        )
         assertEquals(
             ReaderTapAction.MENU,
             readerTapAction(xFraction = .5f, yFraction = .45f, toolbarVisible = true, settingsVisible = true, fullScreenTapNext = true),
+        )
+        assertEquals(
+            ReaderTapAction.MENU,
+            readerTapAction(xFraction = .88f, yFraction = .45f, toolbarVisible = true, settingsVisible = true, fullScreenTapNext = true),
         )
         assertEquals(
             ReaderTapAction.NONE,

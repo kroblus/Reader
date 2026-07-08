@@ -4,6 +4,40 @@
     <string name="brand_name">轻阅</string>
     <string name="brand_tagline_empty">慢一点，读得更深</string>
     <string name="brand_tagline_library">今天也留一点时间给故事</string>
+    <string-array name="brand_taglines">
+        <item>给下一页留一点安静。</item>
+        <item>慢慢读，故事会走得更远。</item>
+        <item>忙碌的一天，也可以有一格书架。</item>
+        <item>把短暂的停顿读成一章。</item>
+        <item>故事一直在，打开就能继续。</item>
+        <item>记住位置，也保留节奏。</item>
+        <item>让下一句话慢慢落下。</item>
+        <item>一章，也能改变今天的颜色。</item>
+        <item>用专注的速度读书。</item>
+        <item>轻一点的书架，本地一点的安心。</item>
+        <item>接上上次留下的线索。</item>
+        <item>页面很静，进度很清楚。</item>
+        <item>给这一页一点时间。</item>
+        <item>把书架带走，不带重量。</item>
+        <item>打开书，关掉噪声。</item>
+        <item>每一个书签，都是回来的路。</item>
+        <item>小屏幕，也能走很远。</item>
+        <item>让故事在行间呼吸。</item>
+        <item>找一页，配合此刻的心情。</item>
+        <item>读那些会留下来的句子。</item>
+        <item>用更安静的方式继续读。</item>
+        <item>轻到可以装进每个空隙。</item>
+        <item>回到那一章，它还在等你。</item>
+        <item>一个书架，很多安静的房间。</item>
+        <item>保存位置，顺着故事往前走。</item>
+        <item>让今天更适合阅读一点。</item>
+        <item>离线也能把故事握在手里。</item>
+        <item>每次打开，都是新的入口。</item>
+        <item>读得比滑动更深一点。</item>
+        <item>让一页文字重置节奏。</item>
+        <item>下一章，其实已经很近。</item>
+        <item>把故事留给那些安静的分钟。</item>
+    </string-array>
     <string name="action_back">返回</string>
     <string name="action_cancel">取消</string>
     <string name="action_delete">删除</string>
@@ -24,10 +58,26 @@
     <string name="state_selected">已选择</string>
     <string name="state_not_selected">未选择</string>
 
-    <string name="library_web_import">网页导入</string>
+    <string name="app_settings_title">应用设置</string>
+    <string name="app_settings_language">语言</string>
+    <string name="app_settings_appearance">外观</string>
+    <string name="app_settings_reading">阅读</string>
+    <string name="app_settings_reading_behavior">阅读行为</string>
+    <string name="app_settings_import_download">导入与下载</string>
+    <string name="app_settings_web_ai">网页与 AI</string>
+    <string name="app_settings_advanced_tools">高级工具</string>
+    <string name="language_system">跟随系统</string>
+    <string name="language_system_caption">使用 Android 系统语言。</string>
+    <string name="language_zh_cn">简体中文</string>
+    <string name="language_zh_cn_caption">轻阅内使用中文。</string>
+    <string name="language_en">English</string>
+    <string name="language_en_caption">轻阅内使用英文。</string>
+
+    <string name="library_web_import">从网页导入小说</string>
+    <string name="library_app_settings">应用设置</string>
     <string name="library_change_skin">更换皮肤</string>
-    <string name="library_deepseek_settings">DeepSeek 设置</string>
-    <string name="library_dom_bridge">DOM 桥接验证</string>
+    <string name="library_deepseek_settings">AI 下载设置</string>
+    <string name="library_dom_bridge">网页解析测试</string>
     <string name="library_import_novel">导入小说</string>
     <string name="library_my_shelf">我的书架</string>
     <string name="library_empty_title">书架还是空的</string>
@@ -38,9 +88,21 @@
     <string name="library_unknown_author">佚名</string>
     <string name="library_continue_reading">继续阅读 · %1$s</string>
     <string name="library_not_started">未开始 · %1$d 章 · %2$s</string>
+    <string name="library_recent_reading">最近阅读</string>
+    <string name="library_all_books">全部书籍</string>
+    <string name="library_current_chapter">当前：%1$s</string>
+    <string name="library_progress_percent">全书 %1$d%%</string>
+    <string name="library_ready_to_start">准备开始</string>
+    <string name="library_continue_button">继续阅读</string>
+    <string name="library_last_read_date">上次阅读 %1$s</string>
     <string name="library_cover_footer">LIGHT READER · %1$d</string>
     <string name="library_skin_title">换一种阅读心情</string>
     <string name="library_skin_body">皮肤会应用到书架和功能页面，正文背景仍可单独设置。</string>
+    <string name="library_book_actions">书籍操作</string>
+    <string name="library_edit_book_info">编辑书籍信息</string>
+    <string name="library_book_title">书名</string>
+    <string name="library_book_author">作者</string>
+    <string name="library_edit_title_required">书名不能为空。</string>
     <string name="skin_mint">薄荷绿白</string>
     <string name="skin_ocean">海盐蓝白</string>
     <string name="skin_apricot">奶杏白</string>
@@ -128,6 +190,8 @@
     <string name="reader_next_chapter">下一章</string>
     <string name="reader_progress">全书 %1$d%% · %2$s</string>
     <string name="reader_progress_state">全书 %1$d%%，%2$s</string>
+    <string name="reader_progress_chapter">第 %1$d 章 %2$d%%</string>
+    <string name="reader_footer_book_progress">全书 %1$d%%</string>
     <string name="reader_toc">目录</string>
     <string name="reader_night">夜间</string>
     <string name="reader_settings">设置</string>
@@ -147,6 +211,8 @@
     <string name="reader_toc_descending">倒序</string>
     <string name="reader_read_percent">已读 %1$d%%</string>
     <string name="reader_no_bookmarks">还没有书签</string>
+    <string name="reader_no_bookmarks_hint">阅读时点击右上角书签，可以保存当前页。</string>
+    <string name="reader_bookmark_meta">章节 %1$d%% · %2$s</string>
     <string name="reader_bookmark_position">书签位置</string>
     <string name="reader_delete_bookmark">删除书签</string>
     <string name="reader_close_overlay_background">关闭浮层背景</string>
@@ -239,6 +305,10 @@
     <string name="message_deepseek_failed">DeepSeek 连接失败</string>
     <string name="message_ai_advanced_saved">AI 高级设置已保存</string>
     <string name="message_ai_advanced_save_failed">无法保存 AI 高级设置</string>
+    <string name="message_book_info_saved">书籍信息已保存</string>
+    <string name="message_book_info_save_failed">无法保存书籍信息</string>
+    <string name="message_developer_tools_enabled">开发者工具已开启</string>
+    <string name="message_developer_tools_disabled">开发者工具已隐藏</string>
 
     <string name="dom_title">DOM 桥接验证</string>
     <string name="dom_waiting">等待页面加载</string>

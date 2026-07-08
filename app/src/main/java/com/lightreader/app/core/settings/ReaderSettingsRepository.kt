@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.lightreader.app.core.model.AppLanguage
 import com.lightreader.app.core.model.FontFamilyOption
 import com.lightreader.app.core.model.AppSkin
 import com.lightreader.app.core.model.PageTurnMode
@@ -24,6 +25,9 @@ class ReaderSettingsRepository(private val context: Context) {
         val usesModernLayoutDefaults = (values[LAYOUT_DEFAULTS_VERSION] ?: 0) >= CURRENT_LAYOUT_DEFAULTS_VERSION
         ReaderPreferences(
             appSkin = enumValue(values[APP_SKIN], AppSkin.MINT),
+            appLanguage = enumValue(values[APP_LANGUAGE], AppLanguage.SYSTEM),
+            libraryTaglineIndex = values[LIBRARY_TAGLINE_INDEX] ?: 0,
+            developerToolsEnabled = values[DEVELOPER_TOOLS_ENABLED] ?: false,
             layoutPreset = enumValue(values[LAYOUT_PRESET], ReaderLayoutPreset.COMFORT),
             fontSizeSp = values[FONT_SIZE] ?: DEFAULT_FONT_SIZE_SP,
             fontWeight = values[FONT_WEIGHT] ?: 400,
@@ -82,6 +86,9 @@ class ReaderSettingsRepository(private val context: Context) {
     suspend fun save(value: ReaderPreferences) {
         context.readerDataStore.edit { values ->
             values[APP_SKIN] = value.appSkin.name
+            values[APP_LANGUAGE] = value.appLanguage.name
+            values[LIBRARY_TAGLINE_INDEX] = value.libraryTaglineIndex
+            values[DEVELOPER_TOOLS_ENABLED] = value.developerToolsEnabled
             values[LAYOUT_PRESET] = value.layoutPreset.name
             values[FONT_SIZE] = value.fontSizeSp
             values[FONT_WEIGHT] = value.fontWeight
@@ -114,8 +121,17 @@ class ReaderSettingsRepository(private val context: Context) {
         }
     }
 
+    suspend fun saveLibraryTaglineIndex(index: Int) {
+        context.readerDataStore.edit { values ->
+            values[LIBRARY_TAGLINE_INDEX] = index.coerceAtLeast(0)
+        }
+    }
+
     private companion object {
         val APP_SKIN = stringPreferencesKey("app_skin")
+        val APP_LANGUAGE = stringPreferencesKey("app_language")
+        val LIBRARY_TAGLINE_INDEX = intPreferencesKey("library_tagline_index")
+        val DEVELOPER_TOOLS_ENABLED = booleanPreferencesKey("developer_tools_enabled")
         val LAYOUT_PRESET = stringPreferencesKey("reader_layout_preset")
         val FONT_SIZE = floatPreferencesKey("font_size")
         val FONT_WEIGHT = intPreferencesKey("font_weight")
@@ -147,13 +163,13 @@ class ReaderSettingsRepository(private val context: Context) {
         val PAGE_ANIMATION = stringPreferencesKey("page_animation")
         val PAGE_TURN_MODE = stringPreferencesKey("page_turn_mode")
         val FULL_SCREEN_TAP_NEXT = booleanPreferencesKey("full_screen_tap_next")
-        const val CURRENT_LAYOUT_DEFAULTS_VERSION = 4
-        const val DEFAULT_FONT_SIZE_SP = 17f
-        const val DEFAULT_LINE_SPACING = 1.75f
+        const val CURRENT_LAYOUT_DEFAULTS_VERSION = 5
+        const val DEFAULT_FONT_SIZE_SP = 18f
+        const val DEFAULT_LINE_SPACING = 1.78f
         const val DEFAULT_PARAGRAPH_SPACING_DP = 10f
-        const val DEFAULT_HORIZONTAL_PADDING_DP = 20f
-        const val DEFAULT_VERTICAL_PADDING_TOP_DP = 46f
-        const val DEFAULT_VERTICAL_PADDING_BOTTOM_DP = 46f
+        const val DEFAULT_HORIZONTAL_PADDING_DP = 30f
+        const val DEFAULT_VERTICAL_PADDING_TOP_DP = 56f
+        const val DEFAULT_VERTICAL_PADDING_BOTTOM_DP = 50f
         const val HISTORICAL_HORIZONTAL_PADDING_DP = 28f
         const val HISTORICAL_VERTICAL_PADDING_TOP_DP = 64f
         const val HISTORICAL_VERTICAL_PADDING_BOTTOM_DP = 56f

@@ -81,8 +81,8 @@ class ReaderCoreInstrumentedTest {
         val titleLine = compactPages.first().lines.first { it.isChapterTitle }
         val compactFirstLine = compactPages.first().lines.first { !it.isChapterTitle }
 
-        assertEquals(24f, titleLine.xOffsetPx, .5f)
-        assertEquals(24f, compactFirstLine.xOffsetPx, .5f)
+        assertEquals(30f, titleLine.xOffsetPx, .5f)
+        assertEquals(30f, compactFirstLine.xOffsetPx, .5f)
         assertTrue(titleLine.baselinePx < compactFirstLine.baselinePx)
         assertTrue(compactPages.flatMap { it.lines }.all { it.baselinePx < viewport.heightPx - 54f })
     }

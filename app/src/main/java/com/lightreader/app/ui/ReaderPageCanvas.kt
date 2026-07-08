@@ -22,6 +22,7 @@ import com.lightreader.app.core.model.ReaderPreferences
 import com.lightreader.app.core.reader.effectiveLayout
 import com.lightreader.app.core.reader.palette
 import com.lightreader.app.core.reader.toReaderStyle
+import kotlin.math.roundToInt
 
 @Composable
 fun ReaderPageCanvas(
@@ -40,6 +41,10 @@ fun ReaderPageCanvas(
     val palette = displayPreferences.palette()
     val layoutValues = layoutPreferences.effectiveLayout()
     val displayStyle = displayPreferences.toReaderStyle()
+    val footerProgressText = stringResource(
+        R.string.reader_footer_book_progress,
+        (overallProgress.coerceIn(0f, 1f) * 100f).roundToInt().coerceIn(0, 100),
+    )
     val textPaint = remember(layoutPreferences, density.density, density.fontScale) { TextPaint(Paint.ANTI_ALIAS_FLAG) }.apply {
         color = palette.foreground.toInt()
         textSize = layoutValues.fontSizeSp * density.density * density.fontScale
@@ -59,8 +64,8 @@ fun ReaderPageCanvas(
         typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
     }
     val titlePaint = remember(layoutPreferences, density.density, density.fontScale) { TextPaint(Paint.ANTI_ALIAS_FLAG) }.apply {
-        color = palette.foreground.toInt()
-        textSize = layoutValues.fontSizeSp * 1.45f * density.density * density.fontScale
+        color = (if (displayStyle.showHeader) palette.secondary else palette.foreground).toInt()
+        textSize = layoutValues.fontSizeSp * (if (displayStyle.showHeader) 1.16f else 1.38f) * density.density * density.fontScale
         typeface = Typeface.create(
             when (layoutPreferences.fontFamily) {
                 FontFamilyOption.SYSTEM -> Typeface.DEFAULT
@@ -111,8 +116,7 @@ fun ReaderPageCanvas(
 
             if (displayStyle.showFooter) {
                 val footerY = size.height - safeBottomPx - 16f * density.density
-                val progressText = "%.1f%%".format(overallProgress.coerceIn(0f, 1f) * 100f)
-                canvas.nativeCanvas.drawText(progressText, horizontalPaddingPx, footerY, secondaryPaint)
+                canvas.nativeCanvas.drawText(footerProgressText, horizontalPaddingPx, footerY, secondaryPaint)
                 val chapterPageText = "${page.pageIndex + 1}/${pageCount.coerceAtLeast(1)}"
                 val centerX = (size.width - secondaryPaint.measureText(chapterPageText)) / 2f
                 canvas.nativeCanvas.drawText(chapterPageText, centerX, footerY, secondaryPaint)
@@ -121,7 +125,7 @@ fun ReaderPageCanvas(
             }
 
             if (displayStyle.showRightProgressBar) {
-                val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = palette.secondary.toInt(); alpha = 58 }
+                val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = palette.secondary.toInt(); alpha = 82 }
                 val width = 3.5f * density.density
                 val top = safeTopPx + 8f * density.density
                 val bottom = size.height - safeBottomPx - 8f * density.density

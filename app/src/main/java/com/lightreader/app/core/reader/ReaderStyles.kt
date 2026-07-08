@@ -30,11 +30,11 @@ fun ReaderPreferences.toReaderStyle(): ReaderStyle = effectiveLayout().let { lay
 fun ReaderPreferences.effectiveLayout(): ReaderLayoutValues = when (layoutPreset) {
     ReaderLayoutPreset.COMFORT -> ReaderLayoutValues(
         fontSizeSp = 18f,
-        lineSpacingMultiplier = 1.86f,
-        paragraphSpacingDp = 12f,
-        horizontalPaddingDp = 24f,
+        lineSpacingMultiplier = 1.78f,
+        paragraphSpacingDp = 10f,
+        horizontalPaddingDp = 30f,
         verticalPaddingTopDp = 58f,
-        verticalPaddingBottomDp = 54f,
+        verticalPaddingBottomDp = 52f,
         maxContentWidthDp = 620f,
     )
     ReaderLayoutPreset.COMPACT -> ReaderLayoutValues(
@@ -50,9 +50,9 @@ fun ReaderPreferences.effectiveLayout(): ReaderLayoutValues = when (layoutPreset
         fontSizeSp = 18f,
         lineSpacingMultiplier = 1.74f,
         paragraphSpacingDp = 8f,
-        horizontalPaddingDp = 18f,
-        verticalPaddingTopDp = 28f,
-        verticalPaddingBottomDp = 26f,
+        horizontalPaddingDp = 28f,
+        verticalPaddingTopDp = 34f,
+        verticalPaddingBottomDp = 30f,
         maxContentWidthDp = 680f,
     )
     ReaderLayoutPreset.CUSTOM -> ReaderLayoutValues(
@@ -77,7 +77,7 @@ data class ReaderLayoutValues(
 )
 
 fun ReaderPreferences.palette(): ReaderPalette = when (theme) {
-    ReaderTheme.EYE_CARE -> ReaderPalette(0xFFB8C9A7, 0xFF1F2B1A, 0xFF5F7457, 0xE6C6D4B8)
+    ReaderTheme.EYE_CARE -> ReaderPalette(0xFFDDEBD2, 0xFF1F2A23, 0xFF5F8068, 0xE6F4FAF0)
     ReaderTheme.SEPIA -> ReaderPalette(0xFFF5ECD8, 0xFF2B2B2B, 0xFF8A7A5C, 0xE6EDE1C9)
     ReaderTheme.LIGHT_GRAY -> ReaderPalette(0xFFECEDE7, 0xFF2B2B2B, 0xFF777777, 0xE6E2E4DD)
     ReaderTheme.WARM_BROWN -> ReaderPalette(0xFFE5BE8D, 0xFF332719, 0xFF7C654A, 0xE6D7AC78)

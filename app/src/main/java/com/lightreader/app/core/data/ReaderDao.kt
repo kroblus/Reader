@@ -22,6 +22,9 @@ interface ReaderDao {
     @Update
     suspend fun updateBook(book: BookEntity)
 
+    @Query("UPDATE books SET title = :title, author = :author WHERE id = :id")
+    suspend fun updateBookMetadata(id: String, title: String, author: String?)
+
     @Query("DELETE FROM books WHERE id = :id")
     suspend fun deleteBookRow(id: String)
 
@@ -39,6 +42,22 @@ interface ReaderDao {
 
     @Query("SELECT * FROM reading_progress WHERE bookId = :bookId")
     suspend fun progress(bookId: String): ReadingProgressEntity?
+
+    @Query("""
+        SELECT reading_progress.bookId AS bookId,
+               reading_progress.chapterTitle AS chapterTitle,
+               reading_progress.chapterIndex AS chapterIndex,
+               reading_progress.charOffset AS charOffset,
+               reading_progress.updatedAt AS updatedAt,
+               COALESCE((
+                   SELECT SUM(chapters.charCount)
+                   FROM chapters
+                   WHERE chapters.bookId = reading_progress.bookId
+                     AND chapters.orderIndex < reading_progress.chapterIndex
+               ), 0) + reading_progress.charOffset AS readChars
+        FROM reading_progress
+    """)
+    fun observeShelfProgress(): Flow<List<ShelfProgressRow>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBookmark(bookmark: BookmarkEntity)
@@ -103,3 +122,12 @@ interface ReaderDao {
         return insertChapters(chapters)
     }
 }
+
+data class ShelfProgressRow(
+    val bookId: String,
+    val chapterTitle: String,
+    val chapterIndex: Int,
+    val charOffset: Int,
+    val updatedAt: Long,
+    val readChars: Long,
+)

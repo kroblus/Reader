@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import com.lightreader.app.R
 import com.lightreader.app.ReaderApplication
 import com.lightreader.app.core.data.DownloadTaskEntity
+import com.lightreader.app.core.data.ShelfBookProgress
+import com.lightreader.app.core.model.AppLanguage
 import com.lightreader.app.core.model.Book
 import com.lightreader.app.core.model.BookParagraph
 import com.lightreader.app.core.model.BookFormat
@@ -29,9 +31,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 sealed interface AppScreen {
     data object Library : AppScreen
@@ -41,16 +45,28 @@ sealed interface AppScreen {
     data object WebImport : AppScreen
     data object WebDomBridge : AppScreen
     data object ApiSettings : AppScreen
+    data object AppSettings : AppScreen
 }
 
 data class MainUiState(
     val books: List<Book> = emptyList(),
+    val shelfBooks: List<ShelfBookUi> = emptyList(),
     val preferences: ReaderPreferences = ReaderPreferences(),
     val tasks: List<DownloadTaskEntity> = emptyList(),
+    val libraryTaglineIndex: Int = 0,
     val screen: AppScreen = AppScreen.Library,
     val navigation: NavigationState = NavigationState(),
     val busy: BusyState = BusyState(),
-    val message: String? = null,
+    val message: UiText? = null,
+)
+
+data class ShelfBookUi(
+    val book: Book,
+    val currentChapterTitle: String?,
+    val chapterIndex: Int?,
+    val progressPercent: Int,
+    val started: Boolean,
+    val updatedAt: Long?,
 )
 
 data class NavigationState(
@@ -60,7 +76,7 @@ data class NavigationState(
 
 data class BusyState(
     val active: Boolean = false,
-    val message: String = "",
+    val message: UiText? = null,
 )
 
 data class ReaderUiState(
@@ -78,7 +94,7 @@ data class ReaderUiState(
     val overlay: ReaderOverlay = ReaderOverlay.NONE,
     val autoReading: Boolean = false,
     val loading: Boolean = false,
-    val error: String? = null,
+    val error: UiText? = null,
     val bookmarks: List<Bookmark> = emptyList(),
     val layoutVersion: Int = 0,
     val layoutPreferences: ReaderPreferences? = null,
@@ -137,7 +153,7 @@ data class WebImportUiState(
     val url: String = "",
     val loading: Boolean = false,
     val preview: WebBookPreview? = null,
-    val error: String? = null,
+    val error: UiText? = null,
     val hasApiKey: Boolean = false,
 )
 
@@ -152,12 +168,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val container = (application as ReaderApplication).container
     private val navigation = MutableStateFlow(NavigationState())
     private val busy = MutableStateFlow(BusyState())
-    private val message = MutableStateFlow<String?>(null)
+    private val message = MutableStateFlow<UiText?>(null)
     private val contentState = combine(
         container.bookRepository.books,
+        container.bookRepository.shelfProgress,
         container.settingsRepository.preferences,
         container.downloadRepository.tasks,
-    ) { books, preferences, tasks -> Triple(books, preferences, tasks) }
+    ) { books, progress, preferences, tasks ->
+        MainContentState(
+            books = books,
+            shelfBooks = buildShelfBooks(books, progress),
+            preferences = preferences,
+            tasks = tasks,
+        )
+    }
     private val chromeState = combine(
         navigation,
         busy,
@@ -165,9 +189,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) { currentNavigation, isBusy, currentMessage -> Triple(currentNavigation, isBusy, currentMessage) }
     val uiState: StateFlow<MainUiState> = combine(contentState, chromeState) { content, chrome ->
         MainUiState(
-            books = content.first,
-            preferences = content.second,
-            tasks = content.third,
+            books = content.books,
+            shelfBooks = content.shelfBooks,
+            preferences = content.preferences,
+            tasks = content.tasks,
+            libraryTaglineIndex = content.preferences.libraryTaglineIndex,
             screen = chrome.first.current,
             navigation = chrome.first,
             busy = chrome.second,
@@ -203,6 +229,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
+            val preferences = container.settingsRepository.preferences.first()
+            val taglineCount = getApplication<Application>().resources.getStringArray(R.array.brand_taglines).size
+            val nextIndex = nextTaglineIndex(preferences.libraryTaglineIndex, taglineCount)
+            if (nextIndex != preferences.libraryTaglineIndex) {
+                container.settingsRepository.saveLibraryTaglineIndex(nextIndex)
+            }
+        }
+        viewModelScope.launch {
             container.settingsRepository.preferences.collect { preferences ->
                 val fingerprint = preferences.toReaderStyle().layoutFingerprint()
                 if (readerState.value.book != null && viewport.widthPx > 0 && fingerprint != currentLayoutFingerprint) {
@@ -227,6 +261,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             container.bookRepository.deleteBook(id)
             message.value = text(R.string.message_deleted)
+        }
+    }
+
+    fun updateBookMetadata(bookId: String, title: String, author: String?) {
+        val normalizedTitle = title.trim()
+        if (normalizedTitle.isBlank()) {
+            message.value = text(R.string.library_edit_title_required)
+            return
+        }
+        viewModelScope.launch {
+            runCatching { container.bookRepository.updateBookMetadata(bookId, normalizedTitle, author) }
+                .onSuccess { updated ->
+                    readerState.value.book?.takeIf { it.id == updated.id }?.let {
+                        readerState.value = readerState.value.copy(book = updated)
+                    }
+                    message.value = text(R.string.message_book_info_saved)
+                }
+                .onFailure { message.value = text(R.string.message_book_info_save_failed) }
         }
     }
 
@@ -902,6 +954,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { container.settingsRepository.save(normalized) }
     }
 
+    fun saveAppLanguage(language: AppLanguage) {
+        savePreferences(uiState.value.preferences.copy(appLanguage = language))
+    }
+
+    fun toggleDeveloperTools() {
+        val preferences = uiState.value.preferences
+        val enabled = !preferences.developerToolsEnabled
+        savePreferences(preferences.copy(developerToolsEnabled = enabled))
+        message.value = text(if (enabled) R.string.message_developer_tools_enabled else R.string.message_developer_tools_disabled)
+    }
+
     fun toggleNightMode() {
         val preferences = uiState.value.preferences
         val updated = if (preferences.theme == ReaderTheme.NIGHT) {
@@ -1037,8 +1100,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         busy.value = BusyState()
     }
 
-    private fun text(@StringRes id: Int, vararg args: Any): String =
-        if (args.isEmpty()) getApplication<Application>().getString(id) else getApplication<Application>().getString(id, *args)
+    private fun text(@StringRes id: Int, vararg args: Any): UiText = uiText(id, *args)
+
+    private fun buildShelfBooks(
+        books: List<Book>,
+        progress: List<ShelfBookProgress>,
+    ): List<ShelfBookUi> {
+        val progressByBook = progress.associateBy { it.bookId }
+        return books.map { book ->
+            val current = progressByBook[book.id]
+            val progressPercent = current?.let {
+                if (book.totalChars > 0L) {
+                    ((it.readChars.toDouble() / book.totalChars.toDouble()) * 100.0)
+                        .roundToInt()
+                        .coerceIn(0, 100)
+                } else {
+                    0
+                }
+            } ?: 0
+            ShelfBookUi(
+                book = book,
+                currentChapterTitle = current?.chapterTitle,
+                chapterIndex = current?.chapterIndex,
+                progressPercent = progressPercent,
+                started = current != null,
+                updatedAt = current?.updatedAt ?: book.lastReadAt,
+            )
+        }
+    }
+
+    private data class MainContentState(
+        val books: List<Book>,
+        val shelfBooks: List<ShelfBookUi>,
+        val preferences: ReaderPreferences,
+        val tasks: List<DownloadTaskEntity>,
+    )
 
     private data class LayoutCacheKey(
         val bookId: String,

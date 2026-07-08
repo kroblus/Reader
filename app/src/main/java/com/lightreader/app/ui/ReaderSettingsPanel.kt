@@ -6,9 +6,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -69,6 +71,7 @@ fun ReaderSettingsPanel(
     value: ReaderPreferences,
     onChange: (ReaderPreferences) -> Unit,
     autoReading: Boolean = false,
+    progressSummary: String? = null,
     onToggleAutoReading: (() -> Unit)? = null,
     onOpenMoreSettings: () -> Unit,
     bottomPadding: Dp = 24.dp,
@@ -83,63 +86,67 @@ fun ReaderSettingsPanel(
             Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(start = 18.dp, end = 18.dp, top = 10.dp, bottom = bottomPadding),
+                .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = bottomPadding + 6.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            RowSetting(stringResource(R.string.settings_layout)) {
-                listOf(
-                    ReaderLayoutPreset.COMFORT,
-                    ReaderLayoutPreset.COMPACT,
-                    ReaderLayoutPreset.IMMERSIVE,
-                    ReaderLayoutPreset.CUSTOM,
-                ).forEach { preset ->
-                    val label = preset.label()
+            SettingsPanelSection(stringResource(R.string.settings_layout)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(
+                        ReaderLayoutPreset.COMFORT,
+                        ReaderLayoutPreset.COMPACT,
+                        ReaderLayoutPreset.IMMERSIVE,
+                        ReaderLayoutPreset.CUSTOM,
+                    ).forEach { preset ->
+                        val label = preset.label()
+                        SettingsPill(
+                            text = label,
+                            selected = value.layoutPreset == preset,
+                            primary = secondary,
+                            modifier = Modifier.weight(1f),
+                            contentDescription = stringResource(R.string.settings_layout_preset, label),
+                            onClick = {
+                                onChange(if (preset == ReaderLayoutPreset.CUSTOM) value.customLayout() else value.withPreset(preset))
+                            },
+                        )
+                    }
+                }
+            }
+
+            SettingsPanelSection(stringResource(R.string.settings_section_display)) {
+                CompactSettingRow(stringResource(R.string.settings_brightness)) {
+                    val brightnessState = if (value.brightness < 0f) {
+                        stringResource(R.string.settings_follow_system)
+                    } else {
+                        stringResource(R.string.settings_brightness_percent, (value.brightness * 100).roundToInt())
+                    }
+                    Slider(
+                        value = value.brightness.takeIf { it >= 0f } ?: .5f,
+                        onValueChange = { onChange(value.copy(brightness = it)) },
+                        enabled = value.brightness >= 0f,
+                        valueRange = .05f..1f,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(28.dp)
+                            .semantics { stateDescription = brightnessState },
+                        colors = readerSliderColors(secondary),
+                    )
                     SettingsPill(
-                        text = label,
-                        selected = value.layoutPreset == preset,
+                        text = stringResource(R.string.settings_follow_system),
+                        selected = value.brightness < 0f,
                         primary = secondary,
-                        modifier = Modifier.weight(1f),
-                        contentDescription = stringResource(R.string.settings_layout_preset, label),
-                        onClick = {
-                            onChange(if (preset == ReaderLayoutPreset.CUSTOM) value.customLayout() else value.withPreset(preset))
-                        },
+                        modifier = Modifier.width(100.dp),
+                        onClick = { onChange(value.copy(brightness = if (value.brightness < 0f) .5f else -1f)) },
                     )
                 }
             }
-            DividerLine(secondary)
 
-            RowSetting(stringResource(R.string.settings_brightness)) {
-                val brightnessState = if (value.brightness < 0f) {
-                    stringResource(R.string.settings_follow_system)
-                } else {
-                    stringResource(R.string.settings_brightness_percent, (value.brightness * 100).roundToInt())
-                }
-                Slider(
-                    value = value.brightness.takeIf { it >= 0f } ?: .5f,
-                    onValueChange = { onChange(value.copy(brightness = it)) },
-                    enabled = value.brightness >= 0f,
-                    valueRange = .05f..1f,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(32.dp)
-                        .semantics { stateDescription = brightnessState },
-                    colors = readerSliderColors(secondary),
-                )
-                SettingsPill(
-                    text = stringResource(R.string.settings_follow_system),
-                    selected = value.brightness < 0f,
-                    primary = secondary,
-                    onClick = { onChange(value.copy(brightness = if (value.brightness < 0f) .5f else -1f)) },
-                )
-            }
-            DividerLine(secondary)
-
-            RowSetting(stringResource(R.string.settings_font_size)) {
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SettingsPill("A-", false, secondary, modifier = Modifier.weight(1f)) {
+            SettingsPanelSection(stringResource(R.string.settings_font_size)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SettingsPill("A-", false, secondary, modifier = Modifier.width(42.dp)) {
                         onChange(value.customLayout().copy(fontSizeSp = (layout.fontSizeSp - 1f).coerceAtLeast(14f)))
                     }
                     Box(
-                        modifier = Modifier.weight(.72f).height(34.dp),
+                        modifier = Modifier.width(36.dp).height(32.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
@@ -151,45 +158,90 @@ fun ReaderSettingsPanel(
                             ),
                         )
                     }
-                    SettingsPill("A+", false, secondary, modifier = Modifier.weight(1f)) {
+                    SettingsPill("A+", false, secondary, modifier = Modifier.width(42.dp)) {
                         onChange(value.customLayout().copy(fontSizeSp = (layout.fontSizeSp + 1f).coerceAtMost(36f)))
                     }
-                }
-                SettingsPill(stringResource(R.string.settings_font), false, secondary, modifier = Modifier.width(58.dp)) {
-                    val entries = FontFamilyOption.entries
-                    val next = entries[(entries.indexOf(value.fontFamily) + 1) % entries.size]
-                    onChange(value.copy(fontFamily = next))
-                }
-                SettingsPill(stringResource(R.string.settings_spacing), false, secondary, modifier = Modifier.width(58.dp)) {
-                    val options = listOf(1.45f, 1.7f, 1.9f)
-                    val current = options.indexOfFirst { kotlin.math.abs(layout.lineSpacingMultiplier - it) < .12f }.coerceAtLeast(0)
-                    onChange(value.customLayout().copy(lineSpacingMultiplier = options[(current + 1) % options.size]))
-                }
-            }
-            DividerLine(secondary)
-
-            RowSetting(stringResource(R.string.settings_background)) {
-                listOf(
-                    ReaderTheme.LIGHT_GRAY,
-                    ReaderTheme.EYE_CARE,
-                    ReaderTheme.SEPIA,
-                    ReaderTheme.WARM_BROWN,
-                    ReaderTheme.FROST_BLUE,
-                    ReaderTheme.SAKURA_PINK,
-                ).forEach { theme ->
-                    BackgroundDot(theme, value, onChange, Modifier.weight(1f))
+                    SettingsPill(stringResource(R.string.settings_font), false, secondary, modifier = Modifier.weight(1f)) {
+                        val entries = FontFamilyOption.entries
+                        val next = entries[(entries.indexOf(value.fontFamily) + 1) % entries.size]
+                        onChange(value.copy(fontFamily = next))
+                    }
+                    SettingsPill(stringResource(R.string.settings_spacing), false, secondary, modifier = Modifier.weight(1f)) {
+                        val options = listOf(1.45f, 1.7f, 1.9f)
+                        val current = options.indexOfFirst { kotlin.math.abs(layout.lineSpacingMultiplier - it) < .12f }.coerceAtLeast(0)
+                        onChange(value.customLayout().copy(lineSpacingMultiplier = options[(current + 1) % options.size]))
+                    }
                 }
             }
-            DividerLine(secondary)
 
-            Row(
-                Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                SettingsPill(stringResource(R.string.settings_more), false, secondary, modifier = Modifier.weight(1f), onClick = onOpenMoreSettings)
+            SettingsPanelSection(stringResource(R.string.settings_background)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
+                    listOf(
+                        ReaderTheme.LIGHT_GRAY,
+                        ReaderTheme.EYE_CARE,
+                        ReaderTheme.SEPIA,
+                        ReaderTheme.WARM_BROWN,
+                        ReaderTheme.FROST_BLUE,
+                        ReaderTheme.SAKURA_PINK,
+                    ).forEach { theme ->
+                        BackgroundDot(theme, value, onChange, Modifier.weight(1f))
+                    }
+                    SettingsPill(stringResource(R.string.settings_more), false, secondary, modifier = Modifier.width(104.dp), onClick = onOpenMoreSettings)
+                }
+            }
+
+            progressSummary?.let {
+                Text(
+                    it,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = secondary,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontFamily = FontFamily.SansSerif,
+                        fontWeight = FontWeight.Medium,
+                    ),
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun SettingsPanelSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Text(
+            title,
+            color = LocalContentColor.current.copy(alpha = .88f),
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontFamily = FontFamily.SansSerif,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+            ),
+        )
+        content()
+    }
+}
+
+@Composable
+private fun CompactSettingRow(label: String, content: @Composable RowScope.() -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 34.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            modifier = Modifier.width(72.dp),
+            maxLines = 1,
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontFamily = FontFamily.SansSerif,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+            ),
+        )
+        content()
     }
 }
 
@@ -428,7 +480,7 @@ private fun SettingsPill(
     val stateText = stringResource(if (selected) R.string.state_selected else R.string.state_not_selected)
     Box(
         modifier
-            .heightIn(min = 40.dp)
+            .heightIn(min = 32.dp)
             .clip(RoundedCornerShape(8.dp))
             .border(
                 if (selected) 2.dp else 1.dp,
@@ -441,7 +493,7 @@ private fun SettingsPill(
                 stateDescription = stateText
             }
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = 7.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -450,6 +502,7 @@ private fun SettingsPill(
             style = MaterialTheme.typography.labelLarge.copy(
                 fontFamily = FontFamily.SansSerif,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                fontSize = 11.sp,
             ),
         )
     }
@@ -467,12 +520,12 @@ private fun BackgroundDot(
     val label = theme.label()
     val contentDescription = stringResource(R.string.settings_reader_background, label)
     Box(
-        modifier.height(42.dp),
+        modifier.height(30.dp),
         contentAlignment = Alignment.Center,
     ) {
         Box(
             Modifier
-                .size(40.dp)
+                .size(28.dp)
                 .semantics { this.contentDescription = contentDescription }
                 .clip(CircleShape)
                 .background(Color(swatch.background))

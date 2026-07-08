@@ -53,12 +53,16 @@ data class SearchResult(
 
 enum class ReaderTheme { EYE_CARE, SEPIA, LIGHT_GRAY, WARM_BROWN, FROST_BLUE, SAKURA_PINK, NIGHT, CUSTOM }
 enum class AppSkin { MINT, OCEAN, APRICOT, SAKURA }
+enum class AppLanguage { SYSTEM, ZH_CN, EN }
 enum class PageTurnMode { NONE, HORIZONTAL, SLIDE, VERTICAL, SIMULATION }
 enum class FontFamilyOption { SYSTEM, SANS, SERIF, MONOSPACE }
 enum class ReaderLayoutPreset { COMFORT, COMPACT, IMMERSIVE, CUSTOM }
 
 data class ReaderPreferences(
     val appSkin: AppSkin = AppSkin.MINT,
+    val appLanguage: AppLanguage = AppLanguage.SYSTEM,
+    val libraryTaglineIndex: Int = 0,
+    val developerToolsEnabled: Boolean = false,
     val layoutPreset: ReaderLayoutPreset = ReaderLayoutPreset.COMFORT,
     val fontSizeSp: Float = 17f,
     val fontWeight: Int = 400,

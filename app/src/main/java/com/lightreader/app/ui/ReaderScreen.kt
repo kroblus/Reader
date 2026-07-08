@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -92,6 +93,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.stateDescription
@@ -99,6 +101,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -112,9 +115,12 @@ import com.lightreader.app.core.model.Chapter
 import com.lightreader.app.core.model.PageTurnMode
 import com.lightreader.app.core.model.ReaderPage
 import com.lightreader.app.core.model.ReaderPreferences
+import com.lightreader.app.core.model.ReaderTheme
 import com.lightreader.app.core.reader.palette
+import java.text.DateFormat
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.util.Date
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlin.math.abs
@@ -176,6 +182,8 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
             ),
     ) {
         val density = LocalDensity.current
+        val viewportHeight = maxHeight
+        val settingsDockHeight = (viewportHeight * 4f / 9f - 124.dp).coerceAtLeast(viewportHeight * .24f)
         val safeTopPx = WindowInsets.systemBarsIgnoringVisibility.getTop(density)
         val safeBottomPx = WindowInsets.systemBarsIgnoringVisibility.getBottom(density)
         val widthPx = with(density) { maxWidth.roundToPx() }
@@ -193,7 +201,9 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
 
         when {
             state.loading && state.pages.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center), color = foreground)
-            state.error != null -> Text(state.error.orEmpty(), Modifier.align(Alignment.Center), color = foreground)
+            state.error != null -> state.error?.let { error ->
+                Text(error.asString(), Modifier.align(Alignment.Center), color = foreground)
+            }
             state.pages.isNotEmpty() -> {
                 val includeAdjacentPreviews = preferences.pageTurnMode != PageTurnMode.NONE && preferences.pageTurnMode != PageTurnMode.VERTICAL
                 val displayedPages = remember(state.pages, state.previousPreview, state.nextPreview, includeAdjacentPreviews) {
@@ -424,11 +434,7 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                     modifier = Modifier.size(40.dp),
                 ) { Icon(Icons.Outlined.Search, stringResource(R.string.action_search), tint = foreground) }
                 val currentPage = state.pages.getOrNull(state.pageIndex)
-                val currentChapter = state.chapters.getOrNull(state.chapterIndex)
-                val isBookmarked = currentPage != null && currentChapter != null && state.bookmarks.any {
-                    it.chapterId == currentChapter.id && it.charOffset >= currentPage.startOffset &&
-                        it.charOffset < currentPage.endOffset.coerceAtLeast(currentPage.startOffset + 1)
-                }
+                val isBookmarked = state.currentPageBookmarked()
                 val bookmarkStateDescription = stringResource(
                     if (isBookmarked) R.string.reader_bookmarked_state else R.string.reader_unbookmarked_state,
                 )
@@ -471,7 +477,9 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
             ) {
                 ReaderSettingsDock(
                     preferences = preferences,
+                    settingsHeight = settingsDockHeight,
                     autoReading = state.autoReading,
+                    progressSummary = readerProgressSummary(state),
                     onChange = viewModel::savePreferences,
                     onToggleAutoReading = viewModel::toggleAutoReading,
                     onOpenMoreSettings = viewModel::openReaderSettingsDetail,
@@ -542,16 +550,21 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
 @Composable
 private fun ReaderSettingsDock(
     preferences: ReaderPreferences,
+    settingsHeight: Dp,
     autoReading: Boolean,
+    progressSummary: String,
     onChange: (ReaderPreferences) -> Unit,
     onToggleAutoReading: () -> Unit,
     onOpenMoreSettings: () -> Unit,
 ) {
     val palette = preferences.palette()
     Surface(
-        modifier = Modifier.fillMaxWidth().wrapContentHeight(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(settingsHeight)
+            .testTag("reader_settings_dock"),
         color = Color(palette.overlay).copy(alpha = .99f),
-        shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
+        shape = RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp),
         shadowElevation = 4.dp,
     ) {
         Column(Modifier.fillMaxWidth().wrapContentHeight()) {
@@ -560,6 +573,7 @@ private fun ReaderSettingsDock(
                 value = preferences,
                 onChange = onChange,
                 autoReading = autoReading,
+                progressSummary = progressSummary,
                 onToggleAutoReading = onToggleAutoReading,
                 onOpenMoreSettings = onOpenMoreSettings,
                 bottomPadding = 0.dp,
@@ -585,11 +599,12 @@ private fun ReaderBottomControls(
     val progressLabel = progressPreview(state, sliderValue)
     val progressPercent = (sliderValue * 100).coerceIn(0f, 100f).toInt()
     val progressStateDescription = stringResource(R.string.reader_progress_state, progressPercent, progressLabel)
+    val isBookmarked = state.currentPageBookmarked()
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = Color(palette.overlay).copy(alpha = 1f),
-        shape = if (attachedToSettings) RoundedCornerShape(0.dp) else RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
+        shape = if (attachedToSettings) RoundedCornerShape(0.dp) else RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp),
         shadowElevation = 8.dp,
     ) {
         Column(
@@ -650,28 +665,42 @@ private fun ReaderBottomControls(
                     lineHeight = 13.sp,
                 ),
             )
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(5.dp))
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceAround,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ReaderAction(Icons.AutoMirrored.Outlined.FormatListBulleted, stringResource(R.string.reader_toc), foreground, onShowToc)
-                ReaderAction(Icons.Outlined.DarkMode, stringResource(R.string.reader_night), foreground, viewModel::toggleNightMode)
+                ReaderAction(
+                    Icons.Outlined.DarkMode,
+                    stringResource(R.string.reader_night),
+                    foreground,
+                    viewModel::toggleNightMode,
+                    selected = preferences.theme == ReaderTheme.NIGHT,
+                )
                 ReaderAction(
                     Icons.Outlined.TextFields,
                     stringResource(R.string.reader_settings),
                     foreground,
                     viewModel::toggleSettings,
                     stringResource(R.string.reader_settings_content_description),
+                    selected = attachedToSettings,
                 )
                 ReaderAction(
                     if (state.autoReading) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
                     if (state.autoReading) stringResource(R.string.reader_pause) else stringResource(R.string.reader_auto),
                     foreground,
                     viewModel::toggleAutoReading,
+                    selected = state.autoReading,
                 )
-                ReaderAction(Icons.Outlined.Bookmarks, stringResource(R.string.reader_bookmarks), foreground, onShowBookmarks)
+                ReaderAction(
+                    if (isBookmarked) Icons.Outlined.Bookmark else Icons.Outlined.Bookmarks,
+                    stringResource(R.string.reader_bookmarks),
+                    foreground,
+                    onShowBookmarks,
+                    selected = isBookmarked,
+                )
             }
         }
     }
@@ -684,7 +713,10 @@ private fun ReaderAction(
     tint: Color,
     onClick: () -> Unit,
     contentDescription: String = label,
+    selected: Boolean = false,
 ) {
+    val stateText = stringResource(if (selected) R.string.state_selected else R.string.state_not_selected)
+    val itemColor = if (selected) tint else tint.copy(alpha = .86f)
     Column(
         modifier = Modifier.width(54.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -693,13 +725,18 @@ private fun ReaderAction(
             onClick = onClick,
             modifier = Modifier
                 .size(34.dp)
-                .semantics { this.contentDescription = contentDescription },
+                .clip(CircleShape)
+                .background(if (selected) tint.copy(alpha = .18f) else Color.Transparent)
+                .semantics {
+                    this.contentDescription = contentDescription
+                    stateDescription = stateText
+                },
         ) {
-            Icon(icon, null, modifier = Modifier.size(22.dp), tint = tint)
+            Icon(icon, null, modifier = Modifier.size(22.dp), tint = itemColor)
         }
         Text(
             label,
-            color = tint,
+            color = itemColor,
             maxLines = 1,
             style = MaterialTheme.typography.labelSmall.copy(
                 fontFamily = FontFamily.SansSerif,
@@ -815,6 +852,24 @@ private fun overallProgress(state: ReaderUiState, page: ReaderPage): Float {
 }
 
 @Composable
+private fun readerProgressSummary(state: ReaderUiState): String {
+    val page = state.pages.getOrNull(state.pageIndex)
+    val bookPercent = page?.let { (overallProgress(state, it) * 100).toInt().coerceIn(0, 100) } ?: 0
+    val chapterText = page?.let { chapterProgressText(state, it.progressInChapter) } ?: stringResource(R.string.reader_no_chapters)
+    return stringResource(R.string.reader_progress, bookPercent, chapterText)
+}
+
+private fun ReaderUiState.currentPageBookmarked(): Boolean {
+    val page = pages.getOrNull(pageIndex) ?: return false
+    val chapter = chapters.getOrNull(chapterIndex) ?: return false
+    return bookmarks.any {
+        it.chapterId == chapter.id &&
+            it.charOffset >= page.startOffset &&
+            it.charOffset < page.endOffset.coerceAtLeast(page.startOffset + 1)
+    }
+}
+
+@Composable
 private fun progressPreview(state: ReaderUiState, progress: Float): String {
     if (state.chapters.isEmpty()) return stringResource(R.string.reader_no_chapters)
     val total = state.chapters.sumOf { it.charCount.toLong() }.coerceAtLeast(1L)
@@ -831,8 +886,16 @@ private fun progressPreview(state: ReaderUiState, progress: Float): String {
     } else {
         0
     }
-    return "${chapter.title} $chapterPercent%"
+    return stringResource(R.string.reader_progress_chapter, index + 1, chapterPercent)
 }
+
+@Composable
+private fun chapterProgressText(state: ReaderUiState, chapterProgress: Float): String =
+    stringResource(
+        R.string.reader_progress_chapter,
+        state.chapterIndex + 1,
+        (chapterProgress * 100).toInt().coerceIn(0, 100),
+    )
 
 private fun currentTime(): String = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
 
@@ -883,7 +946,10 @@ internal fun readerTapAction(
     val menuStart = if (fullScreenTapNext) .42f else .3f
     val menuEnd = if (fullScreenTapNext) .58f else .7f
     if (toolbarVisible) {
-        val menuBottom = if (settingsVisible) .5f else .78f
+        if (settingsVisible) {
+            return if (y in 0.1f..0.56f) ReaderTapAction.MENU else ReaderTapAction.NONE
+        }
+        val menuBottom = .78f
         return if (x in menuStart..menuEnd && y in 0.14f..menuBottom) ReaderTapAction.MENU else ReaderTapAction.NONE
     }
     return when {
@@ -918,6 +984,7 @@ private fun ChapterListOverlay(
     val palette = preferences.palette()
     val foreground = Color(palette.foreground)
     val secondary = Color(palette.secondary)
+    val selectedBackground = Color(palette.overlay).copy(alpha = .72f)
     val readPercent = ((state.pages.getOrNull(state.pageIndex)?.progressInChapter ?: 0f) * 100)
         .toInt()
         .coerceIn(0, 100)
@@ -952,12 +1019,13 @@ private fun ChapterListOverlay(
                     selected = selected,
                     foreground = foreground,
                     secondary = secondary,
+                    selectedBackground = selectedBackground,
                     readPercentText = stringResource(R.string.reader_read_percent, readPercent),
                     onClick = { onSelectChapter(chapter) },
                 )
                 HorizontalDivider(
                     modifier = Modifier.padding(start = 58.dp, end = 24.dp),
-                    color = secondary.copy(alpha = .055f),
+                    color = secondary.copy(alpha = .14f),
                 )
             }
         }
@@ -971,10 +1039,17 @@ private fun ChapterOverlayRow(
     readPercentText: String,
     foreground: Color,
     secondary: Color,
+    selectedBackground: Color,
     onClick: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 24.dp, vertical = 14.dp),
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 3.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (selected) selectedBackground else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -988,7 +1063,7 @@ private fun ChapterOverlayRow(
             modifier = Modifier.weight(1f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            color = if (selected) foreground else secondary.copy(alpha = .72f),
+            color = if (selected) foreground else secondary.copy(alpha = .92f),
             style = MaterialTheme.typography.titleMedium.copy(
                 fontFamily = FontFamily.SansSerif,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
@@ -1000,7 +1075,7 @@ private fun ChapterOverlayRow(
             Spacer(Modifier.width(12.dp))
             Text(
                 readPercentText,
-                color = foreground.copy(alpha = .72f),
+                color = foreground.copy(alpha = .84f),
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontFamily = FontFamily.SansSerif,
                     fontWeight = FontWeight.Medium,
@@ -1029,25 +1104,44 @@ private fun BookmarksOverlay(
         visible = visible,
         title = stringResource(R.string.reader_bookmarks),
         preferences = preferences,
-        heightFraction = if (state.bookmarks.size <= 4) .36f else .92f,
+        heightFraction = if (state.bookmarks.size <= 2) .28f else if (state.bookmarks.size <= 4) .42f else .92f,
         onDismiss = onDismiss,
     ) {
         if (state.bookmarks.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(
+                Modifier.fillMaxSize().padding(horizontal = 28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
                 Text(
                     stringResource(R.string.reader_no_bookmarks),
-                    color = secondary.copy(alpha = .74f),
-                    style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.SansSerif),
+                    color = foreground,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontFamily = FontFamily.SansSerif,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    stringResource(R.string.reader_no_bookmarks_hint),
+                    color = secondary.copy(alpha = .82f),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.SansSerif),
                 )
             }
         } else {
             LazyColumn(Modifier.fillMaxSize()) {
                 items(state.bookmarks, key = { it.id }) { bookmark ->
-                    val chapterTitle = state.chapters.firstOrNull { it.id == bookmark.chapterId }?.title
+                    val chapter = state.chapters.firstOrNull { it.id == bookmark.chapterId }
+                    val chapterTitle = chapter?.title
                         ?: stringResource(R.string.reader_bookmark_position)
+                    val chapterPercent = chapter?.takeIf { it.charCount > 0 }?.let {
+                        ((bookmark.charOffset.toFloat() / it.charCount) * 100).toInt().coerceIn(0, 100)
+                    } ?: 0
+                    val createdAt = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(bookmark.createdAt))
                     BookmarkOverlayRow(
                         bookmark = bookmark,
                         chapterTitle = chapterTitle,
+                        meta = stringResource(R.string.reader_bookmark_meta, chapterPercent, createdAt),
                         foreground = foreground,
                         secondary = secondary,
                         onJump = { onJump(bookmark) },
@@ -1067,13 +1161,14 @@ private fun BookmarksOverlay(
 private fun BookmarkOverlayRow(
     bookmark: Bookmark,
     chapterTitle: String,
+    meta: String,
     foreground: Color,
     secondary: Color,
     onJump: () -> Unit,
     onDelete: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onJump).padding(start = 30.dp, end = 18.dp, top = 16.dp, bottom = 16.dp),
+        Modifier.fillMaxWidth().clickable(onClick = onJump).padding(start = 28.dp, end = 14.dp, top = 14.dp, bottom = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -1092,10 +1187,18 @@ private fun BookmarkOverlayRow(
             Spacer(Modifier.height(5.dp))
             Text(
                 chapterTitle,
-                color = secondary.copy(alpha = .72f),
+                color = secondary.copy(alpha = .9f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.SansSerif),
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                meta,
+                color = secondary.copy(alpha = .74f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.SansSerif, fontSize = 11.sp),
             )
         }
         IconButton(onClick = onDelete, modifier = Modifier.size(38.dp)) {
@@ -1122,6 +1225,7 @@ private fun ReaderListOverlay(
     val palette = preferences.palette()
     val foreground = Color(palette.foreground)
     val secondary = Color(palette.secondary)
+    val panelBackground = Color(palette.overlay)
     val outsideInteraction = remember { MutableInteractionSource() }
     val cardInteraction = remember { MutableInteractionSource() }
     val closeOverlayBackground = stringResource(R.string.reader_close_overlay_background)
@@ -1138,7 +1242,7 @@ private fun ReaderListOverlay(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = .38f))
+                    .background(Color.Black.copy(alpha = ReaderUiTokens.overlayScrimAlpha))
                     .semantics { contentDescription = closeOverlayBackground }
                     .clickable(
                         interactionSource = outsideInteraction,
@@ -1163,9 +1267,9 @@ private fun ReaderListOverlay(
                         indication = null,
                         onClick = {},
                     ),
-                color = Color(palette.background),
-                shape = RoundedCornerShape(8.dp),
-                shadowElevation = 3.dp,
+                color = panelBackground,
+                shape = RoundedCornerShape(ReaderUiTokens.dialogRadius),
+                shadowElevation = 5.dp,
             ) {
                 Column(Modifier.fillMaxSize()) {
                     Row(

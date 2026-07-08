@@ -4,6 +4,40 @@
     <string name="brand_name">LightReader</string>
     <string name="brand_tagline_empty">Slow down. Read deeper.</string>
     <string name="brand_tagline_library">Leave a little time for stories today.</string>
+    <string-array name="brand_taglines">
+        <item>Make room for one more page.</item>
+        <item>Read softly, carry the story farther.</item>
+        <item>A quiet shelf for busy days.</item>
+        <item>Turn a small pause into a chapter.</item>
+        <item>Stories wait well. Open one when ready.</item>
+        <item>Keep your place. Keep your pace.</item>
+        <item>Let the next sentence settle.</item>
+        <item>One chapter can change the day.</item>
+        <item>Read at the speed of attention.</item>
+        <item>Your library, light and local.</item>
+        <item>Pick up the thread where you left it.</item>
+        <item>Quiet pages, clear progress.</item>
+        <item>Give the page a little time.</item>
+        <item>Carry a shelf without the weight.</item>
+        <item>Open the book, close the noise.</item>
+        <item>Every bookmark is a way back.</item>
+        <item>Small screen, long journey.</item>
+        <item>Let the story breathe between lines.</item>
+        <item>Find the page that fits the moment.</item>
+        <item>Read what stays with you.</item>
+        <item>A calmer way to keep reading.</item>
+        <item>Light enough for every spare minute.</item>
+        <item>Return to the chapter that called you.</item>
+        <item>One shelf, many quiet rooms.</item>
+        <item>Save the place. Follow the story.</item>
+        <item>Make today a little more readable.</item>
+        <item>Hold the story close, offline.</item>
+        <item>Every opening is a new doorway.</item>
+        <item>Read deeper than the scroll.</item>
+        <item>Let a page reset the rhythm.</item>
+        <item>The next chapter is already nearby.</item>
+        <item>Keep stories ready for the quiet minutes.</item>
+    </string-array>
     <string name="action_back">Back</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_delete">Delete</string>
@@ -24,10 +58,26 @@
     <string name="state_selected">Selected</string>
     <string name="state_not_selected">Not selected</string>
 
-    <string name="library_web_import">Web import</string>
+    <string name="app_settings_title">App settings</string>
+    <string name="app_settings_language">Language</string>
+    <string name="app_settings_appearance">Appearance</string>
+    <string name="app_settings_reading">Reading</string>
+    <string name="app_settings_reading_behavior">Reading behavior</string>
+    <string name="app_settings_import_download">Import and downloads</string>
+    <string name="app_settings_web_ai">Web and AI</string>
+    <string name="app_settings_advanced_tools">Advanced tools</string>
+    <string name="language_system">Follow system</string>
+    <string name="language_system_caption">Use the Android system language.</string>
+    <string name="language_zh_cn">Simplified Chinese</string>
+    <string name="language_zh_cn_caption">Use Chinese inside LightReader.</string>
+    <string name="language_en">English</string>
+    <string name="language_en_caption">Use English inside LightReader.</string>
+
+    <string name="library_web_import">Import novel from web</string>
+    <string name="library_app_settings">App settings</string>
     <string name="library_change_skin">Change skin</string>
-    <string name="library_deepseek_settings">DeepSeek settings</string>
-    <string name="library_dom_bridge">DOM bridge test</string>
+    <string name="library_deepseek_settings">AI download settings</string>
+    <string name="library_dom_bridge">Web parser test</string>
     <string name="library_import_novel">Import novel</string>
     <string name="library_my_shelf">My shelf</string>
     <string name="library_empty_title">Your shelf is empty</string>
@@ -38,9 +88,21 @@
     <string name="library_unknown_author">Unknown author</string>
     <string name="library_continue_reading">Continue reading · %1$s</string>
     <string name="library_not_started">Not started · %1$d chapters · %2$s</string>
+    <string name="library_recent_reading">Recent reading</string>
+    <string name="library_all_books">All books</string>
+    <string name="library_current_chapter">Current: %1$s</string>
+    <string name="library_progress_percent">Book %1$d%%</string>
+    <string name="library_ready_to_start">Ready to start</string>
+    <string name="library_continue_button">Continue reading</string>
+    <string name="library_last_read_date">Last read %1$s</string>
     <string name="library_cover_footer">LIGHT READER · %1$d</string>
     <string name="library_skin_title">Change the reading mood</string>
     <string name="library_skin_body">Skins apply to the shelf and feature pages. Reading background is still configured separately.</string>
+    <string name="library_book_actions">Book actions</string>
+    <string name="library_edit_book_info">Edit book info</string>
+    <string name="library_book_title">Book title</string>
+    <string name="library_book_author">Author</string>
+    <string name="library_edit_title_required">Book title is required.</string>
     <string name="skin_mint">Mint white</string>
     <string name="skin_ocean">Ocean white</string>
     <string name="skin_apricot">Apricot white</string>
@@ -128,6 +190,8 @@
     <string name="reader_next_chapter">Next chapter</string>
     <string name="reader_progress">Book %1$d%% · %2$s</string>
     <string name="reader_progress_state">Book %1$d%%, %2$s</string>
+    <string name="reader_progress_chapter">Chapter %1$d %2$d%%</string>
+    <string name="reader_footer_book_progress">Book %1$d%%</string>
     <string name="reader_toc">Contents</string>
     <string name="reader_night">Night</string>
     <string name="reader_settings">Settings</string>
@@ -147,6 +211,8 @@
     <string name="reader_toc_descending">Descending</string>
     <string name="reader_read_percent">Read %1$d%%</string>
     <string name="reader_no_bookmarks">No bookmarks yet</string>
+    <string name="reader_no_bookmarks_hint">Tap the bookmark icon while reading to save the current page.</string>
+    <string name="reader_bookmark_meta">Chapter %1$d%% · %2$s</string>
     <string name="reader_bookmark_position">Bookmark location</string>
     <string name="reader_delete_bookmark">Delete bookmark</string>
     <string name="reader_close_overlay_background">Close overlay background</string>
@@ -239,6 +305,10 @@
     <string name="message_deepseek_failed">DeepSeek connection failed</string>
     <string name="message_ai_advanced_saved">AI advanced settings saved</string>
     <string name="message_ai_advanced_save_failed">Could not save AI advanced settings</string>
+    <string name="message_book_info_saved">Book info saved</string>
+    <string name="message_book_info_save_failed">Could not save book info</string>
+    <string name="message_developer_tools_enabled">Developer tools enabled</string>
+    <string name="message_developer_tools_disabled">Developer tools hidden</string>
 
     <string name="dom_title">DOM bridge test</string>
     <string name="dom_waiting">Waiting for page load</string>

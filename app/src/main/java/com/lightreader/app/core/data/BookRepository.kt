@@ -29,6 +29,18 @@ class BookRepository(
 ) {
     private val searchIndexMutex = Mutex()
     val books: Flow<List<Book>> = dao.observeBooks().map { rows -> rows.map(BookEntity::toModel) }
+    val shelfProgress: Flow<List<ShelfBookProgress>> = dao.observeShelfProgress().map { rows ->
+        rows.map {
+            ShelfBookProgress(
+                bookId = it.bookId,
+                chapterTitle = it.chapterTitle,
+                chapterIndex = it.chapterIndex,
+                charOffset = it.charOffset,
+                updatedAt = it.updatedAt,
+                readChars = it.readChars,
+            )
+        }
+    }
 
     suspend fun import(uri: Uri): Book = withContext(Dispatchers.IO) {
         val name = displayName(uri)
@@ -73,6 +85,14 @@ class BookRepository(
     suspend fun book(id: String): Book? = dao.book(id)?.toModel()
     suspend fun chapters(bookId: String): List<Chapter> = dao.chapters(bookId).map(ChapterEntity::toModel)
     suspend fun chapter(id: Long): Chapter? = dao.chapter(id)?.toModel()
+
+    suspend fun updateBookMetadata(bookId: String, title: String, author: String?): Book = withContext(Dispatchers.IO) {
+        val normalizedTitle = title.trim()
+        require(normalizedTitle.isNotBlank()) { "Book title is required." }
+        val normalizedAuthor = author?.trim()?.takeIf { it.isNotBlank() }
+        dao.updateBookMetadata(bookId, normalizedTitle, normalizedAuthor)
+        dao.book(bookId)?.toModel() ?: error("Book was not found.")
+    }
 
     suspend fun importDownloadedWebBook(
         id: String,
@@ -273,3 +293,12 @@ private fun BookEntity.toModel() = Book(
 )
 
 private fun ChapterEntity.toModel() = Chapter(id, bookId, orderIndex, title, contentPath, charCount, sourceUrl)
+
+data class ShelfBookProgress(
+    val bookId: String,
+    val chapterTitle: String,
+    val chapterIndex: Int,
+    val charOffset: Int,
+    val updatedAt: Long,
+    val readChars: Long,
+)

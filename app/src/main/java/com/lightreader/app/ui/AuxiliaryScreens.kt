@@ -224,7 +224,7 @@ fun WebImportScreen(tasks: List<DownloadTaskEntity>, viewModel: MainViewModel) {
                 }
             }
             if (state.loading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-            state.error?.let { error -> item { Text(error, color = MaterialTheme.colorScheme.error) } }
+            state.error?.let { error -> item { Text(error.asString(), color = MaterialTheme.colorScheme.error) } }
             state.preview?.let { preview ->
                 item {
                     Card(Modifier.fillMaxWidth()) {

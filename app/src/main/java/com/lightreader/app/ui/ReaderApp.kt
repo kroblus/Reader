@@ -39,79 +39,83 @@ fun ReaderApp(viewModel: MainViewModel) {
     val state by viewModel.uiState.collectAsState()
     val readerState by viewModel.readerState.collectAsState()
     val snackbar = remember { SnackbarHostState() }
-    LaunchedEffect(state.message) {
-        state.message?.let {
-            snackbar.showSnackbar(it)
-            viewModel.clearMessage()
-        }
-    }
-    BackHandler(enabled = state.screen !is AppScreen.Library) { viewModel.goBack() }
-    LightReaderTheme(state.preferences.appSkin) {
-        ApplyAppSystemBars(state.preferences.appSkin, state.screen is AppScreen.Reader)
-        Box(Modifier.fillMaxSize()) {
-            AnimatedContent(
-                targetState = state.screen,
-                transitionSpec = {
-                    when {
-                        initialState is AppScreen.Library && targetState is AppScreen.Reader ->
-                            (slideInHorizontally(animationSpec = tween(140)) { it / 10 } + fadeIn(tween(140)))
-                                .togetherWith(fadeOut(tween(90)))
-                        initialState is AppScreen.Reader && targetState is AppScreen.Library ->
-                            fadeIn(tween(120))
-                                .togetherWith(slideOutHorizontally(animationSpec = tween(130)) { it / 10 } + fadeOut(tween(120)))
-                        else -> fadeIn(tween(120)).togetherWith(fadeOut(tween(90)))
-                    }
-                },
-                label = "readerScreenTransition",
-            ) { screen ->
-                when (screen) {
-                    AppScreen.Library -> LibraryScreen(state, viewModel)
-                    is AppScreen.Reader -> ReaderScreen(state.preferences, viewModel)
-                    is AppScreen.ReaderSettingsDetail -> ReaderSettingsDetailScreen(
-                        preferences = state.preferences,
-                        autoReading = readerState.autoReading,
-                        onChange = viewModel::savePreferences,
-                        onToggleAutoReading = viewModel::toggleAutoReading,
-                        onBack = viewModel::goBack,
-                    )
-                    is AppScreen.Search -> SearchScreen(viewModel)
-                    AppScreen.WebImport -> WebImportScreen(state.tasks, viewModel)
-                    AppScreen.WebDomBridge -> WebDomBridgeScreen(viewModel)
-                    AppScreen.ApiSettings -> ApiSettingsScreen(viewModel)
-                }
+    LocalizedApp(state.preferences.appLanguage) {
+        val messageText = state.message?.asString()
+        LaunchedEffect(state.message, messageText) {
+            messageText?.let {
+                snackbar.showSnackbar(it)
+                viewModel.clearMessage()
             }
-            SnackbarHost(
-                snackbar,
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = if (state.screen is AppScreen.Reader) 104.dp else 8.dp),
-            )
-            if (state.busy.active) {
-                Box(
+        }
+        BackHandler(enabled = state.screen !is AppScreen.Library) { viewModel.goBack() }
+        LightReaderTheme(state.preferences.appSkin) {
+            ApplyAppSystemBars(state.preferences.appSkin, state.screen is AppScreen.Reader)
+            Box(Modifier.fillMaxSize()) {
+                AnimatedContent(
+                    targetState = state.screen,
+                    transitionSpec = {
+                        when {
+                            initialState is AppScreen.Library && targetState is AppScreen.Reader ->
+                                (slideInHorizontally(animationSpec = tween(140)) { it / 10 } + fadeIn(tween(140)))
+                                    .togetherWith(fadeOut(tween(90)))
+                            initialState is AppScreen.Reader && targetState is AppScreen.Library ->
+                                fadeIn(tween(120))
+                                    .togetherWith(slideOutHorizontally(animationSpec = tween(130)) { it / 10 } + fadeOut(tween(120)))
+                            else -> fadeIn(tween(120)).togetherWith(fadeOut(tween(90)))
+                        }
+                    },
+                    label = "readerScreenTransition",
+                ) { screen ->
+                    when (screen) {
+                        AppScreen.Library -> LibraryScreen(state, viewModel)
+                        is AppScreen.Reader -> ReaderScreen(state.preferences, viewModel)
+                        is AppScreen.ReaderSettingsDetail -> ReaderSettingsDetailScreen(
+                            preferences = state.preferences,
+                            autoReading = readerState.autoReading,
+                            onChange = viewModel::savePreferences,
+                            onToggleAutoReading = viewModel::toggleAutoReading,
+                            onBack = viewModel::goBack,
+                        )
+                        is AppScreen.Search -> SearchScreen(viewModel)
+                        AppScreen.WebImport -> WebImportScreen(state.tasks, viewModel)
+                        AppScreen.WebDomBridge -> WebDomBridgeScreen(viewModel)
+                        AppScreen.ApiSettings -> ApiSettingsScreen(viewModel)
+                        AppScreen.AppSettings -> AppSettingsScreen(state.preferences, viewModel)
+                    }
+                }
+                SnackbarHost(
+                    snackbar,
                     Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = .18f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = .96f),
-                        shadowElevation = 6.dp,
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = if (state.screen is AppScreen.Reader) 104.dp else 8.dp),
+                )
+                if (state.busy.active) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = .18f)),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Column(
-                            Modifier.padding(horizontal = 26.dp, vertical = 22.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = .96f),
+                            shadowElevation = 6.dp,
                         ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(36.dp),
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                            Text(
-                                state.busy.message.ifBlank { stringResource(R.string.busy_default) },
-                                Modifier.padding(top = 12.dp),
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
+                            Column(
+                                Modifier.padding(horizontal = 26.dp, vertical = 22.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(36.dp),
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                Text(
+                                    state.busy.message?.asString() ?: stringResource(R.string.busy_default),
+                                    Modifier.padding(top = 12.dp),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
                         }
                     }
                 }

@@ -35,6 +35,25 @@ data class AppSkinPalette(
     val mutedInk: Color,
 )
 
+object ReaderUiTokens {
+    val appBarHeight = 56.dp
+    val iconTouchTarget = 48.dp
+    val pagePadding = 24.dp
+    val compactPagePadding = 20.dp
+    val cardRadius = 18.dp
+    val dialogRadius = 18.dp
+    val bottomSheetRadius = 28.dp
+    val listItemMinHeight = 58.dp
+    val primaryButtonHeight = 46.dp
+    const val overlayScrimAlpha = .24f
+    const val weakTextAlpha = .72f
+}
+
+val AppSkinPalette.cardBackground: Color get() = soft.copy(alpha = .74f)
+val AppSkinPalette.dialogBackground: Color get() = surface.copy(alpha = .98f)
+val AppSkinPalette.divider: Color get() = primary.copy(alpha = .18f)
+val AppSkinPalette.weakInk: Color get() = mutedInk.copy(alpha = .82f)
+
 fun AppSkin.palette(): AppSkinPalette = when (this) {
     AppSkin.MINT -> AppSkinPalette(
         primary = Color(0xFF62866F), onPrimary = Color.White,
