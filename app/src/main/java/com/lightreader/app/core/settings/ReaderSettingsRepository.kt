@@ -11,6 +11,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.lightreader.app.core.model.FontFamilyOption
 import com.lightreader.app.core.model.AppSkin
 import com.lightreader.app.core.model.PageTurnMode
+import com.lightreader.app.core.model.ReaderLayoutPreset
 import com.lightreader.app.core.model.ReaderPreferences
 import com.lightreader.app.core.model.ReaderTheme
 import kotlinx.coroutines.flow.Flow
@@ -23,10 +24,11 @@ class ReaderSettingsRepository(private val context: Context) {
         val usesModernLayoutDefaults = (values[LAYOUT_DEFAULTS_VERSION] ?: 0) >= CURRENT_LAYOUT_DEFAULTS_VERSION
         ReaderPreferences(
             appSkin = enumValue(values[APP_SKIN], AppSkin.MINT),
-            fontSizeSp = values[FONT_SIZE] ?: 17f,
+            layoutPreset = enumValue(values[LAYOUT_PRESET], ReaderLayoutPreset.COMFORT),
+            fontSizeSp = values[FONT_SIZE] ?: DEFAULT_FONT_SIZE_SP,
             fontWeight = values[FONT_WEIGHT] ?: 400,
-            lineSpacingMultiplier = values[LINE_SPACING] ?: 1.75f,
-            paragraphSpacingDp = values[PARAGRAPH_SPACING] ?: 10f,
+            lineSpacingMultiplier = values[LINE_SPACING] ?: DEFAULT_LINE_SPACING,
+            paragraphSpacingDp = values[PARAGRAPH_SPACING] ?: DEFAULT_PARAGRAPH_SPACING_DP,
             firstLineIndent = values[FIRST_INDENT] ?: true,
             firstLineIndentEm = values[FIRST_INDENT_EM] ?: 2f,
             horizontalPaddingDp = migratedLayoutValue(
@@ -67,7 +69,7 @@ class ReaderSettingsRepository(private val context: Context) {
             lockPortrait = values[LOCK_PORTRAIT] ?: true,
             showStatus = values[SHOW_STATUS] ?: true,
             showHeader = values[SHOW_HEADER] ?: true,
-            showRightProgressBar = values[SHOW_RIGHT_PROGRESS] ?: true,
+            showRightProgressBar = values[SHOW_RIGHT_PROGRESS] ?: false,
             minimalMode = values[MINIMAL_MODE] ?: false,
             autoReadIntervalSeconds = (values[AUTO_READ_INTERVAL] ?: 8).coerceIn(3, 60),
             volumeKeys = values[VOLUME_KEYS] ?: true,
@@ -80,6 +82,7 @@ class ReaderSettingsRepository(private val context: Context) {
     suspend fun save(value: ReaderPreferences) {
         context.readerDataStore.edit { values ->
             values[APP_SKIN] = value.appSkin.name
+            values[LAYOUT_PRESET] = value.layoutPreset.name
             values[FONT_SIZE] = value.fontSizeSp
             values[FONT_WEIGHT] = value.fontWeight
             values[LINE_SPACING] = value.lineSpacingMultiplier
@@ -113,6 +116,7 @@ class ReaderSettingsRepository(private val context: Context) {
 
     private companion object {
         val APP_SKIN = stringPreferencesKey("app_skin")
+        val LAYOUT_PRESET = stringPreferencesKey("reader_layout_preset")
         val FONT_SIZE = floatPreferencesKey("font_size")
         val FONT_WEIGHT = intPreferencesKey("font_weight")
         val LINE_SPACING = floatPreferencesKey("line_spacing")
@@ -144,6 +148,9 @@ class ReaderSettingsRepository(private val context: Context) {
         val PAGE_TURN_MODE = stringPreferencesKey("page_turn_mode")
         val FULL_SCREEN_TAP_NEXT = booleanPreferencesKey("full_screen_tap_next")
         const val CURRENT_LAYOUT_DEFAULTS_VERSION = 4
+        const val DEFAULT_FONT_SIZE_SP = 17f
+        const val DEFAULT_LINE_SPACING = 1.75f
+        const val DEFAULT_PARAGRAPH_SPACING_DP = 10f
         const val DEFAULT_HORIZONTAL_PADDING_DP = 20f
         const val DEFAULT_VERTICAL_PADDING_TOP_DP = 46f
         const val DEFAULT_VERTICAL_PADDING_BOTTOM_DP = 46f

@@ -21,6 +21,7 @@ data class Chapter(
     val title: String,
     val contentPath: String,
     val charCount: Int,
+    val sourceUrl: String?,
 )
 
 data class ReadingProgress(
@@ -54,9 +55,11 @@ enum class ReaderTheme { EYE_CARE, SEPIA, LIGHT_GRAY, WARM_BROWN, FROST_BLUE, SA
 enum class AppSkin { MINT, OCEAN, APRICOT, SAKURA }
 enum class PageTurnMode { NONE, HORIZONTAL, SLIDE, VERTICAL, SIMULATION }
 enum class FontFamilyOption { SYSTEM, SANS, SERIF, MONOSPACE }
+enum class ReaderLayoutPreset { COMFORT, COMPACT, IMMERSIVE, CUSTOM }
 
 data class ReaderPreferences(
     val appSkin: AppSkin = AppSkin.MINT,
+    val layoutPreset: ReaderLayoutPreset = ReaderLayoutPreset.COMFORT,
     val fontSizeSp: Float = 17f,
     val fontWeight: Int = 400,
     val lineSpacingMultiplier: Float = 1.75f,
@@ -77,7 +80,7 @@ data class ReaderPreferences(
     val lockPortrait: Boolean = true,
     val showStatus: Boolean = true,
     val showHeader: Boolean = true,
-    val showRightProgressBar: Boolean = true,
+    val showRightProgressBar: Boolean = false,
     val minimalMode: Boolean = false,
     val autoReadIntervalSeconds: Int = 8,
     val volumeKeys: Boolean = true,
@@ -131,7 +134,7 @@ data class ReaderStyle(
     val showHeader: Boolean,
     val showFooter: Boolean,
     val showRightProgressBar: Boolean,
-    val maxContentWidthDp: Float = 720f,
+    val maxContentWidthDp: Float = 640f,
 ) {
     fun layoutFingerprint(): Int = listOf(
         fontSizeSp, fontWeight, lineHeightMultiplier, paragraphSpacingDp,
@@ -189,10 +192,14 @@ data class WebChapter(val title: String, val url: String)
 
 data class WebBookPreview(
     val title: String,
+    val author: String?,
+    val description: String?,
     val sourceUrl: String,
+    val finalUrl: String,
     val chapters: List<WebChapter>,
     val sample: String,
     val extractionPlan: ExtractionPlan,
+    val parseWarnings: List<String> = emptyList(),
 )
 
 @kotlinx.serialization.Serializable

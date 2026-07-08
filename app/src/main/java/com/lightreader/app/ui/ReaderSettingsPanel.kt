@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,17 +44,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lightreader.app.R
 import com.lightreader.app.core.model.FontFamilyOption
 import com.lightreader.app.core.model.PageTurnMode
+import com.lightreader.app.core.model.ReaderLayoutPreset
 import com.lightreader.app.core.model.ReaderPreferences
 import com.lightreader.app.core.model.ReaderTheme
+import com.lightreader.app.core.reader.effectiveLayout
 import com.lightreader.app.core.reader.palette
 import kotlin.math.roundToInt
 
@@ -70,6 +76,7 @@ fun ReaderSettingsPanel(
     val palette = value.palette()
     val foreground = Color(palette.foreground)
     val secondary = Color(palette.secondary)
+    val layout = value.effectiveLayout()
 
     CompositionLocalProvider(LocalContentColor provides foreground) {
         Column(
@@ -78,17 +85,47 @@ fun ReaderSettingsPanel(
                 .verticalScroll(rememberScrollState())
                 .padding(start = 18.dp, end = 18.dp, top = 10.dp, bottom = bottomPadding),
         ) {
-            RowSetting("亮度") {
+            RowSetting(stringResource(R.string.settings_layout)) {
+                listOf(
+                    ReaderLayoutPreset.COMFORT,
+                    ReaderLayoutPreset.COMPACT,
+                    ReaderLayoutPreset.IMMERSIVE,
+                    ReaderLayoutPreset.CUSTOM,
+                ).forEach { preset ->
+                    val label = preset.label()
+                    SettingsPill(
+                        text = label,
+                        selected = value.layoutPreset == preset,
+                        primary = secondary,
+                        modifier = Modifier.weight(1f),
+                        contentDescription = stringResource(R.string.settings_layout_preset, label),
+                        onClick = {
+                            onChange(if (preset == ReaderLayoutPreset.CUSTOM) value.customLayout() else value.withPreset(preset))
+                        },
+                    )
+                }
+            }
+            DividerLine(secondary)
+
+            RowSetting(stringResource(R.string.settings_brightness)) {
+                val brightnessState = if (value.brightness < 0f) {
+                    stringResource(R.string.settings_follow_system)
+                } else {
+                    stringResource(R.string.settings_brightness_percent, (value.brightness * 100).roundToInt())
+                }
                 Slider(
                     value = value.brightness.takeIf { it >= 0f } ?: .5f,
                     onValueChange = { onChange(value.copy(brightness = it)) },
                     enabled = value.brightness >= 0f,
                     valueRange = .05f..1f,
-                    modifier = Modifier.weight(1f).height(32.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(32.dp)
+                        .semantics { stateDescription = brightnessState },
                     colors = readerSliderColors(secondary),
                 )
                 SettingsPill(
-                    text = "跟随系统",
+                    text = stringResource(R.string.settings_follow_system),
                     selected = value.brightness < 0f,
                     primary = secondary,
                     onClick = { onChange(value.copy(brightness = if (value.brightness < 0f) .5f else -1f)) },
@@ -96,17 +133,17 @@ fun ReaderSettingsPanel(
             }
             DividerLine(secondary)
 
-            RowSetting("字号") {
+            RowSetting(stringResource(R.string.settings_font_size)) {
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SettingsPill("A-", false, secondary, modifier = Modifier.weight(1f)) {
-                        onChange(value.copy(fontSizeSp = (value.fontSizeSp - 1f).coerceAtLeast(14f)))
+                        onChange(value.customLayout().copy(fontSizeSp = (layout.fontSizeSp - 1f).coerceAtLeast(14f)))
                     }
                     Box(
                         modifier = Modifier.weight(.72f).height(34.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            "${value.fontSizeSp.roundToInt()}",
+                            "${layout.fontSizeSp.roundToInt()}",
                             color = foreground,
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontFamily = FontFamily.SansSerif,
@@ -115,23 +152,23 @@ fun ReaderSettingsPanel(
                         )
                     }
                     SettingsPill("A+", false, secondary, modifier = Modifier.weight(1f)) {
-                        onChange(value.copy(fontSizeSp = (value.fontSizeSp + 1f).coerceAtMost(36f)))
+                        onChange(value.customLayout().copy(fontSizeSp = (layout.fontSizeSp + 1f).coerceAtMost(36f)))
                     }
                 }
-                SettingsPill("字体", false, secondary, modifier = Modifier.width(58.dp)) {
+                SettingsPill(stringResource(R.string.settings_font), false, secondary, modifier = Modifier.width(58.dp)) {
                     val entries = FontFamilyOption.entries
                     val next = entries[(entries.indexOf(value.fontFamily) + 1) % entries.size]
                     onChange(value.copy(fontFamily = next))
                 }
-                SettingsPill("间距", false, secondary, modifier = Modifier.width(58.dp)) {
+                SettingsPill(stringResource(R.string.settings_spacing), false, secondary, modifier = Modifier.width(58.dp)) {
                     val options = listOf(1.45f, 1.7f, 1.9f)
-                    val current = options.indexOfFirst { kotlin.math.abs(value.lineSpacingMultiplier - it) < .12f }.coerceAtLeast(0)
-                    onChange(value.copy(lineSpacingMultiplier = options[(current + 1) % options.size]))
+                    val current = options.indexOfFirst { kotlin.math.abs(layout.lineSpacingMultiplier - it) < .12f }.coerceAtLeast(0)
+                    onChange(value.customLayout().copy(lineSpacingMultiplier = options[(current + 1) % options.size]))
                 }
             }
             DividerLine(secondary)
 
-            RowSetting("背景") {
+            RowSetting(stringResource(R.string.settings_background)) {
                 listOf(
                     ReaderTheme.LIGHT_GRAY,
                     ReaderTheme.EYE_CARE,
@@ -145,40 +182,12 @@ fun ReaderSettingsPanel(
             }
             DividerLine(secondary)
 
-            RowSetting("翻页") {
-                listOf(
-                    PageTurnMode.SIMULATION,
-                    PageTurnMode.HORIZONTAL,
-                    PageTurnMode.VERTICAL,
-                    PageTurnMode.SLIDE,
-                    PageTurnMode.NONE,
-                ).forEach { mode ->
-                    SettingsPill(
-                        text = mode.label(),
-                        selected = value.pageTurnMode == mode,
-                        primary = secondary,
-                        modifier = Modifier.weight(1f),
-                        onClick = { onChange(value.copy(pageTurnMode = mode)) },
-                    )
-                }
-            }
-            DividerLine(secondary)
-
             Row(
                 Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SettingsPill("护眼", value.theme == ReaderTheme.EYE_CARE, secondary, modifier = Modifier.weight(.82f)) {
-                    onChange(value.copy(theme = ReaderTheme.EYE_CARE))
-                }
-                SettingsPill(if (autoReading) "停止自动" else "自动阅读", autoReading, secondary, modifier = Modifier.weight(1.15f)) {
-                    onToggleAutoReading?.invoke()
-                }
-                SettingsPill("全屏点击", value.fullScreenTapNext, secondary, modifier = Modifier.weight(1.25f)) {
-                    onChange(value.copy(fullScreenTapNext = !value.fullScreenTapNext))
-                }
-                SettingsPill("更多设置", false, secondary, modifier = Modifier.weight(1.25f), onClick = onOpenMoreSettings)
+                SettingsPill(stringResource(R.string.settings_more), false, secondary, modifier = Modifier.weight(1f), onClick = onOpenMoreSettings)
             }
         }
     }
@@ -198,6 +207,7 @@ fun ReaderSettingsDetailScreen(
     val foreground = Color(palette.foreground)
     val secondary = Color(palette.secondary)
     val chipColors = settingsChipColors(background, foreground, secondary)
+    val layout = preferences.effectiveLayout()
 
     Scaffold(
         containerColor = background,
@@ -210,7 +220,7 @@ fun ReaderSettingsDetailScreen(
                 ),
                 title = {
                     Text(
-                        "更多设置",
+                        stringResource(R.string.settings_more),
                         style = MaterialTheme.typography.titleLarge.copy(
                             fontFamily = FontFamily.SansSerif,
                             fontWeight = FontWeight.Bold,
@@ -219,7 +229,7 @@ fun ReaderSettingsDetailScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 },
             )
@@ -233,24 +243,44 @@ fun ReaderSettingsDetailScreen(
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 18.dp, vertical = 12.dp),
             ) {
-                DetailSectionTitle("排版")
-                SettingSlider("字号", "${preferences.fontSizeSp.roundToInt()} sp", preferences.fontSizeSp, 14f..36f, secondary) {
-                    onChange(preferences.copy(fontSizeSp = it))
+                DetailSectionTitle(stringResource(R.string.settings_layout))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(top = 6.dp, bottom = 8.dp),
+                ) {
+                    listOf(
+                        ReaderLayoutPreset.COMFORT,
+                        ReaderLayoutPreset.COMPACT,
+                        ReaderLayoutPreset.IMMERSIVE,
+                        ReaderLayoutPreset.CUSTOM,
+                    ).forEach { preset ->
+                        FilterChip(
+                            selected = preferences.layoutPreset == preset,
+                            onClick = { onChange(if (preset == ReaderLayoutPreset.CUSTOM) preferences.customLayout() else preferences.withPreset(preset)) },
+                            label = { Text(preset.label()) },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = chipColors,
+                        )
+                    }
                 }
-                SettingSlider("行距", "%.2f".format(preferences.lineSpacingMultiplier), preferences.lineSpacingMultiplier, 1.1f..2f, secondary) {
-                    onChange(preferences.copy(lineSpacingMultiplier = it))
+                SettingSlider(stringResource(R.string.settings_font_size), "${layout.fontSizeSp.roundToInt()} sp", layout.fontSizeSp, 14f..36f, secondary) {
+                    onChange(preferences.customLayout().copy(fontSizeSp = it))
                 }
-                SettingSlider("段距", "${preferences.paragraphSpacingDp.roundToInt()} dp", preferences.paragraphSpacingDp, 0f..20f, secondary) {
-                    onChange(preferences.copy(paragraphSpacingDp = it))
+                SettingSlider(stringResource(R.string.settings_line_spacing), "%.2f".format(layout.lineSpacingMultiplier), layout.lineSpacingMultiplier, 1.1f..2f, secondary) {
+                    onChange(preferences.customLayout().copy(lineSpacingMultiplier = it))
                 }
-                SettingSlider("左右边距", "${preferences.horizontalPaddingDp.roundToInt()} dp", preferences.horizontalPaddingDp, 12f..40f, secondary) {
-                    onChange(preferences.copy(horizontalPaddingDp = it))
+                SettingSlider(stringResource(R.string.settings_paragraph_spacing), "${layout.paragraphSpacingDp.roundToInt()} dp", layout.paragraphSpacingDp, 0f..20f, secondary) {
+                    onChange(preferences.customLayout().copy(paragraphSpacingDp = it))
                 }
-                SettingSlider("顶部留白", "${preferences.verticalPaddingTopDp.roundToInt()} dp", preferences.verticalPaddingTopDp, 44f..92f, secondary) {
-                    onChange(preferences.copy(verticalPaddingTopDp = it))
+                SettingSlider(stringResource(R.string.settings_horizontal_padding), "${layout.horizontalPaddingDp.roundToInt()} dp", layout.horizontalPaddingDp, 12f..44f, secondary) {
+                    onChange(preferences.customLayout().copy(horizontalPaddingDp = it))
                 }
-                SettingSlider("底部留白", "${preferences.verticalPaddingBottomDp.roundToInt()} dp", preferences.verticalPaddingBottomDp, 40f..84f, secondary) {
-                    onChange(preferences.copy(verticalPaddingBottomDp = it))
+                SettingSlider(stringResource(R.string.settings_top_padding), "${layout.verticalPaddingTopDp.roundToInt()} dp", layout.verticalPaddingTopDp, 24f..92f, secondary) {
+                    onChange(preferences.customLayout().copy(verticalPaddingTopDp = it))
+                }
+                SettingSlider(stringResource(R.string.settings_bottom_padding), "${layout.verticalPaddingBottomDp.roundToInt()} dp", layout.verticalPaddingBottomDp, 24f..84f, secondary) {
+                    onChange(preferences.customLayout().copy(verticalPaddingBottomDp = it))
                 }
 
                 FlowRow(
@@ -270,36 +300,59 @@ fun ReaderSettingsDetailScreen(
                     FilterChip(
                         selected = preferences.fontWeight == 400,
                         onClick = { onChange(preferences.copy(fontWeight = 400)) },
-                        label = { Text("标准字重") },
+                        label = { Text(stringResource(R.string.settings_standard_weight)) },
                         shape = RoundedCornerShape(8.dp),
                         colors = chipColors,
                     )
                     FilterChip(
                         selected = preferences.fontWeight >= 500,
                         onClick = { onChange(preferences.copy(fontWeight = 600)) },
-                        label = { Text("加粗") },
+                        label = { Text(stringResource(R.string.settings_bold)) },
                         shape = RoundedCornerShape(8.dp),
                         colors = chipColors,
                     )
                 }
 
-                DetailSectionTitle("显示与操作")
-                ToggleSetting("首行缩进", preferences.firstLineIndent, secondary) { onChange(preferences.copy(firstLineIndent = it)) }
+                DetailSectionTitle(stringResource(R.string.settings_section_display))
+                DetailSectionTitle(stringResource(R.string.settings_page_turn))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(top = 6.dp, bottom = 8.dp),
+                ) {
+                    listOf(
+                        PageTurnMode.SIMULATION,
+                        PageTurnMode.HORIZONTAL,
+                        PageTurnMode.VERTICAL,
+                        PageTurnMode.SLIDE,
+                        PageTurnMode.NONE,
+                    ).forEach { mode ->
+                        FilterChip(
+                            selected = preferences.pageTurnMode == mode,
+                            onClick = { onChange(preferences.copy(pageTurnMode = mode)) },
+                            label = { Text(mode.label()) },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = chipColors,
+                        )
+                    }
+                }
+                ToggleSetting(stringResource(R.string.settings_first_line_indent), preferences.firstLineIndent, secondary) { onChange(preferences.copy(firstLineIndent = it)) }
                 if (preferences.firstLineIndent) {
-                    SettingSlider("缩进宽度", "%.1f em".format(preferences.firstLineIndentEm), preferences.firstLineIndentEm, 1f..3f, secondary) {
+                    SettingSlider(stringResource(R.string.settings_indent_width), "%.1f em".format(preferences.firstLineIndentEm), preferences.firstLineIndentEm, 1f..3f, secondary) {
                         onChange(preferences.copy(firstLineIndentEm = it))
                     }
                 }
-                ToggleSetting("两端对齐", preferences.justified, secondary) { onChange(preferences.copy(justified = it)) }
-                ToggleSetting("保持屏幕常亮", preferences.keepScreenOn, secondary) { onChange(preferences.copy(keepScreenOn = it)) }
-                ToggleSetting("锁定竖屏", preferences.lockPortrait, secondary) { onChange(preferences.copy(lockPortrait = it)) }
-                ToggleSetting("显示阅读进度", preferences.showStatus, secondary) { onChange(preferences.copy(showStatus = it)) }
-                ToggleSetting("显示章节标题", preferences.showHeader, secondary) { onChange(preferences.copy(showHeader = it)) }
-                ToggleSetting("显示右侧进度条", preferences.showRightProgressBar, secondary) { onChange(preferences.copy(showRightProgressBar = it)) }
-                ToggleSetting("音量键翻页", preferences.volumeKeys, secondary) { onChange(preferences.copy(volumeKeys = it)) }
+                ToggleSetting(stringResource(R.string.settings_justified), preferences.justified, secondary) { onChange(preferences.copy(justified = it)) }
+                ToggleSetting(stringResource(R.string.settings_keep_screen_on), preferences.keepScreenOn, secondary) { onChange(preferences.copy(keepScreenOn = it)) }
+                ToggleSetting(stringResource(R.string.settings_lock_portrait), preferences.lockPortrait, secondary) { onChange(preferences.copy(lockPortrait = it)) }
+                ToggleSetting(stringResource(R.string.settings_show_progress), preferences.showStatus, secondary) { onChange(preferences.copy(showStatus = it)) }
+                ToggleSetting(stringResource(R.string.settings_show_chapter_title), preferences.showHeader, secondary) { onChange(preferences.copy(showHeader = it)) }
+                ToggleSetting(stringResource(R.string.settings_show_right_progress), preferences.showRightProgressBar, secondary) { onChange(preferences.copy(showRightProgressBar = it)) }
+                ToggleSetting(stringResource(R.string.settings_fullscreen_tap_next), preferences.fullScreenTapNext, secondary) { onChange(preferences.copy(fullScreenTapNext = it)) }
+                ToggleSetting(stringResource(R.string.settings_volume_keys), preferences.volumeKeys, secondary) { onChange(preferences.copy(volumeKeys = it)) }
                 SettingSlider(
-                    "自动阅读速度",
-                    "${preferences.autoReadIntervalSeconds} 秒/页",
+                    stringResource(R.string.settings_auto_read_speed),
+                    stringResource(R.string.settings_seconds_per_page, preferences.autoReadIntervalSeconds),
                     preferences.autoReadIntervalSeconds.toFloat(),
                     3f..30f,
                     secondary,
@@ -309,11 +362,16 @@ fun ReaderSettingsDetailScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("自动阅读", style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.SansSerif))
-                    SettingsPill(if (autoReading) "停止自动" else "开始自动", autoReading, secondary, onClick = onToggleAutoReading)
+                    Text(stringResource(R.string.settings_auto_read), style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.SansSerif))
+                    SettingsPill(
+                        if (autoReading) stringResource(R.string.settings_stop_auto) else stringResource(R.string.settings_start_auto),
+                        autoReading,
+                        secondary,
+                        onClick = onToggleAutoReading,
+                    )
                 }
 
-                DetailSectionTitle("全部背景")
+                DetailSectionTitle(stringResource(R.string.settings_all_backgrounds))
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -336,13 +394,12 @@ fun ReaderSettingsDetailScreen(
 
 @Composable
 private fun RowSetting(label: String, content: @Composable () -> Unit) {
-    Row(
+    Column(
         Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(
             label,
-            modifier = Modifier.width(60.dp),
             style = MaterialTheme.typography.titleMedium.copy(
                 fontFamily = FontFamily.SansSerif,
                 fontWeight = FontWeight.Bold,
@@ -350,7 +407,7 @@ private fun RowSetting(label: String, content: @Composable () -> Unit) {
             ),
         )
         Row(
-            Modifier.weight(1f),
+            Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -365,13 +422,24 @@ private fun SettingsPill(
     selected: Boolean,
     primary: Color,
     modifier: Modifier = Modifier,
+    contentDescription: String = text,
     onClick: () -> Unit,
 ) {
+    val stateText = stringResource(if (selected) R.string.state_selected else R.string.state_not_selected)
     Box(
         modifier
-            .height(34.dp)
+            .heightIn(min = 40.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) primary.copy(alpha = .24f) else primary.copy(alpha = .10f))
+            .border(
+                if (selected) 2.dp else 1.dp,
+                if (selected) primary.copy(alpha = .78f) else primary.copy(alpha = .12f),
+                RoundedCornerShape(8.dp),
+            )
+            .background(if (selected) primary.copy(alpha = .28f) else primary.copy(alpha = .10f))
+            .semantics {
+                this.contentDescription = contentDescription
+                stateDescription = stateText
+            }
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp),
         contentAlignment = Alignment.Center,
@@ -396,6 +464,8 @@ private fun BackgroundDot(
 ) {
     val swatch = value.copy(theme = theme).palette()
     val selected = value.theme == theme
+    val label = theme.label()
+    val contentDescription = stringResource(R.string.settings_reader_background, label)
     Box(
         modifier.height(42.dp),
         contentAlignment = Alignment.Center,
@@ -403,7 +473,7 @@ private fun BackgroundDot(
         Box(
             Modifier
                 .size(40.dp)
-                .semantics { contentDescription = "阅读背景-${theme.label()}" }
+                .semantics { this.contentDescription = contentDescription }
                 .clip(CircleShape)
                 .background(Color(swatch.background))
                 .border(
@@ -466,7 +536,13 @@ private fun SettingSlider(
             Text(label, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.SansSerif))
             Text(valueText, color = primary, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.SansSerif))
         }
-        Slider(value = value, onValueChange = onValue, valueRange = range, colors = readerSliderColors(primary))
+        Slider(
+            value = value,
+            onValueChange = onValue,
+            valueRange = range,
+            modifier = Modifier.semantics { stateDescription = "$label $valueText" },
+            colors = readerSliderColors(primary),
+        )
     }
 }
 
@@ -492,28 +568,66 @@ private fun ToggleSetting(label: String, checked: Boolean, primary: Color, onChe
     }
 }
 
+@Composable
 private fun FontFamilyOption.label(): String = when (this) {
-    FontFamilyOption.SYSTEM -> "系统"
-    FontFamilyOption.SANS -> "黑体"
-    FontFamilyOption.SERIF -> "宋体"
-    FontFamilyOption.MONOSPACE -> "等宽"
+    FontFamilyOption.SYSTEM -> stringResource(R.string.font_system)
+    FontFamilyOption.SANS -> stringResource(R.string.font_sans)
+    FontFamilyOption.SERIF -> stringResource(R.string.font_serif)
+    FontFamilyOption.MONOSPACE -> stringResource(R.string.font_monospace)
 }
 
+@Composable
 private fun ReaderTheme.label(): String = when (this) {
-    ReaderTheme.EYE_CARE -> "护眼绿"
-    ReaderTheme.SEPIA -> "米杏"
-    ReaderTheme.LIGHT_GRAY -> "纸白"
-    ReaderTheme.WARM_BROWN -> "暖棕"
-    ReaderTheme.FROST_BLUE -> "蓝白"
-    ReaderTheme.SAKURA_PINK -> "粉白"
-    ReaderTheme.NIGHT -> "夜间"
-    ReaderTheme.CUSTOM -> "自定义"
+    ReaderTheme.EYE_CARE -> stringResource(R.string.theme_eye_care)
+    ReaderTheme.SEPIA -> stringResource(R.string.theme_sepia)
+    ReaderTheme.LIGHT_GRAY -> stringResource(R.string.theme_light_gray)
+    ReaderTheme.WARM_BROWN -> stringResource(R.string.theme_warm_brown)
+    ReaderTheme.FROST_BLUE -> stringResource(R.string.theme_frost_blue)
+    ReaderTheme.SAKURA_PINK -> stringResource(R.string.theme_sakura_pink)
+    ReaderTheme.NIGHT -> stringResource(R.string.theme_night)
+    ReaderTheme.CUSTOM -> stringResource(R.string.theme_custom)
 }
 
+@Composable
+private fun ReaderLayoutPreset.label(): String = when (this) {
+    ReaderLayoutPreset.COMFORT -> stringResource(R.string.layout_comfort)
+    ReaderLayoutPreset.COMPACT -> stringResource(R.string.layout_compact)
+    ReaderLayoutPreset.IMMERSIVE -> stringResource(R.string.layout_immersive)
+    ReaderLayoutPreset.CUSTOM -> stringResource(R.string.layout_custom)
+}
+
+@Composable
 private fun PageTurnMode.label(): String = when (this) {
-    PageTurnMode.NONE -> "无"
-    PageTurnMode.HORIZONTAL -> "左右"
-    PageTurnMode.SLIDE -> "平移"
-    PageTurnMode.VERTICAL -> "上下"
-    PageTurnMode.SIMULATION -> "仿真"
+    PageTurnMode.NONE -> stringResource(R.string.page_turn_none)
+    PageTurnMode.HORIZONTAL -> stringResource(R.string.page_turn_horizontal)
+    PageTurnMode.SLIDE -> stringResource(R.string.page_turn_slide)
+    PageTurnMode.VERTICAL -> stringResource(R.string.page_turn_vertical)
+    PageTurnMode.SIMULATION -> stringResource(R.string.page_turn_simulation)
+}
+
+private fun ReaderPreferences.withPreset(preset: ReaderLayoutPreset): ReaderPreferences {
+    val values = copy(layoutPreset = preset).effectiveLayout()
+    return copy(
+        layoutPreset = preset,
+        fontSizeSp = values.fontSizeSp,
+        lineSpacingMultiplier = values.lineSpacingMultiplier,
+        paragraphSpacingDp = values.paragraphSpacingDp,
+        horizontalPaddingDp = values.horizontalPaddingDp,
+        verticalPaddingTopDp = values.verticalPaddingTopDp,
+        verticalPaddingBottomDp = values.verticalPaddingBottomDp,
+    )
+}
+
+private fun ReaderPreferences.customLayout(): ReaderPreferences {
+    if (layoutPreset == ReaderLayoutPreset.CUSTOM) return this
+    val values = effectiveLayout()
+    return copy(
+        layoutPreset = ReaderLayoutPreset.CUSTOM,
+        fontSizeSp = values.fontSizeSp,
+        lineSpacingMultiplier = values.lineSpacingMultiplier,
+        paragraphSpacingDp = values.paragraphSpacingDp,
+        horizontalPaddingDp = values.horizontalPaddingDp,
+        verticalPaddingTopDp = values.verticalPaddingTopDp,
+        verticalPaddingBottomDp = values.verticalPaddingBottomDp,
+    )
 }

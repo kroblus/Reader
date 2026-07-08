@@ -52,12 +52,14 @@ import androidx.compose.material.icons.automirrored.outlined.FormatListBulleted
 import androidx.compose.material.icons.outlined.BookmarkAdd
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.Bookmarks
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -90,7 +92,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -101,6 +105,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.lightreader.app.R
+import com.lightreader.app.core.model.BookFormat
 import com.lightreader.app.core.model.Bookmark
 import com.lightreader.app.core.model.Chapter
 import com.lightreader.app.core.model.PageTurnMode
@@ -118,13 +124,12 @@ import kotlin.math.max
 @Composable
 fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
     val state by viewModel.readerState.collectAsState()
-    var showToc by remember { mutableStateOf(false) }
-    var showBookmarks by remember { mutableStateOf(false) }
     var tocAscending by remember { mutableStateOf(true) }
     var currentTime by remember { mutableStateOf(currentTime()) }
     val palette = preferences.palette()
     val background = Color(palette.background)
     val foreground = Color(palette.foreground)
+    val overlayVisible = state.overlay != ReaderOverlay.NONE
 
     ApplyWindowPreferences(preferences)
     ApplyReaderSystemBars(preferences, state.toolbarVisible)
@@ -136,8 +141,8 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
             delay(30_000)
         }
     }
-    LaunchedEffect(state.toolbarVisible, showToc, showBookmarks, state.settingsVisible) {
-        if (state.toolbarVisible && !showToc && !showBookmarks && !state.settingsVisible) {
+    LaunchedEffect(state.toolbarVisible, state.overlay, state.settingsVisible) {
+        if (state.toolbarVisible && !overlayVisible && !state.settingsVisible) {
             delay(5_000)
             viewModel.hideToolbar()
         }
@@ -147,12 +152,11 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
         state.pageIndex,
         state.chapterIndex,
         state.toolbarVisible,
-        showToc,
-        showBookmarks,
+        state.overlay,
         state.settingsVisible,
         preferences.autoReadIntervalSeconds,
     ) {
-        if (state.autoReading && !state.toolbarVisible && !showToc && !showBookmarks && !state.settingsVisible) {
+        if (state.autoReading && !state.toolbarVisible && !overlayVisible && !state.settingsVisible) {
             delay(preferences.autoReadIntervalSeconds.coerceIn(3, 60) * 1_000L)
             viewModel.nextPage()
         }
@@ -400,7 +404,7 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = viewModel::goBack, modifier = Modifier.size(40.dp)) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回", tint = foreground)
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.action_back), tint = foreground)
                 }
                 Text(
                     state.chapters.getOrNull(state.chapterIndex)?.title ?: state.book?.title.orEmpty(),
@@ -418,30 +422,50 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                     onClick = { state.book?.let { viewModel.navigate(AppScreen.Search(it.id)) } },
                     enabled = state.book != null && !state.loading,
                     modifier = Modifier.size(40.dp),
-                ) { Icon(Icons.Outlined.Search, "搜索", tint = foreground) }
+                ) { Icon(Icons.Outlined.Search, stringResource(R.string.action_search), tint = foreground) }
                 val currentPage = state.pages.getOrNull(state.pageIndex)
                 val currentChapter = state.chapters.getOrNull(state.chapterIndex)
                 val isBookmarked = currentPage != null && currentChapter != null && state.bookmarks.any {
                     it.chapterId == currentChapter.id && it.charOffset >= currentPage.startOffset &&
                         it.charOffset < currentPage.endOffset.coerceAtLeast(currentPage.startOffset + 1)
                 }
+                val bookmarkStateDescription = stringResource(
+                    if (isBookmarked) R.string.reader_bookmarked_state else R.string.reader_unbookmarked_state,
+                )
+                val bookmarkContentDescription = stringResource(
+                    if (isBookmarked) R.string.reader_bookmark_remove else R.string.reader_bookmark_add,
+                )
                 IconButton(
                     onClick = viewModel::toggleCurrentPageBookmark,
                     enabled = currentPage != null && !state.loading,
-                    modifier = Modifier.size(40.dp),
+                    modifier = Modifier
+                        .size(40.dp)
+                        .semantics {
+                            stateDescription = bookmarkStateDescription
+                        },
                 ) {
                     Icon(
                         if (isBookmarked) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkAdd,
-                        if (isBookmarked) "取消书签" else "添加书签",
+                        bookmarkContentDescription,
                         tint = foreground,
                     )
+                }
+                val book = state.book
+                if (book?.format == BookFormat.WEB && !book.sourceUrl.isNullOrBlank()) {
+                    IconButton(
+                        onClick = viewModel::refreshCurrentWebBook,
+                        enabled = !state.loading,
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        Icon(Icons.Outlined.Refresh, stringResource(R.string.reader_refresh), tint = foreground)
+                    }
                 }
             }
         }
 
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().wrapContentHeight()) {
             AnimatedVisibility(
-                visible = state.toolbarVisible && state.settingsVisible,
+                visible = state.toolbarVisible && state.settingsVisible && !overlayVisible,
                 enter = slideInVertically(animationSpec = tween(150)) { it / 2 } + fadeIn(tween(120)),
                 exit = slideOutVertically(animationSpec = tween(130)) { it / 2 } + fadeOut(tween(100)),
             ) {
@@ -455,7 +479,7 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
             }
 
             AnimatedVisibility(
-                visible = state.toolbarVisible,
+                visible = state.toolbarVisible && !overlayVisible,
                 enter = slideInVertically(animationSpec = tween(140)) { it } + fadeIn(tween(120)),
                 exit = slideOutVertically(animationSpec = tween(120)) { it } + fadeOut(tween(100)),
             ) {
@@ -464,30 +488,52 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                     preferences = preferences,
                     viewModel = viewModel,
                     attachedToSettings = state.settingsVisible,
-                    onShowToc = { showToc = true },
-                    onShowBookmarks = { showBookmarks = true },
+                    onShowToc = viewModel::showTableOfContents,
+                    onShowBookmarks = viewModel::showBookmarksOverlay,
                 )
             }
         }
 
+        AnimatedVisibility(
+            visible = state.autoReading && !state.toolbarVisible && !overlayVisible && !state.settingsVisible,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(bottom = 18.dp),
+            enter = fadeIn(tween(140)),
+            exit = fadeOut(tween(120)),
+        ) {
+            Surface(
+                color = Color(palette.overlay).copy(alpha = .96f),
+                shape = RoundedCornerShape(8.dp),
+                shadowElevation = 2.dp,
+            ) {
+                TextButton(onClick = viewModel::toggleAutoReading) {
+                    Icon(Icons.Outlined.Pause, stringResource(R.string.reader_pause_auto_reading), tint = foreground, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.reader_pause_auto), color = foreground, style = MaterialTheme.typography.labelLarge)
+                }
+            }
+        }
+
         ChapterListOverlay(
-            visible = showToc,
+            visible = state.overlay == ReaderOverlay.TOC,
             state = state,
             preferences = preferences,
             ascending = tocAscending,
             onToggleSort = { tocAscending = !tocAscending },
-            onDismiss = { showToc = false },
+            onDismiss = viewModel::hideReaderOverlay,
             onSelectChapter = { chapter ->
                 viewModel.selectChapter(chapter.orderIndex)
-                showToc = false
+                viewModel.hideReaderOverlay()
             },
         )
         BookmarksOverlay(
-            visible = showBookmarks,
+            visible = state.overlay == ReaderOverlay.BOOKMARKS,
             state = state,
             preferences = preferences,
-            onDismiss = { showBookmarks = false },
-            onJump = { viewModel.jumpToBookmark(it); showBookmarks = false },
+            onDismiss = viewModel::hideReaderOverlay,
+            onJump = { viewModel.jumpToBookmark(it); viewModel.hideReaderOverlay() },
             onDelete = viewModel::deleteBookmark,
         )
     }
@@ -504,7 +550,7 @@ private fun ReaderSettingsDock(
     val palette = preferences.palette()
     Surface(
         modifier = Modifier.fillMaxWidth().wrapContentHeight(),
-        color = Color(palette.overlay).copy(alpha = .97f),
+        color = Color(palette.overlay).copy(alpha = .99f),
         shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
         shadowElevation = 4.dp,
     ) {
@@ -536,6 +582,9 @@ private fun ReaderBottomControls(
     val secondary = Color(palette.secondary)
     val current = state.pages.getOrNull(state.pageIndex)?.let { overallProgress(state, it) } ?: 0f
     var sliderValue by remember(state.chapterIndex, state.pageIndex) { mutableFloatStateOf(current) }
+    val progressLabel = progressPreview(state, sliderValue)
+    val progressPercent = (sliderValue * 100).coerceIn(0f, 100f).toInt()
+    val progressStateDescription = stringResource(R.string.reader_progress_state, progressPercent, progressLabel)
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -557,7 +606,7 @@ private fun ReaderBottomControls(
                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                 ) {
                     Text(
-                        "上一章",
+                        stringResource(R.string.reader_prev_chapter),
                         color = if (state.chapterIndex > 0) foreground else secondary.copy(alpha = .45f),
                         style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.SansSerif, fontSize = 12.sp),
                     )
@@ -566,7 +615,12 @@ private fun ReaderBottomControls(
                     value = sliderValue,
                     onValueChange = { sliderValue = it },
                     onValueChangeFinished = { viewModel.jumpToProgress(sliderValue) },
-                    modifier = Modifier.weight(1f).height(32.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(32.dp)
+                        .semantics {
+                            stateDescription = progressStateDescription
+                        },
                     enabled = state.pages.isNotEmpty() && !state.loading,
                     colors = SliderDefaults.colors(
                         thumbColor = secondary,
@@ -580,14 +634,14 @@ private fun ReaderBottomControls(
                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                 ) {
                     Text(
-                        "下一章",
+                        stringResource(R.string.reader_next_chapter),
                         color = if (state.chapterIndex < state.chapters.lastIndex) foreground else secondary.copy(alpha = .45f),
                         style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.SansSerif, fontSize = 12.sp),
                     )
                 }
             }
             Text(
-                "全书 ${(sliderValue * 100).coerceIn(0f, 100f).toInt()}% · 本章 ${state.pageIndex + 1}/${state.pages.size.coerceAtLeast(1)}",
+                stringResource(R.string.reader_progress, progressPercent, progressLabel),
                 modifier = Modifier.align(Alignment.CenterHorizontally),
                 color = secondary,
                 style = MaterialTheme.typography.labelSmall.copy(
@@ -602,16 +656,22 @@ private fun ReaderBottomControls(
                 horizontalArrangement = Arrangement.SpaceAround,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ReaderAction(Icons.AutoMirrored.Outlined.FormatListBulleted, "目录", foreground, onShowToc)
-                ReaderAction(Icons.Outlined.DarkMode, "夜间", foreground, viewModel::toggleNightMode)
-                ReaderAction(Icons.Outlined.TextFields, "设置", foreground, viewModel::toggleSettings, "阅读设置")
+                ReaderAction(Icons.AutoMirrored.Outlined.FormatListBulleted, stringResource(R.string.reader_toc), foreground, onShowToc)
+                ReaderAction(Icons.Outlined.DarkMode, stringResource(R.string.reader_night), foreground, viewModel::toggleNightMode)
+                ReaderAction(
+                    Icons.Outlined.TextFields,
+                    stringResource(R.string.reader_settings),
+                    foreground,
+                    viewModel::toggleSettings,
+                    stringResource(R.string.reader_settings_content_description),
+                )
                 ReaderAction(
                     if (state.autoReading) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                    if (state.autoReading) "暂停" else "自动",
+                    if (state.autoReading) stringResource(R.string.reader_pause) else stringResource(R.string.reader_auto),
                     foreground,
                     viewModel::toggleAutoReading,
                 )
-                ReaderAction(Icons.Outlined.Bookmarks, "书签", foreground, onShowBookmarks)
+                ReaderAction(Icons.Outlined.Bookmarks, stringResource(R.string.reader_bookmarks), foreground, onShowBookmarks)
             }
         }
     }
@@ -629,8 +689,13 @@ private fun ReaderAction(
         modifier = Modifier.width(54.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        IconButton(onClick = onClick, Modifier.size(34.dp)) {
-            Icon(icon, contentDescription, modifier = Modifier.size(22.dp), tint = tint)
+        IconButton(
+            onClick = onClick,
+            modifier = Modifier
+                .size(34.dp)
+                .semantics { this.contentDescription = contentDescription },
+        ) {
+            Icon(icon, null, modifier = Modifier.size(22.dp), tint = tint)
         }
         Text(
             label,
@@ -749,6 +814,26 @@ private fun overallProgress(state: ReaderUiState, page: ReaderPage): Float {
     return ((before + currentLength * page.progressInChapter) / total.toDouble()).toFloat().coerceIn(0f, 1f)
 }
 
+@Composable
+private fun progressPreview(state: ReaderUiState, progress: Float): String {
+    if (state.chapters.isEmpty()) return stringResource(R.string.reader_no_chapters)
+    val total = state.chapters.sumOf { it.charCount.toLong() }.coerceAtLeast(1L)
+    var target = (progress.coerceIn(0f, 1f) * total).toLong()
+    val index = state.chapters.indexOfFirst { chapter ->
+        if (target < chapter.charCount) true else {
+            target -= chapter.charCount
+            false
+        }
+    }.takeIf { it >= 0 } ?: state.chapters.lastIndex
+    val chapter = state.chapters[index]
+    val chapterPercent = if (chapter.charCount > 0) {
+        ((target.toFloat() / chapter.charCount) * 100).toInt().coerceIn(0, 100)
+    } else {
+        0
+    }
+    return "${chapter.title} $chapterPercent%"
+}
+
 private fun currentTime(): String = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
 
 private fun Modifier.readerPageTapNavigation(
@@ -839,8 +924,9 @@ private fun ChapterListOverlay(
 
     ReaderListOverlay(
         visible = visible,
-        title = "目录",
+        title = stringResource(R.string.reader_toc),
         preferences = preferences,
+        heightFraction = if (chapters.size <= 6) .36f else .92f,
         onDismiss = onDismiss,
         action = {
             TextButton(
@@ -848,7 +934,7 @@ private fun ChapterListOverlay(
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
             ) {
                 Text(
-                    if (ascending) "正序" else "倒序",
+                    stringResource(if (ascending) R.string.reader_toc_ascending else R.string.reader_toc_descending),
                     color = foreground,
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontFamily = FontFamily.SansSerif,
@@ -864,9 +950,9 @@ private fun ChapterListOverlay(
                 ChapterOverlayRow(
                     chapter = chapter,
                     selected = selected,
-                    readPercent = readPercent,
                     foreground = foreground,
                     secondary = secondary,
+                    readPercentText = stringResource(R.string.reader_read_percent, readPercent),
                     onClick = { onSelectChapter(chapter) },
                 )
                 HorizontalDivider(
@@ -882,7 +968,7 @@ private fun ChapterListOverlay(
 private fun ChapterOverlayRow(
     chapter: Chapter,
     selected: Boolean,
-    readPercent: Int,
+    readPercentText: String,
     foreground: Color,
     secondary: Color,
     onClick: () -> Unit,
@@ -913,7 +999,7 @@ private fun ChapterOverlayRow(
         if (selected) {
             Spacer(Modifier.width(12.dp))
             Text(
-                "已读$readPercent%",
+                readPercentText,
                 color = foreground.copy(alpha = .72f),
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontFamily = FontFamily.SansSerif,
@@ -941,14 +1027,15 @@ private fun BookmarksOverlay(
 
     ReaderListOverlay(
         visible = visible,
-        title = "书签",
+        title = stringResource(R.string.reader_bookmarks),
         preferences = preferences,
+        heightFraction = if (state.bookmarks.size <= 4) .36f else .92f,
         onDismiss = onDismiss,
     ) {
         if (state.bookmarks.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    "还没有书签",
+                    stringResource(R.string.reader_no_bookmarks),
                     color = secondary.copy(alpha = .74f),
                     style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.SansSerif),
                 )
@@ -956,7 +1043,8 @@ private fun BookmarksOverlay(
         } else {
             LazyColumn(Modifier.fillMaxSize()) {
                 items(state.bookmarks, key = { it.id }) { bookmark ->
-                    val chapterTitle = state.chapters.firstOrNull { it.id == bookmark.chapterId }?.title ?: "书签位置"
+                    val chapterTitle = state.chapters.firstOrNull { it.id == bookmark.chapterId }?.title
+                        ?: stringResource(R.string.reader_bookmark_position)
                     BookmarkOverlayRow(
                         bookmark = bookmark,
                         chapterTitle = chapterTitle,
@@ -1013,7 +1101,7 @@ private fun BookmarkOverlayRow(
         IconButton(onClick = onDelete, modifier = Modifier.size(38.dp)) {
             Icon(
                 Icons.Outlined.DeleteOutline,
-                "删除书签",
+                stringResource(R.string.reader_delete_bookmark),
                 modifier = Modifier.size(20.dp),
                 tint = secondary.copy(alpha = .82f),
             )
@@ -1026,6 +1114,7 @@ private fun ReaderListOverlay(
     visible: Boolean,
     title: String,
     preferences: ReaderPreferences,
+    heightFraction: Float,
     onDismiss: () -> Unit,
     action: @Composable () -> Unit = {},
     content: @Composable () -> Unit,
@@ -1035,19 +1124,29 @@ private fun ReaderListOverlay(
     val secondary = Color(palette.secondary)
     val outsideInteraction = remember { MutableInteractionSource() }
     val cardInteraction = remember { MutableInteractionSource() }
-    val closeLayer = if (visible) {
-        Modifier
-            .semantics { contentDescription = "关闭浮层" }
-            .clickable(
-                interactionSource = outsideInteraction,
-                indication = null,
-                onClick = onDismiss,
-            )
-    } else {
-        Modifier
-    }
+    val closeOverlayBackground = stringResource(R.string.reader_close_overlay_background)
+    val closeOverlay = stringResource(R.string.reader_close_overlay)
 
-    BoxWithConstraints(Modifier.fillMaxSize().then(closeLayer)) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val panelWidth = if (maxWidth * .86f < 360.dp) maxWidth * .86f else 360.dp
+        AnimatedVisibility(
+            visible = visible,
+            modifier = Modifier.fillMaxSize(),
+            enter = fadeIn(animationSpec = tween(80)),
+            exit = fadeOut(animationSpec = tween(70)),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = .38f))
+                    .semantics { contentDescription = closeOverlayBackground }
+                    .clickable(
+                        interactionSource = outsideInteraction,
+                        indication = null,
+                        onClick = onDismiss,
+                    ),
+            )
+        }
         AnimatedVisibility(
             visible = visible,
             modifier = Modifier.align(Alignment.CenterStart),
@@ -1056,9 +1155,9 @@ private fun ReaderListOverlay(
         ) {
             Surface(
                 modifier = Modifier
-                    .padding(start = 2.dp, top = 10.dp, bottom = 10.dp)
-                    .width(maxWidth * .88f)
-                    .fillMaxHeight(.96f)
+                    .padding(start = 8.dp, top = 14.dp, bottom = 14.dp)
+                    .width(panelWidth)
+                    .fillMaxHeight(heightFraction.coerceIn(.28f, .92f))
                     .clickable(
                         interactionSource = cardInteraction,
                         indication = null,
@@ -1070,7 +1169,7 @@ private fun ReaderListOverlay(
             ) {
                 Column(Modifier.fillMaxSize()) {
                     Row(
-                        Modifier.fillMaxWidth().padding(start = 26.dp, end = 18.dp, top = 22.dp, bottom = 20.dp),
+                        Modifier.fillMaxWidth().padding(start = 24.dp, end = 10.dp, top = 18.dp, bottom = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
@@ -1085,6 +1184,9 @@ private fun ReaderListOverlay(
                             ),
                         )
                         action()
+                        IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
+                            Icon(Icons.Outlined.Close, closeOverlay, tint = foreground)
+                        }
                     }
                     HorizontalDivider(color = secondary.copy(alpha = .12f))
                     Box(Modifier.fillMaxSize()) {

@@ -38,6 +38,7 @@ data class ChapterEntity(
     val title: String,
     val contentPath: String,
     val charCount: Int,
+    val sourceUrl: String?,
 )
 
 @Entity(
@@ -93,13 +94,18 @@ data class SearchChunkEntity(
 data class DownloadTaskEntity(
     @PrimaryKey val id: String,
     val title: String,
+    val author: String?,
+    val description: String?,
     val sourceUrl: String,
     val status: String,
     val totalChapters: Int,
     val completedChapters: Int,
+    val failedChapters: Int,
     val contentSelector: String,
     val removeSelectorsJson: String,
     val createdAt: Long,
+    val updatedAt: Long,
+    val importedBookId: String?,
     val error: String?,
 )
 

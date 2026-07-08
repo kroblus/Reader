@@ -6,17 +6,22 @@ import android.text.TextPaint
 import android.text.TextUtils
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import com.lightreader.app.R
 import com.lightreader.app.core.model.FontFamilyOption
 import com.lightreader.app.core.model.ReaderPage
 import com.lightreader.app.core.model.ReaderPreferences
+import com.lightreader.app.core.reader.effectiveLayout
 import com.lightreader.app.core.reader.palette
+import com.lightreader.app.core.reader.toReaderStyle
 
 @Composable
 fun ReaderPageCanvas(
@@ -33,9 +38,11 @@ fun ReaderPageCanvas(
 ) {
     val density = LocalDensity.current
     val palette = displayPreferences.palette()
-    val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+    val layoutValues = layoutPreferences.effectiveLayout()
+    val displayStyle = displayPreferences.toReaderStyle()
+    val textPaint = remember(layoutPreferences, density.density, density.fontScale) { TextPaint(Paint.ANTI_ALIAS_FLAG) }.apply {
         color = palette.foreground.toInt()
-        textSize = layoutPreferences.fontSizeSp * density.density * density.fontScale
+        textSize = layoutValues.fontSizeSp * density.density * density.fontScale
         typeface = Typeface.create(
             when (layoutPreferences.fontFamily) {
                 FontFamilyOption.SYSTEM -> Typeface.DEFAULT
@@ -46,14 +53,14 @@ fun ReaderPageCanvas(
             if (layoutPreferences.fontWeight >= 500) Typeface.BOLD else Typeface.NORMAL,
         )
     }
-    val secondaryPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+    val secondaryPaint = remember(palette.secondary, density.density, density.fontScale) { TextPaint(Paint.ANTI_ALIAS_FLAG) }.apply {
         color = palette.secondary.toInt()
         textSize = 12f * density.density * density.fontScale
         typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
     }
-    val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+    val titlePaint = remember(layoutPreferences, density.density, density.fontScale) { TextPaint(Paint.ANTI_ALIAS_FLAG) }.apply {
         color = palette.foreground.toInt()
-        textSize = layoutPreferences.fontSizeSp * 1.45f * density.density * density.fontScale
+        textSize = layoutValues.fontSizeSp * 1.45f * density.density * density.fontScale
         typeface = Typeface.create(
             when (layoutPreferences.fontFamily) {
                 FontFamilyOption.SYSTEM -> Typeface.DEFAULT
@@ -64,11 +71,12 @@ fun ReaderPageCanvas(
             Typeface.BOLD,
         )
     }
-    val horizontalPaddingPx = layoutPreferences.horizontalPaddingDp * density.density
+    val horizontalPaddingPx = layoutValues.horizontalPaddingDp * density.density
+    val blankPageDescription = stringResource(R.string.reader_blank_page)
 
     Canvas(
         modifier.semantics {
-            contentDescription = page.text.take(240).ifBlank { "空白页面" }
+            contentDescription = page.text.take(240).ifBlank { blankPageDescription }
         },
     ) {
         drawRect(Color(palette.background))
@@ -90,7 +98,7 @@ fun ReaderPageCanvas(
                 }
             }
 
-            if (displayPreferences.showHeader) {
+            if (displayStyle.showHeader) {
                 val maxWidth = size.width - horizontalPaddingPx * 2f
                 val title = TextUtils.ellipsize(readerHeaderTitle(page, bookTitle), secondaryPaint, maxWidth, TextUtils.TruncateAt.END).toString()
                 canvas.nativeCanvas.drawText(
@@ -101,7 +109,7 @@ fun ReaderPageCanvas(
                 )
             }
 
-            if (displayPreferences.showStatus) {
+            if (displayStyle.showFooter) {
                 val footerY = size.height - safeBottomPx - 16f * density.density
                 val progressText = "%.1f%%".format(overallProgress.coerceIn(0f, 1f) * 100f)
                 canvas.nativeCanvas.drawText(progressText, horizontalPaddingPx, footerY, secondaryPaint)
@@ -112,8 +120,8 @@ fun ReaderPageCanvas(
                 canvas.nativeCanvas.drawText(currentTime, timeX, footerY, secondaryPaint)
             }
 
-            if (displayPreferences.showRightProgressBar) {
-                val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = palette.secondary.toInt(); alpha = 150 }
+            if (displayStyle.showRightProgressBar) {
+                val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = palette.secondary.toInt(); alpha = 58 }
                 val width = 3.5f * density.density
                 val top = safeTopPx + 8f * density.density
                 val bottom = size.height - safeBottomPx - 8f * density.density

@@ -1,29 +1,83 @@
 package com.lightreader.app.core.reader
 
 import com.lightreader.app.core.model.ReaderPalette
+import com.lightreader.app.core.model.ReaderLayoutPreset
 import com.lightreader.app.core.model.ReaderPreferences
 import com.lightreader.app.core.model.ReaderStyle
 import com.lightreader.app.core.model.ReaderTheme
 
-fun ReaderPreferences.toReaderStyle(): ReaderStyle = ReaderStyle(
-    fontSizeSp = fontSizeSp,
-    fontWeight = fontWeight,
-    lineHeightMultiplier = lineSpacingMultiplier,
-    paragraphSpacingDp = paragraphSpacingDp,
-    firstLineIndentEm = if (firstLineIndent) firstLineIndentEm else 0f,
-    horizontalPaddingDp = horizontalPaddingDp,
-    verticalPaddingTopDp = verticalPaddingTopDp,
-    verticalPaddingBottomDp = verticalPaddingBottomDp,
-    justified = justified,
-    fontFamily = fontFamily,
-    palette = palette(),
-    showHeader = showHeader && !minimalMode,
-    showFooter = showStatus && !minimalMode,
-    showRightProgressBar = showRightProgressBar && !minimalMode,
+fun ReaderPreferences.toReaderStyle(): ReaderStyle = effectiveLayout().let { layout ->
+    val immersive = layoutPreset == ReaderLayoutPreset.IMMERSIVE || minimalMode
+    ReaderStyle(
+        fontSizeSp = layout.fontSizeSp,
+        fontWeight = fontWeight,
+        lineHeightMultiplier = layout.lineSpacingMultiplier,
+        paragraphSpacingDp = layout.paragraphSpacingDp,
+        firstLineIndentEm = if (firstLineIndent) firstLineIndentEm else 0f,
+        horizontalPaddingDp = layout.horizontalPaddingDp,
+        verticalPaddingTopDp = layout.verticalPaddingTopDp,
+        verticalPaddingBottomDp = layout.verticalPaddingBottomDp,
+        justified = justified,
+        fontFamily = fontFamily,
+        palette = palette(),
+        showHeader = showHeader && !immersive,
+        showFooter = showStatus && !immersive,
+        showRightProgressBar = showRightProgressBar && !immersive,
+        maxContentWidthDp = layout.maxContentWidthDp,
+    )
+}
+
+fun ReaderPreferences.effectiveLayout(): ReaderLayoutValues = when (layoutPreset) {
+    ReaderLayoutPreset.COMFORT -> ReaderLayoutValues(
+        fontSizeSp = 18f,
+        lineSpacingMultiplier = 1.86f,
+        paragraphSpacingDp = 12f,
+        horizontalPaddingDp = 24f,
+        verticalPaddingTopDp = 58f,
+        verticalPaddingBottomDp = 54f,
+        maxContentWidthDp = 620f,
+    )
+    ReaderLayoutPreset.COMPACT -> ReaderLayoutValues(
+        fontSizeSp = 16f,
+        lineSpacingMultiplier = 1.58f,
+        paragraphSpacingDp = 7f,
+        horizontalPaddingDp = 18f,
+        verticalPaddingTopDp = 42f,
+        verticalPaddingBottomDp = 40f,
+        maxContentWidthDp = 700f,
+    )
+    ReaderLayoutPreset.IMMERSIVE -> ReaderLayoutValues(
+        fontSizeSp = 18f,
+        lineSpacingMultiplier = 1.74f,
+        paragraphSpacingDp = 8f,
+        horizontalPaddingDp = 18f,
+        verticalPaddingTopDp = 28f,
+        verticalPaddingBottomDp = 26f,
+        maxContentWidthDp = 680f,
+    )
+    ReaderLayoutPreset.CUSTOM -> ReaderLayoutValues(
+        fontSizeSp = fontSizeSp,
+        lineSpacingMultiplier = lineSpacingMultiplier,
+        paragraphSpacingDp = paragraphSpacingDp,
+        horizontalPaddingDp = horizontalPaddingDp,
+        verticalPaddingTopDp = verticalPaddingTopDp,
+        verticalPaddingBottomDp = verticalPaddingBottomDp,
+        maxContentWidthDp = 640f,
+    )
+}
+
+data class ReaderLayoutValues(
+    val fontSizeSp: Float,
+    val lineSpacingMultiplier: Float,
+    val paragraphSpacingDp: Float,
+    val horizontalPaddingDp: Float,
+    val verticalPaddingTopDp: Float,
+    val verticalPaddingBottomDp: Float,
+    val maxContentWidthDp: Float,
 )
 
 fun ReaderPreferences.palette(): ReaderPalette = when (theme) {
-    ReaderTheme.EYE_CARE -> ReaderPalette(0xFFB8C9A7, 0xFF26301F, 0xFF6F8063, 0xE6C6D4B8)
+    ReaderTheme.EYE_CARE -> ReaderPalette(0xFFB8C9A7, 0xFF1F2B1A, 0xFF5F7457, 0xE6C6D4B8)
     ReaderTheme.SEPIA -> ReaderPalette(0xFFF5ECD8, 0xFF2B2B2B, 0xFF8A7A5C, 0xE6EDE1C9)
     ReaderTheme.LIGHT_GRAY -> ReaderPalette(0xFFECEDE7, 0xFF2B2B2B, 0xFF777777, 0xE6E2E4DD)
     ReaderTheme.WARM_BROWN -> ReaderPalette(0xFFE5BE8D, 0xFF332719, 0xFF7C654A, 0xE6D7AC78)

@@ -32,5 +32,5 @@ class AppContainer(context: Context) {
     val bookRepository = BookRepository(context, database.readerDao())
     val aiProvider = DeepSeekAiExtractionProvider(keyStore, client, aiConfigurationStore)
     val webSourceParser: WebSourceParser = JsoupWebSourceParser(client, aiProvider)
-    val downloadRepository = DownloadRepository(context, database.readerDao(), json)
+    val downloadRepository = DownloadRepository(context, database.readerDao(), json, webSourceParser)
 }

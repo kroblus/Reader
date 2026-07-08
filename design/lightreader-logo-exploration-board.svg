@@ -1,0 +1,302 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="3600" viewBox="0 0 2400 3600" role="img" aria-label="LightReader minimalist logo exploration board">
+  <defs>
+    <style>
+      .board { fill: #fff; }
+      .ink { fill: #050505; }
+      .paper { fill: #fff; }
+      .line { fill: none; stroke: #050505; stroke-width: 16; stroke-linecap: round; stroke-linejoin: round; }
+      .thin { fill: none; stroke: #050505; stroke-width: 8; stroke-linecap: round; stroke-linejoin: round; }
+      .micro { fill: none; stroke: #050505; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+      .name { fill: #050505; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 42px; font-weight: 700; letter-spacing: 3px; text-anchor: middle; }
+      .name-wide { fill: #050505; font-family: Futura, "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 38px; font-weight: 700; letter-spacing: 5px; text-anchor: middle; }
+      .serif { fill: #050505; font-family: Didot, Bodoni 72, Georgia, serif; font-size: 44px; font-weight: 700; letter-spacing: 1px; text-anchor: middle; }
+      .small { fill: #050505; font-family: DIN Condensed, "Arial Narrow", Arial, sans-serif; font-size: 17px; font-weight: 700; letter-spacing: 2px; text-anchor: middle; }
+      text { dominant-baseline: alphabetic; }
+    </style>
+  </defs>
+  <rect class="board" width="2400" height="3600"/>
+
+  <g transform="translate(300 300)">
+    <g transform="translate(0 -22)">
+      <path class="ink" d="M-112,-128h70c25,0 48,8 68,25v224c-20,-17 -43,-25 -68,-25h-70z"/>
+      <path class="ink" d="M112,-128h-70c-25,0 -48,8 -68,25v224c20,-17 43,-25 68,-25h70z"/>
+      <rect class="paper" x="-11" y="-118" width="22" height="226"/>
+      <circle class="ink" cx="0" cy="-136" r="13"/>
+      <path class="paper" d="M-86,-93c28,0 49,7 64,21v120c-18,-11 -39,-17 -64,-17z"/>
+      <path class="paper" d="M86,-93c-28,0 -49,7 -64,21v120c18,-11 39,-17 64,-17z"/>
+    </g>
+    <text class="name" y="176">LITRA</text>
+  </g>
+
+  <g transform="translate(900 300)">
+    <g transform="translate(0 -28)">
+      <circle class="ink" cx="0" cy="0" r="118"/>
+      <path class="paper" d="M-44,-83c45,6 79,38 88,82c-29,-20 -57,-28 -88,-23z"/>
+      <path class="paper" d="M-44,-24c34,-7 65,2 91,27c-6,37 -32,68 -69,80c3,-39 -3,-73 -22,-107z"/>
+      <path class="paper" d="M-64,-73c-21,37 -24,78 -10,122c-18,-13 -32,-30 -42,-51c8,-30 26,-54 52,-71z"/>
+    </g>
+    <text class="name-wide" y="176">FOLIO</text>
+  </g>
+
+  <g transform="translate(1500 300)">
+    <g transform="translate(0 -30)">
+      <path class="line" d="M-105,72h210"/>
+      <path class="line" d="M-70,36h140"/>
+      <path class="line" d="M-42,0h84"/>
+      <path class="thin" d="M0,-126v74"/>
+      <circle class="ink" cx="0" cy="-146" r="30"/>
+      <path class="paper" d="M-10,-161h20v38h-20z"/>
+      <path class="micro" d="M-76,-92c35,20 64,20 96,0"/>
+      <path class="micro" d="M-20,-92c34,20 63,20 96,0"/>
+    </g>
+    <text class="name" y="176">LUMEN</text>
+  </g>
+
+  <g transform="translate(2100 300)">
+    <g transform="translate(0 -28)">
+      <rect class="ink" x="-112" y="-112" width="224" height="224"/>
+      <path class="paper" d="M-66,-62l66,128l66,-128h-38l-28,63l-28,-63z"/>
+      <path class="paper" d="M39,66h43v-78c-17,25 -31,51 -43,78z"/>
+      <rect class="paper" x="-7" y="-86" width="14" height="172"/>
+    </g>
+    <text class="serif" y="176">VELLUM</text>
+  </g>
+
+  <g transform="translate(300 900)">
+    <g transform="translate(0 -30)">
+      <rect class="ink" x="-118" y="-106" width="86" height="86"/>
+      <rect class="ink" x="32" y="-106" width="86" height="86"/>
+      <rect class="ink" x="-118" y="20" width="86" height="86"/>
+      <rect class="ink" x="32" y="20" width="86" height="86"/>
+      <path class="paper" d="M88,20h30v30z"/>
+      <path class="paper" d="M-88,-74h26v22h-26zM62,-74h26v22h-26zM-88,52h26v22h-26zM62,52h26v22h-26z"/>
+    </g>
+    <text class="name" y="176">PAGIO</text>
+  </g>
+
+  <g transform="translate(900 900)">
+    <g transform="translate(0 -26)">
+      <rect class="ink" x="-105" y="-88" width="210" height="176" rx="88"/>
+      <circle class="paper" cx="-43" cy="-14" r="13"/>
+      <circle class="paper" cx="43" cy="-14" r="13"/>
+      <path class="paper" d="M-54,33c35,20 73,20 108,0v22c-35,14 -73,14 -108,0z"/>
+      <rect class="paper" x="-12" y="-78" width="24" height="138"/>
+      <path class="ink" d="M-42,52c27,10 57,10 84,0v17c-27,7 -57,7 -84,0z"/>
+    </g>
+    <text class="name-wide" y="176">QUIET</text>
+  </g>
+
+  <g transform="translate(1500 900)">
+    <g transform="translate(0 -25)">
+      <rect class="ink" x="-95" y="-104" width="190" height="34"/>
+      <rect class="ink" x="-95" y="-36" width="142" height="34"/>
+      <rect class="ink" x="-95" y="32" width="190" height="34"/>
+      <rect class="ink" x="-95" y="100" width="118" height="34"/>
+      <rect class="paper" x="-13" y="-118" width="26" height="248"/>
+      <rect class="ink" x="-5" y="-118" width="10" height="248"/>
+      <circle class="ink" cx="86" cy="-18" r="18"/>
+    </g>
+    <text class="name" y="176">GLYPH</text>
+  </g>
+
+  <g transform="translate(2100 900)">
+    <g transform="translate(0 -28)">
+      <circle class="thin" cx="0" cy="0" r="118"/>
+      <circle class="line" cx="0" cy="0" r="72"/>
+      <circle class="ink" cx="0" cy="0" r="18"/>
+      <rect class="ink" x="-12" y="-118" width="24" height="52"/>
+      <path class="ink" d="M72,32l55,20l-40,38z"/>
+      <circle class="paper" cx="84" cy="46" r="9"/>
+    </g>
+    <text class="name" y="176">LOCUS</text>
+  </g>
+
+  <g transform="translate(300 1500)">
+    <g transform="translate(0 -28)">
+      <rect class="ink" x="-66" y="-125" width="132" height="250" rx="5"/>
+      <rect class="paper" x="-40" y="-89" width="80" height="13"/>
+      <rect class="paper" x="-40" y="-48" width="80" height="13"/>
+      <rect class="paper" x="-40" y="-7" width="80" height="13"/>
+      <rect class="paper" x="-40" y="34" width="80" height="13"/>
+      <rect class="paper" x="-40" y="75" width="80" height="13"/>
+      <rect class="ink" x="66" y="-104" width="42" height="36"/>
+      <rect class="ink" x="66" y="-25" width="55" height="36"/>
+      <rect class="ink" x="66" y="54" width="36" height="36"/>
+    </g>
+    <text class="name" y="176">INDEX</text>
+  </g>
+
+  <g transform="translate(900 1500)">
+    <g transform="translate(0 -25)">
+      <path class="ink" d="M-114,86h50v-48h48v-48h48v-48h48v-48h34v192z"/>
+      <path class="paper" d="M-98,72h34v-18h-34zM-50,24h34v-18h-34zM-2,-24h34v-18h-34zM46,-72h34v-18h-34z"/>
+      <path class="thin" d="M-120,112h240"/>
+    </g>
+    <text class="name-wide" y="176">CHAPT</text>
+  </g>
+
+  <g transform="translate(1500 1500)">
+    <g transform="translate(0 -25)">
+      <path class="line" d="M-88,-88c72,-34 146,2 176,74"/>
+      <path class="thin" d="M-104,-34c79,-52 171,-18 205,72"/>
+      <path class="ink" d="M-96,70c54,-22 104,-19 148,11v-164c-44,-25 -94,-29 -148,-7z"/>
+      <path class="paper" d="M-66,-55c35,-10 65,-7 91,10v86c-27,-13 -57,-15 -91,-6z"/>
+      <path class="ink" d="M52,80l58,-54l-58,-19z"/>
+    </g>
+    <text class="name" y="176">FLIP</text>
+  </g>
+
+  <g transform="translate(2100 1500)">
+    <g transform="translate(0 -24)">
+      <rect class="ink" x="-124" y="-104" width="36" height="208"/>
+      <rect class="ink" x="-76" y="-76" width="34" height="180"/>
+      <rect class="ink" x="-31" y="-116" width="42" height="220"/>
+      <rect class="ink" x="25" y="-88" width="31" height="192"/>
+      <rect class="ink" x="72" y="-104" width="52" height="208"/>
+      <rect class="paper" x="-116" y="48" width="20" height="10"/>
+      <rect class="paper" x="-66" y="15" width="16" height="10"/>
+      <rect class="paper" x="-19" y="-42" width="18" height="10"/>
+      <rect class="paper" x="34" y="35" width="13" height="10"/>
+      <rect class="paper" x="84" y="-12" width="28" height="10"/>
+    </g>
+    <text class="name" y="176">SHELF</text>
+  </g>
+
+  <g transform="translate(300 2100)">
+    <g transform="translate(0 -28)">
+      <rect class="ink" x="-128" y="-116" width="18" height="232"/>
+      <text class="ink" x="-78" y="58" font-family="Arial Black, Helvetica, sans-serif" font-size="165" font-weight="900">M</text>
+      <path class="paper" d="M-22,-20h18v98h-18z"/>
+      <rect class="ink" x="80" y="-90" width="22" height="180"/>
+    </g>
+    <text class="name-wide" y="176">MARGIN</text>
+  </g>
+
+  <g transform="translate(900 2100)">
+    <g transform="translate(0 -30)">
+      <rect class="ink" x="-124" y="-91" width="248" height="28"/>
+      <rect class="ink" x="-99" y="-34" width="198" height="28"/>
+      <rect class="ink" x="-124" y="23" width="248" height="28"/>
+      <rect class="ink" x="-76" y="80" width="152" height="28"/>
+      <path class="paper" d="M-4,-118l42,248h-38l-42,-248z"/>
+      <path class="ink" d="M47,-124h30l-48,260h-30z"/>
+    </g>
+    <text class="name" y="176">CLEAN</text>
+  </g>
+
+  <g transform="translate(1500 2100)">
+    <g transform="translate(0 -26)">
+      <rect class="ink" x="-94" y="-20" width="188" height="126" rx="16"/>
+      <path class="line" d="M-58,-20v-36c0,-48 34,-76 58,-76s58,28 58,76v36"/>
+      <circle class="paper" cx="0" cy="38" r="18"/>
+      <rect class="paper" x="-8" y="50" width="16" height="28"/>
+      <path class="paper" d="M-50,7c31,0 52,8 50,31c-16,-12 -32,-18 -50,-17z"/>
+      <path class="paper" d="M50,7c-31,0 -52,8 -50,31c16,-12 32,-18 50,-17z"/>
+    </g>
+    <text class="name-wide" y="176">VAULT</text>
+  </g>
+
+  <g transform="translate(2100 2100)">
+    <g transform="translate(0 -24)">
+      <path class="line" d="M-124,36c35,-76 78,-76 128,0s89,76 126,0"/>
+      <path class="thin" d="M-104,84c32,-36 63,-36 96,0s64,36 96,0"/>
+      <rect class="ink" x="-102" y="-94" width="204" height="22"/>
+      <rect class="ink" x="-66" y="-51" width="132" height="22"/>
+      <rect class="paper" x="-14" y="-105" width="28" height="76"/>
+      <circle class="ink" cx="0" cy="-28" r="10"/>
+    </g>
+    <text class="name" y="176">WISP</text>
+  </g>
+
+  <g transform="translate(300 2700)">
+    <g transform="translate(0 -28)">
+      <rect class="ink" x="-126" y="-108" width="78" height="216" rx="8"/>
+      <rect class="ink" x="-39" y="-108" width="78" height="216" rx="8"/>
+      <rect class="ink" x="48" y="-108" width="78" height="216" rx="8"/>
+      <circle class="paper" cx="-87" cy="-12" r="15"/>
+      <circle class="paper" cx="0" cy="-12" r="15"/>
+      <circle class="paper" cx="87" cy="-12" r="15"/>
+      <path class="paper" d="M-18,35h36v22h-36z"/>
+      <path class="thin" d="M-100,134h200"/>
+    </g>
+    <text class="name-wide" y="176">TAPLY</text>
+  </g>
+
+  <g transform="translate(900 2700)">
+    <g transform="translate(0 -28)">
+      <path class="line" d="M2,-119a119,119 0 1 1 -79,30"/>
+      <path class="ink" d="M-78,-108l104,11l-48,89z"/>
+      <circle class="ink" cx="0" cy="0" r="46"/>
+      <path class="paper" d="M-27,-16c21,-8 40,-6 57,7v50c-18,-10 -37,-12 -57,-6z"/>
+      <rect class="paper" x="-5" y="-30" width="10" height="76"/>
+    </g>
+    <text class="name" y="176">ORBIT</text>
+  </g>
+
+  <g transform="translate(1500 2700)">
+    <g transform="translate(0 -28)">
+      <path class="ink" d="M-112,-112h224v224h-224z"/>
+      <path class="paper" d="M-78,112l190,-224v74l-128,150z"/>
+      <path class="paper" d="M18,112l94,-111v111z"/>
+      <path class="ink" d="M-77,-81h82v18h-82zM-77,-41h52v18h-52zM-77,-1h66v18h-66z"/>
+    </g>
+    <text class="name-wide" y="176">RIFT</text>
+  </g>
+
+  <g transform="translate(2100 2700)">
+    <g transform="translate(0 -26)">
+      <rect class="ink" x="-126" y="-112" width="252" height="22"/>
+      <rect class="ink" x="-126" y="-62" width="216" height="22"/>
+      <rect class="ink" x="-126" y="-12" width="252" height="22"/>
+      <rect class="ink" x="-126" y="38" width="184" height="22"/>
+      <rect class="ink" x="-126" y="88" width="238" height="22"/>
+      <rect class="paper" x="80" y="-78" width="28" height="142"/>
+      <rect class="ink" x="88" y="-78" width="12" height="142"/>
+    </g>
+    <text class="name" y="176">LINED</text>
+  </g>
+
+  <g transform="translate(300 3300)">
+    <g transform="translate(0 -30)">
+      <path class="ink" d="M-112,103v-206h44l136,133v-133h44v206h-44l-136,-132v132z"/>
+      <path class="paper" d="M-41,-80l103,101v44l-103,-101z"/>
+      <path class="paper" d="M-91,-70h22v140h-22zM69,-70h22v140h-22z"/>
+    </g>
+    <text class="serif" y="176">NOVEL</text>
+  </g>
+
+  <g transform="translate(900 3300)">
+    <g transform="translate(0 -28)">
+      <path class="ink" d="M-118,8c51,-101 141,-129 236,-82c-11,97 -80,166 -186,174c22,-29 33,-61 34,-96c-30,16 -57,17 -84,4z"/>
+      <path class="paper" d="M-72,42c48,-38 98,-65 158,-79c-48,35 -90,75 -125,124z"/>
+      <rect class="ink" x="-7" y="-72" width="14" height="176" transform="rotate(32)"/>
+    </g>
+    <text class="name-wide" y="176">LEAFR</text>
+  </g>
+
+  <g transform="translate(1500 3300)">
+    <g transform="translate(0 -28)">
+      <text class="ink" x="-103" y="58" font-family="Akzidenz-Grotesk, Helvetica, Arial, sans-serif" font-size="168" font-weight="900">C</text>
+      <circle class="ink" cx="0" cy="0" r="82"/>
+      <circle class="paper" cx="0" cy="0" r="39"/>
+      <rect class="paper" x="-10" y="-88" width="20" height="176"/>
+      <path class="ink" d="M70,-86l78,86l-78,86z"/>
+      <rect class="paper" x="100" y="-18" width="28" height="36"/>
+    </g>
+    <text class="name" y="176">CODA</text>
+  </g>
+
+  <g transform="translate(2100 3300)">
+    <g transform="translate(0 -28)">
+      <circle class="ink" cx="-100" cy="-84" r="19"/>
+      <circle class="ink" cx="-42" cy="-84" r="19"/>
+      <circle class="ink" cx="16" cy="-84" r="19"/>
+      <circle class="ink" cx="74" cy="-84" r="19"/>
+      <path class="ink" d="M-125,-40h250l-78,84v72h-94v-72z"/>
+      <rect class="paper" x="-72" y="70" width="144" height="13"/>
+      <rect class="paper" x="-56" y="100" width="112" height="13"/>
+      <path class="paper" d="M-68,-18h136l-42,45h-52z"/>
+    </g>
+    <text class="name-wide" y="176">SIFT</text>
+  </g>
+</svg>

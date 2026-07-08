@@ -1,8 +1,12 @@
 package com.lightreader.app
 
+import android.content.res.Configuration
+import androidx.annotation.PluralsRes
+import androidx.annotation.StringRes
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onRoot
@@ -10,11 +14,14 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.lightreader.app.core.data.BookEntity
 import com.lightreader.app.core.data.ChapterEntity
+import com.lightreader.app.core.data.DownloadTaskEntity
 import com.lightreader.app.core.data.ReadingProgressEntity
 import com.lightreader.app.core.model.BookFormat
 import com.lightreader.app.core.model.ReaderPreferences
@@ -22,7 +29,9 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertEquals
 import org.junit.runner.RunWith
+import java.util.Locale
 
 @RunWith(AndroidJUnit4::class)
 class ReaderUiInstrumentedTest {
@@ -40,21 +49,59 @@ class ReaderUiInstrumentedTest {
     }
 
     @Test
+    fun stringResourcesResolveForEnglishAndChinese() {
+        assertEquals("LightReader", localizedText(Locale.ENGLISH, R.string.app_name))
+        assertEquals("轻阅", localizedText(Locale.SIMPLIFIED_CHINESE, R.string.app_name))
+        assertEquals("My shelf", localizedText(Locale.ENGLISH, R.string.library_my_shelf))
+        assertEquals("我的书架", localizedText(Locale.SIMPLIFIED_CHINESE, R.string.library_my_shelf))
+        assertEquals("Settings", localizedText(Locale.ENGLISH, R.string.reader_settings))
+        assertEquals("设置", localizedText(Locale.SIMPLIFIED_CHINESE, R.string.reader_settings))
+        assertEquals("No bookmarks yet", localizedText(Locale.ENGLISH, R.string.reader_no_bookmarks))
+        assertEquals("还没有书签", localizedText(Locale.SIMPLIFIED_CHINESE, R.string.reader_no_bookmarks))
+        assertEquals("Failed", localizedText(Locale.ENGLISH, R.string.download_status_failed))
+        assertEquals("失败", localizedText(Locale.SIMPLIFIED_CHINESE, R.string.download_status_failed))
+    }
+
+    @Test
     fun globalSkinCanBeChangedFromLibrary() {
-        composeRule.onNodeWithContentDescription("更换皮肤").performClick()
-        composeRule.onNodeWithText("换一种阅读心情").assertIsDisplayed()
-        composeRule.onNodeWithText("海盐蓝白").performClick()
-        composeRule.onNodeWithText("海盐蓝白").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("已选择").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(text(R.string.action_more)).performClick()
+        composeRule.onNodeWithText(text(R.string.library_change_skin)).performClick()
+        composeRule.onNodeWithText(text(R.string.library_skin_body)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.skin_ocean)).performClick()
+        composeRule.onNodeWithText(text(R.string.skin_ocean)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(text(R.string.action_selected)).assertIsDisplayed()
     }
 
     @Test
     fun emptyLibraryAndApiSettingsAreReachable() {
-        composeRule.onNodeWithText("轻阅").assertIsDisplayed()
-        composeRule.onNodeWithText("书架还是空的").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("DeepSeek 设置").performClick()
-        composeRule.onNodeWithText("DeepSeek 设置").assertIsDisplayed()
-        composeRule.onNodeWithText("当前未配置 API Key").assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.brand_name)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.library_empty_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.library_import_file)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.library_web_import)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(text(R.string.action_more)).performClick()
+        composeRule.onNodeWithText(text(R.string.library_deepseek_settings)).performClick()
+        composeRule.onNodeWithText(text(R.string.api_settings_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.api_settings_not_configured)).assertIsDisplayed()
+    }
+
+    @Test
+    fun apiKeyDeleteRequiresConfirmation() {
+        composeRule.onNodeWithContentDescription(text(R.string.action_more)).performClick()
+        composeRule.onNodeWithText(text(R.string.library_deepseek_settings)).performClick()
+        composeRule.onNode(hasSetTextAction()).performTextInput("test-key")
+        composeRule.onNodeWithText(text(R.string.api_settings_save_key)).performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText(text(R.string.api_settings_configured)).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText(text(R.string.api_settings_delete_key)).performClick()
+        composeRule.onNodeWithText(text(R.string.api_settings_delete_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.action_keep)).performClick()
+        composeRule.onNodeWithText(text(R.string.api_settings_configured)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.api_settings_delete_key)).performClick()
+        composeRule.onNodeWithText(text(R.string.action_delete)).performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText(text(R.string.api_settings_not_configured)).fetchSemanticsNodes().isNotEmpty()
+        }
     }
 
     @Test
@@ -63,12 +110,12 @@ class ReaderUiInstrumentedTest {
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithText("待删除小说").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithContentDescription("删除").performClick()
-        composeRule.onNodeWithText("删除书籍").assertIsDisplayed()
-        composeRule.onNodeWithText("取消").performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.action_delete)).performClick()
+        composeRule.onNodeWithText(text(R.string.library_delete_book_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.action_cancel)).performClick()
         composeRule.onNodeWithText("待删除小说").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("删除").performClick()
-        composeRule.onNodeWithText("删除").performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.action_delete)).performClick()
+        composeRule.onNodeWithText(text(R.string.action_delete)).performClick()
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithText("待删除小说").fetchSemanticsNodes().isEmpty()
         }
@@ -80,73 +127,91 @@ class ReaderUiInstrumentedTest {
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithText("按钮测试小说").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.mainClock.autoAdvance = false
         composeRule.onNodeWithText("按钮测试小说").performClick()
-        composeRule.mainClock.advanceTimeBy(1_000)
-        composeRule.waitForIdle()
-        composeRule.onAllNodesWithContentDescription("空白页面").assertCountEquals(0)
-        composeRule.onNodeWithContentDescription("目录").assertIsDisplayed()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithContentDescription(text(R.string.reader_toc)).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onAllNodesWithContentDescription(text(R.string.reader_blank_page)).assertCountEquals(0)
+        composeRule.onNodeWithContentDescription(text(R.string.reader_toc)).assertIsDisplayed()
 
-        composeRule.onNodeWithContentDescription("阅读设置").performClick()
-        composeRule.mainClock.advanceTimeBy(500)
-        composeRule.waitForIdle()
-        composeRule.onNodeWithText("亮度").assertIsDisplayed()
-        composeRule.onNodeWithText("字号").assertIsDisplayed()
-        composeRule.onNodeWithText("背景").assertIsDisplayed()
-        composeRule.onNodeWithText("翻页").assertIsDisplayed()
-        composeRule.onNodeWithText("全屏点击").assertIsDisplayed()
-        composeRule.onNodeWithText("更多设置").assertIsDisplayed()
-        composeRule.onAllNodesWithContentDescription("阅读背景", substring = true).assertCountEquals(6)
-        composeRule.onAllNodesWithText("关闭").assertCountEquals(0)
-        composeRule.onAllNodesWithText("更多背景").assertCountEquals(0)
-        composeRule.onAllNodesWithText("极简").assertCountEquals(0)
-
-        composeRule.onRoot().performTouchInput { click(Offset(center.x, center.y)) }
-        composeRule.mainClock.advanceTimeBy(500)
-        composeRule.waitForIdle()
-        composeRule.onAllNodesWithText("亮度").assertCountEquals(0)
-        composeRule.onAllNodesWithContentDescription("目录").assertCountEquals(0)
-        composeRule.onRoot().performTouchInput { click(Offset(center.x, center.y)) }
-        composeRule.mainClock.advanceTimeBy(500)
-        composeRule.waitForIdle()
-        composeRule.onNodeWithContentDescription("目录").assertIsDisplayed()
-        composeRule.onAllNodesWithText("亮度").assertCountEquals(0)
-
-        composeRule.onNodeWithContentDescription("阅读设置").performClick()
-        composeRule.mainClock.advanceTimeBy(500)
-        composeRule.waitForIdle()
-        composeRule.onNodeWithText("更多设置").performClick()
-        composeRule.mainClock.advanceTimeBy(500)
-        composeRule.waitForIdle()
-        composeRule.onNodeWithText("更多设置").assertIsDisplayed()
-        composeRule.onNodeWithText("排版").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("返回").performClick()
-        composeRule.mainClock.advanceTimeBy(500)
-        composeRule.waitForIdle()
-
-        composeRule.onNodeWithContentDescription("阅读设置").performClick()
-        composeRule.mainClock.advanceTimeBy(500)
-        composeRule.waitForIdle()
-        composeRule.onNodeWithText("自动阅读").performClick()
-        composeRule.mainClock.advanceTimeBy(500)
-        composeRule.waitForIdle()
-        composeRule.onAllNodesWithContentDescription("目录").assertCountEquals(0)
+        composeRule.onNodeWithContentDescription(text(R.string.reader_settings_content_description)).performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText(text(R.string.settings_brightness)).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText(text(R.string.settings_brightness)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_layout)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.layout_comfort)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_font_size)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_background)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_more)).assertIsDisplayed()
+        composeRule.onAllNodesWithText(text(R.string.settings_show_progress)).assertCountEquals(0)
+        composeRule.onAllNodesWithText(text(R.string.settings_page_turn)).assertCountEquals(0)
+        composeRule.onAllNodesWithContentDescription(text(R.string.settings_reader_background, ""), substring = true).assertCountEquals(6)
+        composeRule.onAllNodesWithText(text(R.string.action_close)).assertCountEquals(0)
+        composeRule.onAllNodesWithText(text(R.string.settings_all_backgrounds)).assertCountEquals(0)
+        composeRule.onAllNodesWithText(text(R.string.layout_immersive)).assertCountEquals(0)
 
         composeRule.onRoot().performTouchInput { click(Offset(center.x, center.y)) }
-        composeRule.mainClock.advanceTimeBy(500)
-        composeRule.waitForIdle()
-        composeRule.onNodeWithText("暂停").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("暂停").performClick()
-        composeRule.mainClock.advanceTimeBy(500)
-        composeRule.waitForIdle()
-
-        composeRule.mainClock.advanceTimeBy(5_500)
-        composeRule.waitForIdle()
-        composeRule.onAllNodesWithContentDescription("目录").assertCountEquals(0)
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText(text(R.string.settings_brightness)).fetchSemanticsNodes().isEmpty()
+        }
+        composeRule.onAllNodesWithText(text(R.string.settings_brightness)).assertCountEquals(0)
+        composeRule.onAllNodesWithContentDescription(text(R.string.reader_toc)).assertCountEquals(0)
         composeRule.onRoot().performTouchInput { click(Offset(center.x, center.y)) }
-        composeRule.mainClock.advanceTimeBy(500)
-        composeRule.waitForIdle()
-        composeRule.onNodeWithContentDescription("目录").assertIsDisplayed()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithContentDescription(text(R.string.reader_toc)).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithContentDescription(text(R.string.reader_toc)).assertIsDisplayed()
+        composeRule.onAllNodesWithText(text(R.string.settings_brightness)).assertCountEquals(0)
+
+        composeRule.onNodeWithContentDescription(text(R.string.reader_settings_content_description)).performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText(text(R.string.settings_brightness)).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText(text(R.string.settings_more)).performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText(text(R.string.settings_page_turn)).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText(text(R.string.settings_more)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_layout)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_page_turn)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_show_progress)).performScrollTo()
+        composeRule.onNodeWithText(text(R.string.settings_show_progress)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_show_right_progress)).performScrollTo()
+        composeRule.onNodeWithText(text(R.string.settings_show_right_progress)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_fullscreen_tap_next)).performScrollTo()
+        composeRule.onNodeWithText(text(R.string.settings_fullscreen_tap_next)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(text(R.string.action_back)).performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithContentDescription(text(R.string.reader_toc)).fetchSemanticsNodes().isNotEmpty()
+        }
+
+        composeRule.onNodeWithContentDescription(text(R.string.reader_settings_content_description)).performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText(text(R.string.settings_brightness)).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithContentDescription(text(R.string.reader_auto)).performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithContentDescription(text(R.string.reader_toc)).fetchSemanticsNodes().isEmpty()
+        }
+        composeRule.onAllNodesWithContentDescription(text(R.string.reader_toc)).assertCountEquals(0)
+
+        composeRule.onRoot().performTouchInput { click(Offset(center.x, center.y)) }
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText(text(R.string.reader_pause)).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText(text(R.string.reader_pause)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(text(R.string.reader_pause)).performClick()
+
+        composeRule.waitUntil(7_000) {
+            composeRule.onAllNodesWithContentDescription(text(R.string.reader_toc)).fetchSemanticsNodes().isEmpty()
+        }
+        composeRule.onAllNodesWithContentDescription(text(R.string.reader_toc)).assertCountEquals(0)
+        composeRule.onRoot().performTouchInput { click(Offset(center.x, center.y)) }
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithContentDescription(text(R.string.reader_toc)).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithContentDescription(text(R.string.reader_toc)).assertIsDisplayed()
     }
 
     @Test
@@ -157,36 +222,132 @@ class ReaderUiInstrumentedTest {
         }
         composeRule.onNodeWithText("浮层测试小说").performClick()
         composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithContentDescription("目录").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithContentDescription(text(R.string.reader_toc)).fetchSemanticsNodes().isNotEmpty()
         }
 
-        composeRule.onNodeWithContentDescription("目录").performClick()
-        composeRule.onNodeWithText("正序").assertIsDisplayed()
-        composeRule.onNodeWithText("已读", substring = true).assertIsDisplayed()
-        composeRule.onAllNodesWithText("Chapter 235").assertCountEquals(2)
+        composeRule.onNodeWithContentDescription(text(R.string.reader_toc)).performClick()
+        composeRule.onNodeWithText(text(R.string.reader_toc_ascending)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.reader_read_percent, 0), substring = true).assertIsDisplayed()
+        composeRule.onAllNodesWithText("Chapter 235").assertCountEquals(1)
         composeRule.onAllNodesWithText("Chapter 001").assertCountEquals(0)
-        composeRule.onNodeWithContentDescription("关闭浮层").performTouchInput { click(Offset(center.x * 1.9f, center.y)) }
+        composeRule.onNodeWithContentDescription(text(R.string.reader_close_overlay)).performClick()
         composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithText("正序").fetchSemanticsNodes().isEmpty()
+            composeRule.onAllNodesWithText(text(R.string.reader_toc_ascending)).fetchSemanticsNodes().isEmpty()
         }
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithContentDescription("书签").performClick()
-        composeRule.onNodeWithText("还没有书签").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(text(R.string.reader_bookmarks)).performClick()
+        composeRule.onNodeWithText(text(R.string.reader_no_bookmarks)).assertIsDisplayed()
     }
 
-    private fun seedBook(title: String, chapterCount: Int = 1, progressChapterIndex: Int = 0) = runBlocking {
+    @Test
+    fun webBookReaderShowsRefreshButton() {
+        seedBook(
+            "网页追更测试",
+            format = BookFormat.WEB,
+            sourceUrl = "https://example.test/book",
+            chapterSourceUrl = "https://example.test/book/1",
+        )
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("网页追更测试").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("网页追更测试").performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithContentDescription(text(R.string.reader_refresh)).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithContentDescription(text(R.string.reader_refresh)).assertIsDisplayed()
+    }
+
+    @Test
+    fun searchScreenShowsEmptyNoResultAndJumpsToReader() {
+        seedBook("搜索测试小说")
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("搜索测试小说").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("搜索测试小说").performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithContentDescription(text(R.string.action_search)).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithContentDescription(text(R.string.action_search)).performClick()
+        composeRule.onNodeWithText(text(R.string.search_empty_title)).assertIsDisplayed()
+        composeRule.onNode(hasSetTextAction()).performTextInput("不存在")
+        composeRule.onNodeWithText(text(R.string.action_search)).performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText(text(R.string.search_no_result_title)).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithContentDescription(text(R.string.action_clear_search)).performClick()
+        composeRule.onNode(hasSetTextAction()).performTextInput("山中")
+        composeRule.onNodeWithText(text(R.string.action_search)).performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText(quantityPrefix(R.plurals.search_results_found, 1), substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onAllNodesWithText(searchChapterPrefix(1), substring = true)[0].performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText(text(R.string.message_jumped_to_search_result)).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    @Test
+    fun webImportDownloadTaskActionsRequireConfirmation() {
+        seedDownloadTask()
+        composeRule.onNodeWithContentDescription(text(R.string.library_web_import)).performClick()
+        composeRule.onNodeWithText(text(R.string.web_import_flow_title)).assertIsDisplayed()
+        composeRule.onNodeWithText("失败任务").assertIsDisplayed()
+        composeRule.onNodeWithText("3/10 · ${text(R.string.download_status_failed)}${text(R.string.web_import_failed_suffix, 1)}").assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.web_import_show_error)).performClick()
+        composeRule.onNodeWithText("章节下载失败").assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.action_cancel)).performClick()
+        composeRule.onNodeWithText(text(R.string.web_import_cancel_task_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.action_keep)).performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.action_delete_task)).performClick()
+        composeRule.onNodeWithText(text(R.string.web_import_delete_task_title)).assertIsDisplayed()
+    }
+
+    private fun text(@StringRes id: Int, vararg args: Any): String =
+        composeRule.activity.getString(id, *args)
+
+    private fun quantityText(@PluralsRes id: Int, quantity: Int, vararg args: Any): String =
+        composeRule.activity.resources.getQuantityString(id, quantity, *args)
+
+    private fun quantityPrefix(@PluralsRes id: Int, quantity: Int): String =
+        quantityText(id, quantity, quantity).substringBefore(quantity.toString())
+
+    private fun searchChapterPrefix(chapterNumber: Int): String =
+        text(R.string.search_chapter_position, chapterNumber, 0).substringBefore("0")
+
+    private fun localizedText(locale: Locale, @StringRes id: Int, vararg args: Any): String {
+        val config = Configuration(composeRule.activity.resources.configuration).apply {
+            setLocale(locale)
+        }
+        return composeRule.activity.createConfigurationContext(config).getString(id, *args)
+    }
+
+    private fun seedBook(
+        title: String,
+        chapterCount: Int = 1,
+        progressChapterIndex: Int = 0,
+        format: BookFormat = BookFormat.TXT,
+        sourceUrl: String? = null,
+        chapterSourceUrl: String? = null,
+    ) = runBlocking {
         val id = "ui-${System.nanoTime()}"
         val directory = java.io.File(application.filesDir, "books/$id/chapters").apply { mkdirs() }
         val chapters = (0 until chapterCount).map { index ->
             val chapterTitle = if (chapterCount == 1) "第一章 入山" else "Chapter %03d".format(index + 1)
             val content = "$chapterTitle\n" + "山中修行，自此开始。".repeat(200)
             val chapterFile = java.io.File(directory, "%05d.txt".format(index)).apply { writeText(content) }
-            ChapterEntity(bookId = id, orderIndex = index, title = chapterTitle, contentPath = chapterFile.absolutePath, charCount = content.length)
+            ChapterEntity(
+                bookId = id,
+                orderIndex = index,
+                title = chapterTitle,
+                contentPath = chapterFile.absolutePath,
+                charCount = content.length,
+                sourceUrl = chapterSourceUrl?.let { "$it-$index" },
+            )
         }
         val now = System.currentTimeMillis()
         val chapterIds = application.container.database.readerDao().insertBookWithChapters(
-            BookEntity(id, title, null, BookFormat.TXT.name, directory.parentFile!!.absolutePath, now, null, chapters.sumOf { it.charCount.toLong() }, chapterCount, null),
+            BookEntity(id, title, null, format.name, directory.parentFile!!.absolutePath, now, null, chapters.sumOf { it.charCount.toLong() }, chapterCount, sourceUrl),
             chapters,
         )
         val progressIndex = progressChapterIndex.coerceIn(0, chapterCount - 1)
@@ -204,5 +365,28 @@ class ReaderUiInstrumentedTest {
                 ),
             )
         }
+    }
+
+    private fun seedDownloadTask() = runBlocking {
+        val now = System.currentTimeMillis()
+        application.container.database.readerDao().insertDownloadTask(
+            DownloadTaskEntity(
+                id = "download-${System.nanoTime()}",
+                title = "失败任务",
+                author = "测试作者",
+                description = null,
+                sourceUrl = "https://example.test/book",
+                status = "FAILED",
+                totalChapters = 10,
+                completedChapters = 3,
+                failedChapters = 1,
+                contentSelector = "main",
+                removeSelectorsJson = "[]",
+                createdAt = now,
+                updatedAt = now,
+                importedBookId = null,
+                error = "章节下载失败",
+            ),
+        )
     }
 }

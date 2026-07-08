@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import com.lightreader.app.core.formats.BookFormatPlugin
 import com.lightreader.app.core.formats.EpubBookFormatPlugin
+import com.lightreader.app.core.formats.ImportedChapter
 import com.lightreader.app.core.formats.TxtBookFormatPlugin
 import com.lightreader.app.core.model.Book
 import com.lightreader.app.core.model.BookFormat
@@ -58,6 +59,7 @@ class BookRepository(
                     title = chapter.title,
                     contentPath = chapter.file.absolutePath,
                     charCount = chapter.charCount,
+                    sourceUrl = chapter.sourceUrl,
                 )
             }
             dao.insertBookWithChapters(book, chapterRows)
@@ -71,6 +73,73 @@ class BookRepository(
     suspend fun book(id: String): Book? = dao.book(id)?.toModel()
     suspend fun chapters(bookId: String): List<Chapter> = dao.chapters(bookId).map(ChapterEntity::toModel)
     suspend fun chapter(id: Long): Chapter? = dao.chapter(id)?.toModel()
+
+    suspend fun importDownloadedWebBook(
+        id: String,
+        title: String,
+        author: String?,
+        sourceUrl: String,
+        rootDirectory: File,
+        chapters: List<ImportedChapter>,
+    ): Book = withContext(Dispatchers.IO) {
+        dao.book(id)?.let { return@withContext it.toModel() }
+        require(chapters.isNotEmpty()) { "Downloaded book has no readable chapters" }
+        val now = System.currentTimeMillis()
+        val book = BookEntity(
+            id = id,
+            title = title.ifBlank { "Web book" },
+            author = author?.takeIf { it.isNotBlank() },
+            format = BookFormat.WEB.name,
+            rootPath = rootDirectory.absolutePath,
+            addedAt = now,
+            lastReadAt = null,
+            totalChars = chapters.sumOf { it.charCount.toLong() },
+            chapterCount = chapters.size,
+            sourceUrl = sourceUrl,
+        )
+        val chapterRows = chapters.mapIndexed { index, chapter ->
+            ChapterEntity(
+                bookId = id,
+                orderIndex = index,
+                title = chapter.title.ifBlank { "Chapter ${index + 1}" },
+                contentPath = chapter.file.absolutePath,
+                charCount = chapter.charCount,
+                sourceUrl = chapter.sourceUrl,
+            )
+        }
+        dao.insertBookWithChapters(book, chapterRows)
+        book.toModel()
+    }
+
+    suspend fun appendDownloadedWebChapters(
+        bookId: String,
+        chapters: List<ImportedChapter>,
+    ): Int = withContext(Dispatchers.IO) {
+        if (chapters.isEmpty()) return@withContext 0
+        val book = dao.book(bookId) ?: error("Book was not found.")
+        require(BookFormat.valueOf(book.format) == BookFormat.WEB) { "Only web books can be refreshed." }
+        val existing = dao.chapters(bookId)
+        val startIndex = existing.size
+        val rows = chapters.mapIndexed { index, chapter ->
+            ChapterEntity(
+                bookId = bookId,
+                orderIndex = startIndex + index,
+                title = chapter.title.ifBlank { "Chapter ${startIndex + index + 1}" },
+                contentPath = chapter.file.absolutePath,
+                charCount = chapter.charCount,
+                sourceUrl = chapter.sourceUrl,
+            )
+        }
+        dao.insertChapters(rows)
+        dao.updateBook(
+            book.copy(
+                chapterCount = book.chapterCount + rows.size,
+                totalChars = book.totalChars + chapters.sumOf { it.charCount.toLong() },
+            ),
+        )
+        dao.deleteSearchChunks(bookId)
+        rows.size
+    }
 
     suspend fun readChapter(chapter: Chapter): String = withContext(Dispatchers.IO) {
         File(chapter.contentPath).readText()
@@ -203,4 +272,4 @@ private fun BookEntity.toModel() = Book(
     id, title, author, BookFormat.valueOf(format), chapterCount, totalChars, addedAt, lastReadAt, sourceUrl,
 )
 
-private fun ChapterEntity.toModel() = Chapter(id, bookId, orderIndex, title, contentPath, charCount)
+private fun ChapterEntity.toModel() = Chapter(id, bookId, orderIndex, title, contentPath, charCount, sourceUrl)

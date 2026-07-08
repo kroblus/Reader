@@ -9,6 +9,7 @@ data class ImportedChapter(
     val title: String,
     val file: File,
     val charCount: Int,
+    val sourceUrl: String? = null,
 )
 
 data class ImportResult(

@@ -3,6 +3,7 @@ package com.lightreader.app.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
@@ -24,16 +25,19 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
@@ -55,12 +59,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lightreader.app.R
 import com.lightreader.app.core.model.AppSkin
 import com.lightreader.app.core.model.Book
 import java.text.DateFormat
@@ -71,6 +79,7 @@ import java.util.Date
 fun LibraryScreen(state: MainUiState, viewModel: MainViewModel) {
     var pendingDelete by remember { mutableStateOf<Book?>(null) }
     var showSkinPicker by remember { mutableStateOf(false) }
+    var showMoreActions by remember { mutableStateOf(false) }
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(viewModel::importBook)
     }
@@ -82,30 +91,73 @@ fun LibraryScreen(state: MainUiState, viewModel: MainViewModel) {
                 TopAppBar(
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
                     title = {
-                        Column {
-                            Text(
-                                "轻阅",
-                                style = MaterialTheme.typography.headlineMedium.copy(
-                                    fontFamily = FontFamily.SansSerif,
-                                    fontWeight = FontWeight.Bold,
-                                ),
-                            )
-                            Text(
-                                if (state.books.isEmpty()) "慢一点，读得更深" else "今天也留一点时间给故事",
-                                style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.SansSerif),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier
+                                    .size(42.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Image(
+                                    painter = painterResource(R.drawable.ic_logo_lined),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(30.dp),
+                                )
+                            }
+                            Column(Modifier.padding(start = 12.dp)) {
+                                Text(
+                                    stringResource(R.string.brand_name),
+                                    style = MaterialTheme.typography.headlineMedium.copy(
+                                        fontFamily = FontFamily.SansSerif,
+                                        fontWeight = FontWeight.Bold,
+                                    ),
+                                )
+                                Text(
+                                    stringResource(if (state.books.isEmpty()) R.string.brand_tagline_empty else R.string.brand_tagline_library),
+                                    style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.SansSerif),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     },
                     actions = {
-                        IconButton(onClick = { showSkinPicker = true }) {
-                            Icon(Icons.Outlined.Palette, "更换皮肤")
-                        }
                         IconButton(onClick = { viewModel.navigate(AppScreen.WebImport) }) {
-                            Icon(Icons.Outlined.CloudDownload, "网页导入")
+                            Icon(Icons.Outlined.CloudDownload, stringResource(R.string.library_web_import))
                         }
-                        IconButton(onClick = { viewModel.navigate(AppScreen.ApiSettings) }) {
-                            Icon(Icons.Outlined.Key, "DeepSeek 设置")
+                        Box {
+                            IconButton(onClick = { showMoreActions = true }) {
+                                Icon(Icons.Outlined.MoreVert, stringResource(R.string.action_more))
+                            }
+                            DropdownMenu(
+                                expanded = showMoreActions,
+                                onDismissRequest = { showMoreActions = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.library_change_skin)) },
+                                    leadingIcon = { Icon(Icons.Outlined.Palette, null) },
+                                    onClick = {
+                                        showMoreActions = false
+                                        showSkinPicker = true
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.library_deepseek_settings)) },
+                                    leadingIcon = { Icon(Icons.Outlined.Key, null) },
+                                    onClick = {
+                                        showMoreActions = false
+                                        viewModel.navigate(AppScreen.ApiSettings)
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.library_dom_bridge)) },
+                                    leadingIcon = { Icon(Icons.Outlined.Code, null) },
+                                    onClick = {
+                                        showMoreActions = false
+                                        viewModel.navigate(AppScreen.WebDomBridge)
+                                    },
+                                )
+                            }
                         }
                     },
                 )
@@ -114,13 +166,22 @@ fun LibraryScreen(state: MainUiState, viewModel: MainViewModel) {
                 ExtendedFloatingActionButton(
                     onClick = { importer.launch(arrayOf("text/plain", "application/epub+zip")) },
                     icon = { Icon(Icons.Outlined.Add, null) },
-                    text = { Text("导入小说", style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.SansSerif)) },
+                    text = {
+                        Text(
+                            stringResource(R.string.library_import_novel),
+                            style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.SansSerif),
+                        )
+                    },
                     shape = RoundedCornerShape(18.dp),
                 )
             },
         ) { padding ->
             if (state.books.isEmpty()) {
-                EmptyLibrary(Modifier.fillMaxSize().padding(padding).padding(24.dp))
+                EmptyLibrary(
+                    modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
+                    onImport = { importer.launch(arrayOf("text/plain", "application/epub+zip")) },
+                    onWebImport = { viewModel.navigate(AppScreen.WebImport) },
+                )
             } else {
                 Column(Modifier.fillMaxSize().padding(padding)) {
                     Row(
@@ -129,14 +190,14 @@ fun LibraryScreen(state: MainUiState, viewModel: MainViewModel) {
                         verticalAlignment = Alignment.Bottom,
                     ) {
                         Text(
-                            "我的书架",
+                            stringResource(R.string.library_my_shelf),
                             style = MaterialTheme.typography.titleLarge.copy(
                                 fontFamily = FontFamily.SansSerif,
                                 fontWeight = FontWeight.Bold,
                             ),
                         )
                         Text(
-                            "${state.books.size} 本",
+                            pluralStringResource(R.plurals.library_book_count, state.books.size, state.books.size),
                             style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.SansSerif),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -149,7 +210,11 @@ fun LibraryScreen(state: MainUiState, viewModel: MainViewModel) {
                         verticalArrangement = Arrangement.spacedBy(18.dp),
                     ) {
                         items(state.books, key = { it.id }) { book ->
-                            BookCard(book, onOpen = { viewModel.openBook(book.id) }, onDelete = { pendingDelete = book })
+                            BookCard(
+                                book = book,
+                                onOpen = { viewModel.openBook(book.id) },
+                                onDelete = { pendingDelete = book },
+                            )
                         }
                     }
                 }
@@ -172,18 +237,22 @@ fun LibraryScreen(state: MainUiState, viewModel: MainViewModel) {
     pendingDelete?.let { book ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text("删除书籍") },
-            text = { Text("确定删除《${book.title}》及其阅读进度、书签和本地正文吗？") },
-            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("取消") } },
+            title = { Text(stringResource(R.string.library_delete_book_title)) },
+            text = { Text(stringResource(R.string.library_delete_book_message, book.title)) },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text(stringResource(R.string.action_cancel)) } },
             confirmButton = {
-                TextButton(onClick = { pendingDelete = null; viewModel.deleteBook(book.id) }) { Text("删除") }
+                TextButton(onClick = { pendingDelete = null; viewModel.deleteBook(book.id) }) { Text(stringResource(R.string.action_delete)) }
             },
         )
     }
 }
 
 @Composable
-private fun EmptyLibrary(modifier: Modifier = Modifier) {
+private fun EmptyLibrary(
+    modifier: Modifier = Modifier,
+    onImport: () -> Unit,
+    onWebImport: () -> Unit,
+) {
     Box(modifier, contentAlignment = Alignment.Center) {
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .92f)),
@@ -197,16 +266,15 @@ private fun EmptyLibrary(modifier: Modifier = Modifier) {
                     Modifier.size(88.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        Icons.AutoMirrored.Outlined.MenuBook,
-                        null,
-                        Modifier.size(44.dp),
-                        tint = MaterialTheme.colorScheme.primary,
+                    Image(
+                        painter = painterResource(R.drawable.ic_logo_lined),
+                        contentDescription = null,
+                        modifier = Modifier.size(58.dp),
                     )
                 }
                 Spacer(Modifier.height(20.dp))
                 Text(
-                    "书架还是空的",
+                    stringResource(R.string.library_empty_title),
                     style = MaterialTheme.typography.titleLarge.copy(
                         fontFamily = FontFamily.SansSerif,
                         fontWeight = FontWeight.Bold,
@@ -214,11 +282,16 @@ private fun EmptyLibrary(modifier: Modifier = Modifier) {
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "导入 TXT 或 EPUB\n让下一段故事在这里发生",
+                    stringResource(R.string.library_empty_body),
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.SansSerif),
                 )
+                Spacer(Modifier.height(18.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TextButton(onClick = onImport) { Text(stringResource(R.string.library_import_file)) }
+                    TextButton(onClick = onWebImport) { Text(stringResource(R.string.library_web_import)) }
+                }
             }
         }
     }
@@ -232,14 +305,14 @@ private fun BookCard(book: Book, onOpen: () -> Unit, onDelete: () -> Unit) {
             PastelBookCover(book)
             IconButton(
                 onClick = onDelete,
-                modifier = Modifier.align(Alignment.TopEnd).padding(5.dp).size(28.dp)
+                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(48.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = .78f)),
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = .82f)),
             ) {
                 Icon(
                     Icons.Outlined.DeleteOutline,
-                    "删除",
-                    Modifier.size(16.dp),
+                    stringResource(R.string.action_delete),
+                    Modifier.size(20.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -259,7 +332,7 @@ private fun BookCard(book: Book, onOpen: () -> Unit, onDelete: () -> Unit) {
         )
         Spacer(Modifier.height(2.dp))
         Text(
-            book.author?.takeIf { it.isNotBlank() } ?: "佚名",
+            book.author?.takeIf { it.isNotBlank() } ?: stringResource(R.string.library_unknown_author),
             modifier = Modifier.fillMaxWidth(),
             style = MaterialTheme.typography.labelMedium.copy(
                 fontFamily = FontFamily.SansSerif,
@@ -271,8 +344,9 @@ private fun BookCard(book: Book, onOpen: () -> Unit, onDelete: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            book.lastReadAt?.let { DateFormat.getDateInstance(DateFormat.SHORT).format(Date(it)) }
-                ?: "${book.chapterCount} 章 · ${book.format.name}",
+            book.lastReadAt?.let {
+                stringResource(R.string.library_continue_reading, DateFormat.getDateInstance(DateFormat.SHORT).format(Date(it)))
+            } ?: stringResource(R.string.library_not_started, book.chapterCount, book.format.name),
             modifier = Modifier.fillMaxWidth(),
             style = MaterialTheme.typography.labelSmall.copy(
                 fontFamily = FontFamily.SansSerif,
@@ -281,7 +355,7 @@ private fun BookCard(book: Book, onOpen: () -> Unit, onDelete: () -> Unit) {
             ),
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .74f),
         )
-        }
+    }
 }
 
 @Composable
@@ -327,7 +401,7 @@ private fun PastelBookCover(book: Book) {
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    "LIGHT READER · ${book.chapterCount}",
+                    stringResource(R.string.library_cover_footer, book.chapterCount),
                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.SansSerif, fontSize = 9.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -339,9 +413,9 @@ private fun PastelBookCover(book: Book) {
 @Composable
 private fun SkinPickerPanel(selected: AppSkin, onSelect: (AppSkin) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(start = 22.dp, end = 22.dp, bottom = 30.dp)) {
-        Text("换一种阅读心情", style = MaterialTheme.typography.headlineSmall)
+        Text(stringResource(R.string.library_skin_title), style = MaterialTheme.typography.headlineSmall)
         Text(
-            "皮肤会应用到书架和功能页面，正文背景仍可单独设置。",
+            stringResource(R.string.library_skin_body),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium,
         )
@@ -361,27 +435,24 @@ private fun SkinPickerPanel(selected: AppSkin, onSelect: (AppSkin) -> Unit) {
                     Text(skin.label(), style = MaterialTheme.typography.titleMedium)
                     Text(skin.caption(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (skin == selected) Icon(Icons.Outlined.CheckCircle, "已选择", tint = MaterialTheme.colorScheme.primary)
+                if (skin == selected) Icon(Icons.Outlined.CheckCircle, stringResource(R.string.action_selected), tint = MaterialTheme.colorScheme.primary)
             }
         }
     }
 }
 
+@Composable
 private fun AppSkin.label(): String = when (this) {
-    AppSkin.MINT -> "薄荷绿白"
-    AppSkin.OCEAN -> "海盐蓝白"
-    AppSkin.APRICOT -> "奶杏白"
-    AppSkin.SAKURA -> "樱花粉白"
+    AppSkin.MINT -> stringResource(R.string.skin_mint)
+    AppSkin.OCEAN -> stringResource(R.string.skin_ocean)
+    AppSkin.APRICOT -> stringResource(R.string.skin_apricot)
+    AppSkin.SAKURA -> stringResource(R.string.skin_sakura)
 }
 
+@Composable
 private fun AppSkin.caption(): String = when (this) {
-    AppSkin.MINT -> "清透、安静，适合长时间阅读"
-    AppSkin.OCEAN -> "像晴天海风一样轻盈"
-    AppSkin.APRICOT -> "温暖柔和的纸张气息"
-    AppSkin.SAKURA -> "克制的粉调与生活感"
-}
-
-private fun formatChars(value: Long): String = when {
-    value >= 10_000 -> "%.1f万".format(value / 10_000f)
-    else -> value.toString()
+    AppSkin.MINT -> stringResource(R.string.skin_mint_caption)
+    AppSkin.OCEAN -> stringResource(R.string.skin_ocean_caption)
+    AppSkin.APRICOT -> stringResource(R.string.skin_apricot_caption)
+    AppSkin.SAKURA -> stringResource(R.string.skin_sakura_caption)
 }

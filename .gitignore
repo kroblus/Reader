@@ -1,25 +1,21 @@
 *.iml
 .gradle/
 .idea/
-local.properties
+.kotlin/
 build/
 **/build/
 .externalNativeBuild/
 .cxx/
 captures/
-*.jks
-*.keystore
-keystore.properties
-deepseekapi.txt
-*.iml
-.gradle/
-.idea/
-.kotlin/
-build/
-**/build/
 local.properties
 deepseekapi.txt
+keystore.properties
 *.jks
 *.keystore
 *.apk
 *.aab
+.codex-remote-attachments/
+Test URL.txt
+Testing novel.txt
+hs_err_pid*.log
+replay_pid*.log

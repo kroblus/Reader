@@ -2,12 +2,15 @@ package com.lightreader.app.ui
 
 import android.app.Application
 import android.net.Uri
+import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.lightreader.app.R
 import com.lightreader.app.ReaderApplication
 import com.lightreader.app.core.data.DownloadTaskEntity
 import com.lightreader.app.core.model.Book
 import com.lightreader.app.core.model.BookParagraph
+import com.lightreader.app.core.model.BookFormat
 import com.lightreader.app.core.model.Bookmark
 import com.lightreader.app.core.model.Chapter
 import com.lightreader.app.core.model.ReaderPage
@@ -36,6 +39,7 @@ sealed interface AppScreen {
     data class ReaderSettingsDetail(val bookId: String) : AppScreen
     data class Search(val bookId: String) : AppScreen
     data object WebImport : AppScreen
+    data object WebDomBridge : AppScreen
     data object ApiSettings : AppScreen
 }
 
@@ -44,8 +48,19 @@ data class MainUiState(
     val preferences: ReaderPreferences = ReaderPreferences(),
     val tasks: List<DownloadTaskEntity> = emptyList(),
     val screen: AppScreen = AppScreen.Library,
-    val busy: Boolean = false,
+    val navigation: NavigationState = NavigationState(),
+    val busy: BusyState = BusyState(),
     val message: String? = null,
+)
+
+data class NavigationState(
+    val current: AppScreen = AppScreen.Library,
+    val backStack: List<AppScreen> = emptyList(),
+)
+
+data class BusyState(
+    val active: Boolean = false,
+    val message: String = "",
 )
 
 data class ReaderUiState(
@@ -60,6 +75,7 @@ data class ReaderUiState(
     val pageIndex: Int = 0,
     val toolbarVisible: Boolean = true,
     val settingsVisible: Boolean = false,
+    val overlay: ReaderOverlay = ReaderOverlay.NONE,
     val autoReading: Boolean = false,
     val loading: Boolean = false,
     val error: String? = null,
@@ -82,6 +98,7 @@ data class BoundaryTurnRequest(
 )
 
 enum class BoundaryTurnPhase { IDLE, ANIMATING_PREVIEW, COMMITTING_CHAPTER, SETTLING_CHAPTER }
+enum class ReaderOverlay { NONE, TOC, BOOKMARKS }
 
 internal class PendingPageTurnQueue(private val maxSize: Int = 3) {
     var pendingDelta: Int = 0
@@ -113,6 +130,7 @@ data class SearchUiState(
     val query: String = "",
     val results: List<SearchResult> = emptyList(),
     val searching: Boolean = false,
+    val hasSearched: Boolean = false,
 )
 
 data class WebImportUiState(
@@ -123,10 +141,17 @@ data class WebImportUiState(
     val hasApiKey: Boolean = false,
 )
 
+data class ApiSettingsUiState(
+    val keyDraft: String = "",
+    val showKey: Boolean = false,
+    val advancedExpanded: Boolean = false,
+    val configuration: AiConfiguration = AiConfiguration(),
+)
+
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val container = (application as ReaderApplication).container
-    private val screen = MutableStateFlow<AppScreen>(AppScreen.Library)
-    private val busy = MutableStateFlow(false)
+    private val navigation = MutableStateFlow(NavigationState())
+    private val busy = MutableStateFlow(BusyState())
     private val message = MutableStateFlow<String?>(null)
     private val contentState = combine(
         container.bookRepository.books,
@@ -134,17 +159,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         container.downloadRepository.tasks,
     ) { books, preferences, tasks -> Triple(books, preferences, tasks) }
     private val chromeState = combine(
-        screen,
+        navigation,
         busy,
         message,
-    ) { currentScreen, isBusy, currentMessage -> Triple(currentScreen, isBusy, currentMessage) }
+    ) { currentNavigation, isBusy, currentMessage -> Triple(currentNavigation, isBusy, currentMessage) }
     val uiState: StateFlow<MainUiState> = combine(contentState, chromeState) { content, chrome ->
-        MainUiState(content.first, content.second, content.third, chrome.first, chrome.second, chrome.third)
+        MainUiState(
+            books = content.first,
+            preferences = content.second,
+            tasks = content.third,
+            screen = chrome.first.current,
+            navigation = chrome.first,
+            busy = chrome.second,
+            message = chrome.third,
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
 
     val readerState = MutableStateFlow(ReaderUiState())
     val searchState = MutableStateFlow(SearchUiState())
     val webState = MutableStateFlow(WebImportUiState(hasApiKey = container.keyStore.hasKey()))
+    val apiSettingsState = MutableStateFlow(ApiSettingsUiState(configuration = container.aiConfigurationStore.get()))
     private val normalizer = BookTextNormalizer()
     private var viewport = ReaderViewport(0, 0, 1f, 1f)
     private var chapterText = ""
@@ -159,6 +193,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var paginationJob: Job? = null
     private var prefetchJob: Job? = null
     private var bookmarkJob: Job? = null
+    private var progressSaveJob: Job? = null
     private val chapterContentCache = object : LinkedHashMap<ChapterContentCacheKey, ChapterContent>(6, .75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<ChapterContentCacheKey, ChapterContent>): Boolean = size > 6
     }
@@ -180,48 +215,81 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun importBook(uri: Uri) {
         viewModelScope.launch {
-            busy.value = true
+            showBusy(R.string.busy_importing_book)
             runCatching { container.bookRepository.import(uri) }
-                .onSuccess { message.value = "已导入《${it.title}》" }
-                .onFailure { message.value = it.message ?: "导入失败" }
-            busy.value = false
+                .onSuccess { message.value = text(R.string.message_imported_book, it.title) }
+                .onFailure { message.value = text(R.string.message_import_failed) }
+            hideBusy()
         }
     }
 
     fun deleteBook(id: String) {
         viewModelScope.launch {
             container.bookRepository.deleteBook(id)
-            message.value = "已删除"
+            message.value = text(R.string.message_deleted)
         }
     }
 
     fun clearMessage() { message.value = null }
 
-    fun navigate(target: AppScreen) { screen.value = target }
+    fun navigate(target: AppScreen) {
+        val state = navigation.value
+        if (state.current == target) return
+        navigation.value = state.copy(
+            current = target,
+            backStack = (state.backStack + state.current).takeLast(8),
+        )
+    }
+
+    private fun replaceCurrent(target: AppScreen) {
+        navigation.value = navigation.value.copy(current = target)
+    }
+
+    private fun popBackStack(): AppScreen {
+        val state = navigation.value
+        val previous = state.backStack.lastOrNull() ?: AppScreen.Library
+        navigation.value = NavigationState(
+            current = previous,
+            backStack = state.backStack.dropLast(1),
+        )
+        return previous
+    }
 
     fun goBack() {
-        if (screen.value is AppScreen.Reader) saveCurrentProgress()
-        if (screen.value is AppScreen.Reader) setAutoReading(false)
-        screen.value = when (screen.value) {
-            is AppScreen.Search -> AppScreen.Reader((screen.value as AppScreen.Search).bookId)
-            is AppScreen.ReaderSettingsDetail -> AppScreen.Reader((screen.value as AppScreen.ReaderSettingsDetail).bookId)
-            else -> AppScreen.Library
+        val current = navigation.value.current
+        if (current is AppScreen.Reader) {
+            val state = readerState.value
+            if (state.overlay != ReaderOverlay.NONE || state.settingsVisible) {
+                readerState.value = state.copy(
+                    overlay = ReaderOverlay.NONE,
+                    settingsVisible = false,
+                    toolbarVisible = true,
+                )
+                return
+            }
+            saveCurrentProgress(immediate = true)
+        }
+        val next = popBackStack()
+        if (current is AppScreen.Reader && next !is AppScreen.Reader) setAutoReading(false)
+        if (current !is AppScreen.Reader && next is AppScreen.Reader) {
+            readerState.value = readerState.value.copy(toolbarVisible = true)
         }
     }
 
     fun openReaderSettingsDetail() {
         val bookId = readerState.value.book?.id ?: return
-        saveCurrentProgress()
+        saveCurrentProgress(immediate = true)
         val state = readerState.value
         readerState.value = state.copy(
             settingsVisible = false,
+            overlay = ReaderOverlay.NONE,
             toolbarVisible = if (state.autoReading) false else state.toolbarVisible,
         )
-        screen.value = AppScreen.ReaderSettingsDetail(bookId)
+        navigate(AppScreen.ReaderSettingsDetail(bookId))
     }
 
     fun openBook(bookId: String) {
-        screen.value = AppScreen.Reader(bookId)
+        navigate(AppScreen.Reader(bookId))
         paginationJob?.cancel()
         prefetchJob?.cancel()
         chapterText = ""
@@ -234,12 +302,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             readerState.value = ReaderUiState(loading = true)
             val book = container.bookRepository.book(bookId) ?: run {
-                readerState.value = ReaderUiState(error = "书籍不存在")
+                readerState.value = ReaderUiState(error = text(R.string.message_book_missing))
                 return@launch
             }
             val chapters = container.bookRepository.chapters(bookId)
             if (chapters.isEmpty()) {
-                readerState.value = ReaderUiState(book = book, error = "书籍没有章节")
+                readerState.value = ReaderUiState(book = book, error = text(R.string.message_book_has_no_chapters))
                 return@launch
             }
             val progress = container.bookRepository.progress(bookId)
@@ -273,7 +341,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectChapter(index: Int) {
         if (index !in readerState.value.chapters.indices) return
-        if (index != readerState.value.chapterIndex) saveCurrentProgress()
+        if (index != readerState.value.chapterIndex) saveCurrentProgress(immediate = true)
         requestedOffset = 0
         loadChapter(index)
     }
@@ -297,7 +365,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             readerState.value = readerState.value.copy(loading = true, error = null)
             val content = runCatching { loadChapterContent(chapter) }
                 .getOrElse {
-                    readerState.value = readerState.value.copy(loading = false, error = it.message ?: "章节读取失败")
+                    readerState.value = readerState.value.copy(loading = false, error = text(R.string.message_read_chapter_failed))
                     return@launch
                 }
             setLoadedChapterContent(content)
@@ -496,7 +564,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (preview == null || preview.chapterIndex !in state.chapters.indices) return
         if (request != null && request.targetChapterIndex != preview.chapterIndex) return
         if (nonce == null && targetChapterIndex != null && targetChapterIndex != preview.chapterIndex) return
-        saveCurrentProgress()
+        saveCurrentProgress(immediate = true)
         requestedOffset = preview.page.startOffset
         boundaryCommitSourceChapterIndex = state.chapterIndex
         readerState.value = state.copy(
@@ -629,7 +697,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun nextChapter() {
         val state = readerState.value
         if (state.chapterIndex < state.chapters.lastIndex) {
-            saveCurrentProgress()
+            saveCurrentProgress(immediate = true)
             requestedOffset = 0
             loadChapter(state.chapterIndex + 1)
         }
@@ -638,7 +706,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun previousChapter() {
         val state = readerState.value
         if (state.chapterIndex > 0) {
-            saveCurrentProgress()
+            saveCurrentProgress(immediate = true)
             requestedOffset = 0
             loadChapter(state.chapterIndex - 1)
         }
@@ -658,11 +726,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun hideToolbar() = setToolbarVisible(false)
 
-    fun showSettings() { readerState.value = readerState.value.copy(settingsVisible = true, toolbarVisible = true) }
+    fun showSettings() { readerState.value = readerState.value.copy(settingsVisible = true, overlay = ReaderOverlay.NONE, toolbarVisible = true) }
     fun hideSettings() { readerState.value = readerState.value.copy(settingsVisible = false) }
     fun toggleSettings() {
         val state = readerState.value
-        readerState.value = state.copy(settingsVisible = !state.settingsVisible, toolbarVisible = true)
+        readerState.value = state.copy(
+            settingsVisible = !state.settingsVisible,
+            overlay = ReaderOverlay.NONE,
+            toolbarVisible = true,
+        )
+    }
+
+    fun showTableOfContents() {
+        readerState.value = readerState.value.copy(
+            overlay = ReaderOverlay.TOC,
+            settingsVisible = false,
+            toolbarVisible = false,
+        )
+    }
+
+    fun showBookmarksOverlay() {
+        readerState.value = readerState.value.copy(
+            overlay = ReaderOverlay.BOOKMARKS,
+            settingsVisible = false,
+            toolbarVisible = false,
+        )
+    }
+
+    fun hideReaderOverlay() {
+        val state = readerState.value
+        if (state.overlay != ReaderOverlay.NONE) {
+            readerState.value = state.copy(overlay = ReaderOverlay.NONE, toolbarVisible = true)
+        }
     }
 
     fun toggleAutoReading() = setAutoReading(!readerState.value.autoReading)
@@ -674,6 +769,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 autoReading = enabled,
                 toolbarVisible = if (enabled) false else state.toolbarVisible,
                 settingsVisible = if (enabled) false else state.settingsVisible,
+                overlay = if (enabled) ReaderOverlay.NONE else state.overlay,
             )
         }
     }
@@ -686,17 +782,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val index = state.chapters.indexOfFirst { chapter ->
             if (target < chapter.charCount) true else { target -= chapter.charCount; false }
         }.takeIf { it >= 0 } ?: state.chapters.lastIndex
-        saveCurrentProgress()
+        saveCurrentProgress(immediate = true)
         requestedOffset = target.toInt().coerceAtLeast(0)
         loadChapter(index)
     }
 
-    private fun saveCurrentProgress() {
+    private fun saveCurrentProgress(immediate: Boolean = false) {
         val state = readerState.value
         val book = state.book ?: return
         val chapter = state.chapters.getOrNull(state.chapterIndex) ?: return
         val page = state.pages.getOrNull(state.pageIndex) ?: return
-        viewModelScope.launch {
+        progressSaveJob?.cancel()
+        progressSaveJob = viewModelScope.launch {
+            if (!immediate) delay(250)
             container.bookRepository.saveProgress(
                 book.id, chapter.id, page.startOffset, state.chapterIndex,
                 state.pageIndex, chapter.title, currentLayoutFingerprint,
@@ -704,7 +802,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun onReaderStopped() = saveCurrentProgress()
+    fun onReaderStopped() = saveCurrentProgress(immediate = true)
 
     private fun currentPageOffset(): Int = readerState.value.let { state ->
         state.pages.getOrNull(state.pageIndex)?.startOffset ?: requestedOffset
@@ -717,7 +815,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val page = state.pages.getOrNull(state.pageIndex) ?: return
         viewModelScope.launch {
             container.bookRepository.addBookmark(book.id, chapter.id, page.startOffset, page.text.trim())
-            message.value = "已添加书签"
+            message.value = text(R.string.message_bookmark_added)
         }
     }
 
@@ -732,12 +830,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (existing != null) {
             viewModelScope.launch {
                 container.bookRepository.deleteBookmark(existing.id)
-                message.value = "已取消书签"
+                message.value = text(R.string.message_bookmark_removed)
             }
         } else {
             viewModelScope.launch {
                 container.bookRepository.addBookmark(book.id, chapter.id, page.startOffset, page.text.trim())
-                message.value = "已添加书签"
+                message.value = text(R.string.message_bookmark_added)
             }
         }
     }
@@ -761,25 +859,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updateSearchQuery(value: String) { searchState.value = searchState.value.copy(query = value) }
+    fun updateSearchQuery(value: String) {
+        searchState.value = searchState.value.copy(query = value, hasSearched = false)
+    }
+
+    fun clearSearchQuery() {
+        searchState.value = SearchUiState()
+    }
 
     fun search() {
-        val target = screen.value as? AppScreen.Search ?: return
-        val query = searchState.value.query
+        val target = navigation.value.current as? AppScreen.Search ?: return
+        val query = searchState.value.query.trim()
+        if (query.isBlank()) return
         viewModelScope.launch {
-            searchState.value = searchState.value.copy(searching = true)
+            searchState.value = searchState.value.copy(query = query, searching = true, hasSearched = true)
             val results = runCatching { container.bookRepository.search(target.bookId, query) }
-                .getOrElse { message.value = it.message; emptyList() }
+                .getOrElse { message.value = text(R.string.message_search_failed); emptyList() }
             searchState.value = searchState.value.copy(results = results, searching = false)
         }
     }
 
     fun jumpToSearchResult(result: SearchResult) {
-        screen.value = AppScreen.Reader((screen.value as AppScreen.Search).bookId)
+        val target = navigation.value.current as? AppScreen.Search ?: return
+        val stack = navigation.value.backStack
+        val trimmedStack = if (stack.lastOrNull() is AppScreen.Reader) stack.dropLast(1) else stack
+        navigation.value = NavigationState(
+            current = AppScreen.Reader(target.bookId),
+            backStack = trimmedStack,
+        )
         val index = readerState.value.chapters.indexOfFirst { it.id == result.chapterId }
         if (index >= 0) {
             requestedOffset = result.charOffset
             loadChapter(index)
+            message.value = text(R.string.message_jumped_to_search_result)
         }
     }
 
@@ -808,7 +920,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             webState.value = webState.value.copy(loading = true, error = null, preview = null)
             runCatching { container.webSourceParser.preview(url) }
                 .onSuccess { webState.value = webState.value.copy(loading = false, preview = it) }
-                .onFailure { webState.value = webState.value.copy(loading = false, error = it.message ?: "解析失败") }
+                .onFailure { webState.value = webState.value.copy(loading = false, error = text(R.string.message_parse_failed)) }
         }
     }
 
@@ -817,42 +929,97 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             container.downloadRepository.start(preview)
             webState.value = webState.value.copy(preview = null, url = "")
-            message.value = "下载任务已创建"
+            message.value = text(R.string.message_download_task_created)
         }
     }
 
     fun pauseDownload(id: String) { viewModelScope.launch { container.downloadRepository.pause(id) } }
     fun resumeDownload(id: String) { viewModelScope.launch { container.downloadRepository.resume(id) } }
+    fun cancelDownload(id: String) { viewModelScope.launch { container.downloadRepository.cancel(id) } }
+    fun deleteDownload(id: String) { viewModelScope.launch { container.downloadRepository.delete(id) } }
+    fun openDownloadedBook(id: String) {
+        viewModelScope.launch {
+            if (container.bookRepository.book(id) != null) {
+                openBook(id)
+            } else {
+                message.value = text(R.string.message_book_not_imported)
+            }
+        }
+    }
 
-    fun saveApiKey(key: String) {
+    fun refreshCurrentWebBook() {
+        val book = readerState.value.book ?: return
+        if (book.format != BookFormat.WEB || book.sourceUrl.isNullOrBlank()) {
+            message.value = text(R.string.message_refresh_web_only)
+            return
+        }
+        viewModelScope.launch {
+            showBusy(R.string.busy_checking_updates)
+            message.value = text(R.string.busy_checking_updates)
+            runCatching { container.downloadRepository.refreshBook(book.id) }
+                .onSuccess { count ->
+                    message.value = if (count == 0) text(R.string.message_no_new_chapters) else text(R.string.message_added_chapters_to_refresh, count)
+                }
+                .onFailure { message.value = text(R.string.message_refresh_failed) }
+            hideBusy()
+        }
+    }
+
+    fun updateApiKeyDraft(value: String) {
+        apiSettingsState.value = apiSettingsState.value.copy(keyDraft = value)
+    }
+
+    fun toggleApiKeyVisibility() {
+        apiSettingsState.value = apiSettingsState.value.copy(showKey = !apiSettingsState.value.showKey)
+    }
+
+    fun toggleAiAdvancedSettings() {
+        apiSettingsState.value = apiSettingsState.value.copy(advancedExpanded = !apiSettingsState.value.advancedExpanded)
+    }
+
+    fun updateAiConfigurationDraft(value: AiConfiguration) {
+        apiSettingsState.value = apiSettingsState.value.copy(configuration = value)
+    }
+
+    fun saveApiKeyDraft() {
+        val key = apiSettingsState.value.keyDraft.trim()
+        if (key.isBlank()) return
         runCatching { container.keyStore.save(key) }
             .onSuccess {
                 webState.value = webState.value.copy(hasApiKey = true)
-                message.value = "API Key 已加密保存"
+                apiSettingsState.value = apiSettingsState.value.copy(keyDraft = "", showKey = false)
+                message.value = text(R.string.message_api_key_saved)
             }
-            .onFailure { message.value = it.message }
+            .onFailure { message.value = text(R.string.message_api_key_save_failed) }
     }
 
     fun deleteApiKey() {
         container.keyStore.clear()
         webState.value = webState.value.copy(hasApiKey = false)
-        message.value = "API Key 已删除"
+        message.value = text(R.string.message_api_key_deleted)
     }
 
     fun testApiKey() {
         viewModelScope.launch {
-            busy.value = true
-            message.value = if (container.aiProvider.testConnection()) "DeepSeek 连接成功" else "DeepSeek 连接失败"
-            busy.value = false
+            showBusy(R.string.busy_testing_connection)
+            message.value = if (container.aiProvider.testConnection()) text(R.string.message_deepseek_connected) else text(R.string.message_deepseek_failed)
+            hideBusy()
         }
     }
 
     fun aiConfiguration(): AiConfiguration = container.aiConfigurationStore.get()
 
+    fun saveAiConfiguration() {
+        saveAiConfiguration(apiSettingsState.value.configuration)
+    }
+
     fun saveAiConfiguration(value: AiConfiguration) {
         runCatching { container.aiConfigurationStore.save(value) }
-            .onSuccess { message.value = "AI 高级设置已保存" }
-            .onFailure { message.value = it.message }
+            .onSuccess {
+                apiSettingsState.value = apiSettingsState.value.copy(configuration = container.aiConfigurationStore.get())
+                message.value = text(R.string.message_ai_advanced_saved)
+            }
+            .onFailure { message.value = text(R.string.message_ai_advanced_save_failed) }
     }
 
     fun onVolumeKey(next: Boolean): Boolean {
@@ -861,6 +1028,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (next) nextPage() else previousPage()
         return true
     }
+
+    private fun showBusy(@StringRes labelRes: Int) {
+        busy.value = BusyState(active = true, message = text(labelRes))
+    }
+
+    private fun hideBusy() {
+        busy.value = BusyState()
+    }
+
+    private fun text(@StringRes id: Int, vararg args: Any): String =
+        if (args.isEmpty()) getApplication<Application>().getString(id) else getApplication<Application>().getString(id, *args)
 
     private data class LayoutCacheKey(
         val bookId: String,

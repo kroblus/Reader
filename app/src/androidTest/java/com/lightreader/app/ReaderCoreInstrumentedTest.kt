@@ -7,16 +7,24 @@ import androidx.room.Room
 import com.lightreader.app.core.data.BookRepository
 import com.lightreader.app.core.data.BookEntity
 import com.lightreader.app.core.data.ChapterEntity
+import com.lightreader.app.core.data.DownloadRepository
 import com.lightreader.app.core.data.ReaderDatabase
 import com.lightreader.app.core.formats.EpubBookFormatPlugin
+import com.lightreader.app.core.formats.ImportedChapter
 import com.lightreader.app.core.formats.TxtBookFormatPlugin
 import com.lightreader.app.core.model.BookFormat
+import com.lightreader.app.core.model.ExtractionPlan
 import com.lightreader.app.core.model.ReaderPreferences
 import com.lightreader.app.core.model.ReaderViewport
+import com.lightreader.app.core.model.WebBookPreview
+import com.lightreader.app.core.model.WebChapter
 import com.lightreader.app.core.reader.BookTextNormalizer
 import com.lightreader.app.core.reader.PaintReaderLayoutEngine
 import com.lightreader.app.core.reader.toReaderStyle
 import com.lightreader.app.core.security.EncryptedApiKeyStore
+import com.lightreader.app.core.web.WebSourceParser
+import kotlinx.coroutines.flow.first
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -73,10 +81,10 @@ class ReaderCoreInstrumentedTest {
         val titleLine = compactPages.first().lines.first { it.isChapterTitle }
         val compactFirstLine = compactPages.first().lines.first { !it.isChapterTitle }
 
-        assertEquals(20f, titleLine.xOffsetPx, .5f)
-        assertEquals(20f, compactFirstLine.xOffsetPx, .5f)
+        assertEquals(24f, titleLine.xOffsetPx, .5f)
+        assertEquals(24f, compactFirstLine.xOffsetPx, .5f)
         assertTrue(titleLine.baselinePx < compactFirstLine.baselinePx)
-        assertTrue(compactPages.flatMap { it.lines }.all { it.baselinePx < viewport.heightPx - 46f })
+        assertTrue(compactPages.flatMap { it.lines }.all { it.baselinePx < viewport.heightPx - 54f })
     }
 
     @Test
@@ -165,6 +173,108 @@ class ReaderCoreInstrumentedTest {
     }
 
     @Test
+    fun webImportPersistsSourceUrlsAndAppendRefreshChapters() = kotlinx.coroutines.runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(context, ReaderDatabase::class.java).build()
+        val repository = BookRepository(context, database.readerDao())
+        val root = File(context.cacheDir, "web-refresh-${System.nanoTime()}").apply { deleteRecursively(); mkdirs() }
+        try {
+            val first = File(root, "00000.txt").apply { writeText("first web chapter") }
+            val second = File(root, "00001.txt").apply { writeText("second web chapter") }
+            val third = File(root, "00002.txt").apply { writeText("third web chapter") }
+
+            val book = repository.importDownloadedWebBook(
+                id = "web-book",
+                title = "Web Book",
+                author = "Author",
+                sourceUrl = "https://example.test/book",
+                rootDirectory = root,
+                chapters = listOf(
+                    ImportedChapter("Chapter 1", first, first.readText().length, "https://example.test/1"),
+                    ImportedChapter("Chapter 2", second, second.readText().length, "https://example.test/2"),
+                ),
+            )
+            assertEquals(BookFormat.WEB, book.format)
+            assertEquals(listOf("https://example.test/1", "https://example.test/2"), repository.chapters(book.id).map { it.sourceUrl })
+
+            val added = repository.appendDownloadedWebChapters(
+                bookId = book.id,
+                chapters = listOf(ImportedChapter("Chapter 3", third, third.readText().length, "https://example.test/3")),
+            )
+
+            val updated = repository.book(book.id)!!
+            assertEquals(1, added)
+            assertEquals(3, updated.chapterCount)
+            assertEquals(
+                listOf("https://example.test/1", "https://example.test/2", "https://example.test/3"),
+                repository.chapters(book.id).map { it.sourceUrl },
+            )
+        } finally {
+            database.close()
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun refreshBookQueuesOnlyNewWebChapters() = kotlinx.coroutines.runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(context, ReaderDatabase::class.java).build()
+        val repository = BookRepository(context, database.readerDao())
+        val parser = object : WebSourceParser {
+            override suspend fun preview(url: String): WebBookPreview = WebBookPreview(
+                title = "Web Book",
+                author = "Author",
+                description = null,
+                sourceUrl = url,
+                finalUrl = url,
+                chapters = listOf(
+                    WebChapter("Chapter 1", "https://example.test/1"),
+                    WebChapter("Chapter 2", "https://example.test/2"),
+                    WebChapter("Chapter 3", "https://example.test/3"),
+                    WebChapter("Chapter 4", "https://example.test/4"),
+                ),
+                sample = "sample",
+                extractionPlan = ExtractionPlan(contentSelector = "#content"),
+            )
+
+            override suspend fun chapterText(url: String, plan: ExtractionPlan, chapterTitle: String): String = "body"
+        }
+        val downloadRepository = DownloadRepository(
+            context = context,
+            dao = database.readerDao(),
+            json = Json { ignoreUnknownKeys = true; encodeDefaults = true },
+            webSourceParser = parser,
+            enqueueWork = false,
+        )
+        val root = File(context.cacheDir, "web-refresh-task-${System.nanoTime()}").apply { deleteRecursively(); mkdirs() }
+        try {
+            val first = File(root, "00000.txt").apply { writeText("first") }
+            val second = File(root, "00001.txt").apply { writeText("second") }
+            val book = repository.importDownloadedWebBook(
+                id = "web-refresh-book",
+                title = "Web Book",
+                author = "Author",
+                sourceUrl = "https://example.test/book",
+                rootDirectory = root,
+                chapters = listOf(
+                    ImportedChapter("Chapter 1", first, first.readText().length, "https://example.test/1"),
+                    ImportedChapter("Chapter 2", second, second.readText().length, "https://example.test/2"),
+                ),
+            )
+
+            val count = downloadRepository.refreshBook(book.id)
+
+            val task = database.readerDao().observeDownloadTasks().first().single()
+            val queued = database.readerDao().downloadChapters(task.id)
+            assertEquals(2, count)
+            assertEquals(book.id, task.importedBookId)
+            assertEquals(listOf("Chapter 3", "Chapter 4"), queued.map { it.title })
+            assertEquals(listOf(2, 3), queued.map { it.orderIndex })
+        } finally {
+            database.close()
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun readingProgressRoundTripsStableOffsetAndDiagnostics() = kotlinx.coroutines.runBlocking {
         val database = Room.inMemoryDatabaseBuilder(context, ReaderDatabase::class.java).build()
         val repository = BookRepository(context, database.readerDao())
@@ -172,7 +282,16 @@ class ReaderCoreInstrumentedTest {
         try {
             val ids = database.readerDao().insertBookWithChapters(
                 BookEntity("progress-book", "进度测试", null, BookFormat.TXT.name, context.cacheDir.path, now, null, 2000, 1, null),
-                listOf(ChapterEntity(bookId = "progress-book", orderIndex = 0, title = "第一章", contentPath = "unused", charCount = 2000)),
+                listOf(
+                    ChapterEntity(
+                        bookId = "progress-book",
+                        orderIndex = 0,
+                        title = "第一章",
+                        contentPath = "unused",
+                        charCount = 2000,
+                        sourceUrl = null,
+                    ),
+                ),
             )
             repository.saveProgress("progress-book", ids.single(), 1234, 0, 4, "第一章", 42)
             val progress = repository.progress("progress-book")!!
