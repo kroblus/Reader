@@ -72,7 +72,6 @@ fun ReaderSettingsPanel(
     value: ReaderPreferences,
     onChange: (ReaderPreferences) -> Unit,
     autoReading: Boolean = false,
-    progressSummary: String? = null,
     onToggleAutoReading: (() -> Unit)? = null,
     onOpenMoreSettings: () -> Unit,
     bottomPadding: Dp = 24.dp,
@@ -191,17 +190,6 @@ fun ReaderSettingsPanel(
                 }
             }
 
-            progressSummary?.let {
-                Text(
-                    it,
-                    modifier = Modifier.fillMaxWidth(),
-                    color = secondary,
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontFamily = FontFamily.SansSerif,
-                        fontWeight = FontWeight.Medium,
-                    ),
-                )
-            }
         }
     }
 }

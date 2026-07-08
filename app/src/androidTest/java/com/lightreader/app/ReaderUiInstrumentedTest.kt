@@ -240,7 +240,10 @@ class ReaderUiInstrumentedTest {
         val dockHeight = composeRule.onNodeWithTag("reader_settings_dock").fetchSemanticsNode().boundsInRoot.height
         assertTrue("Reader settings panel should be compressed to roughly three tenths of the screen", dockHeight <= rootHeight * 0.32f)
         val settingsPanel = composeRule.onNodeWithTag("reader_settings_panel")
+        val expectedProgressText = text(R.string.reader_progress, 0, text(R.string.reader_progress_chapter, 1, 0))
         settingsPanel.assert(hasNoScrollAction())
+        composeRule.onNodeWithTag("reader_bottom_progress_text").assertIsDisplayed()
+        composeRule.onAllNodesWithText(expectedProgressText).assertCountEquals(1)
         settingsPanel.performTouchInput { swipeUp() }
         settingsPanel.assert(hasNoScrollAction())
         composeRule.onNodeWithText(text(R.string.settings_brightness)).assertIsDisplayed()
@@ -249,6 +252,8 @@ class ReaderUiInstrumentedTest {
         composeRule.onNodeWithText(text(R.string.settings_font_size)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.settings_background)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.settings_more)).assertIsDisplayed()
+        composeRule.onNodeWithTag("reader_bottom_progress_text").assertIsDisplayed()
+        composeRule.onAllNodesWithText(expectedProgressText).assertCountEquals(1)
         settingsPanel.performTouchInput { swipeDown() }
         settingsPanel.assert(hasNoScrollAction())
         composeRule.onNodeWithText(text(R.string.settings_brightness)).assertIsDisplayed()
@@ -256,6 +261,8 @@ class ReaderUiInstrumentedTest {
         composeRule.onNodeWithText(text(R.string.settings_font_size)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.settings_background)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.settings_more)).assertIsDisplayed()
+        composeRule.onNodeWithTag("reader_bottom_progress_text").assertIsDisplayed()
+        composeRule.onAllNodesWithText(expectedProgressText).assertCountEquals(1)
         composeRule.onAllNodesWithText(text(R.string.settings_show_progress)).assertCountEquals(0)
         composeRule.onAllNodesWithText(text(R.string.settings_page_turn)).assertCountEquals(0)
         composeRule.onAllNodesWithContentDescription(text(R.string.settings_reader_background, ""), substring = true).assertCountEquals(6)

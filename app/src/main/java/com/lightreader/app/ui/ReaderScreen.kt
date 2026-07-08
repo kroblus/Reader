@@ -479,7 +479,6 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                     preferences = preferences,
                     settingsHeight = settingsDockHeight,
                     autoReading = state.autoReading,
-                    progressSummary = readerProgressSummary(state),
                     onChange = viewModel::savePreferences,
                     onToggleAutoReading = viewModel::toggleAutoReading,
                     onOpenMoreSettings = viewModel::openReaderSettingsDetail,
@@ -552,7 +551,6 @@ private fun ReaderSettingsDock(
     preferences: ReaderPreferences,
     settingsHeight: Dp,
     autoReading: Boolean,
-    progressSummary: String,
     onChange: (ReaderPreferences) -> Unit,
     onToggleAutoReading: () -> Unit,
     onOpenMoreSettings: () -> Unit,
@@ -572,7 +570,6 @@ private fun ReaderSettingsDock(
                 value = preferences,
                 onChange = onChange,
                 autoReading = autoReading,
-                progressSummary = progressSummary,
                 onToggleAutoReading = onToggleAutoReading,
                 onOpenMoreSettings = onOpenMoreSettings,
                 bottomPadding = 0.dp,
@@ -656,7 +653,9 @@ private fun ReaderBottomControls(
             }
             Text(
                 stringResource(R.string.reader_progress, progressPercent, progressLabel),
-                modifier = Modifier.align(Alignment.CenterHorizontally),
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .testTag("reader_bottom_progress_text"),
                 color = secondary,
                 style = MaterialTheme.typography.labelSmall.copy(
                     fontFamily = FontFamily.SansSerif,
@@ -850,14 +849,6 @@ private fun overallProgress(state: ReaderUiState, page: ReaderPage): Float {
     return ((before + currentLength * page.progressInChapter) / total.toDouble()).toFloat().coerceIn(0f, 1f)
 }
 
-@Composable
-private fun readerProgressSummary(state: ReaderUiState): String {
-    val page = state.pages.getOrNull(state.pageIndex)
-    val bookPercent = page?.let { (overallProgress(state, it) * 100).toInt().coerceIn(0, 100) } ?: 0
-    val chapterText = page?.let { chapterProgressText(state, it.progressInChapter) } ?: stringResource(R.string.reader_no_chapters)
-    return stringResource(R.string.reader_progress, bookPercent, chapterText)
-}
-
 private fun ReaderUiState.currentPageBookmarked(): Boolean {
     val page = pages.getOrNull(pageIndex) ?: return false
     val chapter = chapters.getOrNull(chapterIndex) ?: return false
@@ -887,14 +878,6 @@ private fun progressPreview(state: ReaderUiState, progress: Float): String {
     }
     return stringResource(R.string.reader_progress_chapter, index + 1, chapterPercent)
 }
-
-@Composable
-private fun chapterProgressText(state: ReaderUiState, chapterProgress: Float): String =
-    stringResource(
-        R.string.reader_progress_chapter,
-        state.chapterIndex + 1,
-        (chapterProgress * 100).toInt().coerceIn(0, 100),
-    )
 
 private fun currentTime(): String = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
 
