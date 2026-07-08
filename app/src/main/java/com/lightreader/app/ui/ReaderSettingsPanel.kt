@@ -50,6 +50,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -85,7 +86,7 @@ fun ReaderSettingsPanel(
         Column(
             Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .testTag("reader_settings_panel")
                 .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = bottomPadding + 6.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {

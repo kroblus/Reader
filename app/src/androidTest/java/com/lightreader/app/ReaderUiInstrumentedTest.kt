@@ -4,8 +4,10 @@ import android.content.res.Configuration
 import androidx.annotation.PluralsRes
 import androidx.annotation.StringRes
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasNoScrollAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -21,6 +23,8 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.lightreader.app.core.data.BookEntity
 import com.lightreader.app.core.data.ChapterEntity
@@ -235,9 +239,20 @@ class ReaderUiInstrumentedTest {
         val rootHeight = composeRule.onRoot().fetchSemanticsNode().boundsInRoot.height
         val dockHeight = composeRule.onNodeWithTag("reader_settings_dock").fetchSemanticsNode().boundsInRoot.height
         assertTrue("Reader settings panel should be compressed to roughly three tenths of the screen", dockHeight <= rootHeight * 0.32f)
+        val settingsPanel = composeRule.onNodeWithTag("reader_settings_panel")
+        settingsPanel.assert(hasNoScrollAction())
+        settingsPanel.performTouchInput { swipeUp() }
+        settingsPanel.assert(hasNoScrollAction())
         composeRule.onNodeWithText(text(R.string.settings_brightness)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.settings_layout)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.layout_comfort)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_font_size)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_background)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_more)).assertIsDisplayed()
+        settingsPanel.performTouchInput { swipeDown() }
+        settingsPanel.assert(hasNoScrollAction())
+        composeRule.onNodeWithText(text(R.string.settings_brightness)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_layout)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.settings_font_size)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.settings_background)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.settings_more)).assertIsDisplayed()
