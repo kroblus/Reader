@@ -348,14 +348,20 @@ class ReaderUiInstrumentedTest {
         composeRule.onNodeWithText(text(R.string.reader_read_percent, 0).substringBefore("0"), substring = true).assertIsDisplayed()
         composeRule.onAllNodesWithText("Chapter 235").assertCountEquals(1)
         composeRule.onAllNodesWithText("Chapter 001").assertCountEquals(0)
-        composeRule.onNodeWithContentDescription(text(R.string.reader_close_overlay)).performClick()
+        closeReaderOverlayFromBlankArea()
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithText(text(R.string.reader_toc_ascending)).fetchSemanticsNodes().isEmpty()
         }
+        composeRule.onNodeWithContentDescription(text(R.string.reader_toc)).assertIsDisplayed()
         composeRule.waitForIdle()
 
         composeRule.onNodeWithContentDescription(text(R.string.reader_bookmarks)).performClick()
         composeRule.onNodeWithText(text(R.string.reader_no_bookmarks)).assertIsDisplayed()
+        closeReaderOverlayFromBlankArea()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText(text(R.string.reader_no_bookmarks)).fetchSemanticsNodes().isEmpty()
+        }
+        composeRule.onNodeWithContentDescription(text(R.string.reader_bookmarks)).assertIsDisplayed()
     }
 
     @Test
@@ -434,6 +440,12 @@ class ReaderUiInstrumentedTest {
 
     private fun searchChapterPrefix(chapterNumber: Int): String =
         text(R.string.search_chapter_position, chapterNumber, 0).substringBefore("0")
+
+    private fun closeReaderOverlayFromBlankArea() {
+        composeRule.onNodeWithContentDescription(text(R.string.reader_close_overlay_background)).performTouchInput {
+            click(Offset(center.x * 1.9f, center.y))
+        }
+    }
 
     private fun localizedText(locale: Locale, @StringRes id: Int, vararg args: Any): String {
         val config = Configuration(composeRule.activity.resources.configuration).apply {

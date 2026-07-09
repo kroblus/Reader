@@ -175,6 +175,7 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
             .readerPageTapNavigation(
                 toolbarVisible = state.toolbarVisible,
                 settingsVisible = state.settingsVisible,
+                overlayVisible = overlayVisible,
                 fullScreenTapNext = preferences.fullScreenTapNext,
                 onPrevious = viewModel::previousPage,
                 onNext = viewModel::nextPage,
@@ -305,7 +306,7 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                         val displayed = displayedPages[pagerPageIndex]
                         val page = displayed.page
                         var dragDistance by remember(pagerPageIndex, page.chapterIndex, page.pageIndex) { mutableFloatStateOf(0f) }
-                        val manualSwipe = if (preferences.pageTurnMode == PageTurnMode.NONE) {
+                        val manualSwipe = if (preferences.pageTurnMode == PageTurnMode.NONE && !overlayVisible) {
                             Modifier.pointerInput(pagerPageIndex) {
                                 detectHorizontalDragGestures(
                                     onDragStart = { dragDistance = 0f },
@@ -333,7 +334,7 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                                 else -> Unit
                             }
                         }
-                        val boundarySwipe = if (preferences.pageTurnMode == PageTurnMode.VERTICAL) {
+                        val boundarySwipe = if (preferences.pageTurnMode == PageTurnMode.VERTICAL && !overlayVisible) {
                             Modifier.pointerInput(
                                 pagerPageIndex,
                                 state.chapterIndex,
@@ -386,13 +387,13 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                         VerticalPager(
                             state = pagerState,
                             modifier = Modifier.fillMaxSize(),
-                            userScrollEnabled = true,
+                            userScrollEnabled = !overlayVisible,
                         ) { pageContent(it) }
                     } else {
                         HorizontalPager(
                             state = pagerState,
                             modifier = Modifier.fillMaxSize(),
-                            userScrollEnabled = preferences.pageTurnMode != PageTurnMode.NONE,
+                            userScrollEnabled = preferences.pageTurnMode != PageTurnMode.NONE && !overlayVisible,
                         ) { pageContent(it) }
                     }
                 }
@@ -884,13 +885,22 @@ private fun currentTime(): String = LocalTime.now().format(DateTimeFormatter.ofP
 private fun Modifier.readerPageTapNavigation(
     toolbarVisible: Boolean,
     settingsVisible: Boolean,
+    overlayVisible: Boolean,
     fullScreenTapNext: Boolean,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onCenter: () -> Unit,
-): Modifier = pointerInput(toolbarVisible, settingsVisible, fullScreenTapNext, onPrevious, onNext, onCenter) {
+): Modifier = pointerInput(toolbarVisible, settingsVisible, overlayVisible, fullScreenTapNext, onPrevious, onNext, onCenter) {
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        if (overlayVisible) {
+            var pressed = true
+            while (pressed) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                pressed = event.changes.any { it.pressed }
+            }
+            return@awaitEachGesture
+        }
         val start = down.position
         var maxDistance = 0f
         var pressed = true
@@ -904,7 +914,7 @@ private fun Modifier.readerPageTapNavigation(
         if (maxDistance <= 18.dp.toPx()) {
             val xFraction = if (size.width > 0) start.x / size.width else .5f
             val yFraction = if (size.height > 0) start.y / size.height else .5f
-            when (readerTapAction(xFraction, yFraction, toolbarVisible, settingsVisible, fullScreenTapNext)) {
+            when (readerTapAction(xFraction, yFraction, toolbarVisible, settingsVisible, fullScreenTapNext, overlayVisible)) {
                 ReaderTapAction.PREVIOUS -> onPrevious()
                 ReaderTapAction.NEXT -> onNext()
                 ReaderTapAction.MENU -> onCenter()
@@ -922,7 +932,9 @@ internal fun readerTapAction(
     toolbarVisible: Boolean,
     settingsVisible: Boolean,
     fullScreenTapNext: Boolean,
+    overlayVisible: Boolean = false,
 ): ReaderTapAction {
+    if (overlayVisible) return ReaderTapAction.NONE
     val x = xFraction.coerceIn(0f, 1f)
     val y = yFraction.coerceIn(0f, 1f)
     val menuStart = if (fullScreenTapNext) .42f else .3f

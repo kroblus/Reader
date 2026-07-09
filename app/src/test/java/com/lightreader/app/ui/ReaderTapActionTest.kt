@@ -71,4 +71,21 @@ class ReaderTapActionTest {
             readerTapAction(xFraction = .5f, yFraction = .7f, toolbarVisible = true, settingsVisible = true, fullScreenTapNext = true),
         )
     }
+
+    @Test
+    fun visibleReaderOverlayDoesNotTriggerUnderlyingTapActions() {
+        listOf(.12f, .5f, .88f).forEach { x ->
+            assertEquals(
+                ReaderTapAction.NONE,
+                readerTapAction(
+                    xFraction = x,
+                    yFraction = .5f,
+                    toolbarVisible = true,
+                    settingsVisible = false,
+                    fullScreenTapNext = x > .4f,
+                    overlayVisible = true,
+                ),
+            )
+        }
+    }
 }

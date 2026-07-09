@@ -45,7 +45,7 @@ object ReaderUiTokens {
     val bottomSheetRadius = 28.dp
     val listItemMinHeight = 58.dp
     val primaryButtonHeight = 46.dp
-    const val overlayScrimAlpha = .24f
+    const val overlayScrimAlpha = .20f
     const val weakTextAlpha = .72f
 }
 
