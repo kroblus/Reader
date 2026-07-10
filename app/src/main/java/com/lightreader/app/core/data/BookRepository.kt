@@ -3,6 +3,9 @@ package com.lightreader.app.core.data
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import com.lightreader.app.core.formats.BookImportException
+import com.lightreader.app.core.formats.BookImportFailure
+import com.lightreader.app.core.formats.BookImportOptions
 import com.lightreader.app.core.formats.BookFormatPlugin
 import com.lightreader.app.core.formats.EpubBookFormatPlugin
 import com.lightreader.app.core.formats.ImportedChapter
@@ -20,7 +23,16 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.security.MessageDigest
 import java.util.UUID
+
+data class BookImportCandidate(
+    val uri: Uri,
+    val displayName: String,
+    val mimeType: String?,
+    val fingerprint: String,
+    val existingBook: Book?,
+)
 
 class BookRepository(
     private val context: Context,
@@ -42,15 +54,38 @@ class BookRepository(
         }
     }
 
-    suspend fun import(uri: Uri): Book = withContext(Dispatchers.IO) {
+    suspend fun inspectImport(uri: Uri): BookImportCandidate = withContext(Dispatchers.IO) {
         val name = displayName(uri)
         val mime = context.contentResolver.getType(uri)
-        val plugin = plugins.firstOrNull { it.supports(name, mime) }
-            ?: error("仅支持 TXT 和无 DRM EPUB")
+        if (plugins.none { it.supports(name, mime) }) {
+            throw BookImportException(BookImportFailure.UNSUPPORTED_FORMAT, "仅支持 TXT 和无 DRM EPUB")
+        }
+        val fingerprint = sourceFingerprint(uri)
+        BookImportCandidate(
+            uri = uri,
+            displayName = name,
+            mimeType = mime,
+            fingerprint = fingerprint,
+            existingBook = dao.bookByContentFingerprint(fingerprint)?.toModel(),
+        )
+    }
+
+    suspend fun import(uri: Uri, options: BookImportOptions = BookImportOptions()): Book {
+        val candidate = inspectImport(uri)
+        if (candidate.existingBook != null) throw DuplicateBookImportException(candidate.existingBook)
+        return import(candidate, options)
+    }
+
+    suspend fun import(
+        candidate: BookImportCandidate,
+        options: BookImportOptions = BookImportOptions(),
+    ): Book = withContext(Dispatchers.IO) {
+        val plugin = plugins.firstOrNull { it.supports(candidate.displayName, candidate.mimeType) }
+            ?: throw BookImportException(BookImportFailure.UNSUPPORTED_FORMAT, "仅支持 TXT 和无 DRM EPUB")
         val id = UUID.randomUUID().toString()
         val directory = File(context.filesDir, "books/$id").apply { mkdirs() }
         try {
-            val result = plugin.import(context, uri, name, directory)
+            val result = plugin.import(context, candidate.uri, candidate.displayName, directory, options)
             val now = System.currentTimeMillis()
             val book = BookEntity(
                 id = id,
@@ -63,6 +98,7 @@ class BookRepository(
                 totalChars = result.chapters.sumOf { it.charCount.toLong() },
                 chapterCount = result.chapters.size,
                 sourceUrl = null,
+                contentFingerprint = candidate.fingerprint,
             )
             val chapterRows = result.chapters.mapIndexed { index, chapter ->
                 ChapterEntity(
@@ -139,8 +175,17 @@ class BookRepository(
         val book = dao.book(bookId) ?: error("Book was not found.")
         require(BookFormat.valueOf(book.format) == BookFormat.WEB) { "Only web books can be refreshed." }
         val existing = dao.chapters(bookId)
+        val existingSourceUrls = existing.mapNotNull { it.sourceUrl?.normalizeSourceUrl() }.toSet()
+        val existingTitleKeys = existing.map { it.title.normalizeChapterTitle() }.toSet()
+        // A worker can be retried after its files were committed but before its task row was marked
+        // complete. Filtering here makes the final append idempotent instead of duplicating chapters.
+        val newChapters = chapters.filter { chapter ->
+            chapter.sourceUrl?.normalizeSourceUrl()?.let { it !in existingSourceUrls }
+                ?: (chapter.title.normalizeChapterTitle() !in existingTitleKeys)
+        }
+        if (newChapters.isEmpty()) return@withContext 0
         val startIndex = existing.size
-        val rows = chapters.mapIndexed { index, chapter ->
+        val rows = newChapters.mapIndexed { index, chapter ->
             ChapterEntity(
                 bookId = bookId,
                 orderIndex = startIndex + index,
@@ -154,7 +199,7 @@ class BookRepository(
         dao.updateBook(
             book.copy(
                 chapterCount = book.chapterCount + rows.size,
-                totalChars = book.totalChars + chapters.sumOf { it.charCount.toLong() },
+                totalChars = book.totalChars + newChapters.sumOf { it.charCount.toLong() },
             ),
         )
         dao.deleteSearchChunks(bookId)
@@ -164,6 +209,11 @@ class BookRepository(
     suspend fun readChapter(chapter: Chapter): String = withContext(Dispatchers.IO) {
         File(chapter.contentPath).readText()
     }
+
+    private fun String.normalizeSourceUrl(): String =
+        trim().substringBefore('#').removeSuffix("/").lowercase()
+
+    private fun String.normalizeChapterTitle(): String = trim().replace(Regex("""\s+"""), "")
 
     suspend fun progress(bookId: String): ReadingProgress? = dao.progress(bookId)?.let {
         ReadingProgress(
@@ -286,7 +336,22 @@ class BookRepository(
         }
         return uri.lastPathSegment ?: "未命名小说.txt"
     }
+
+    private fun sourceFingerprint(uri: Uri): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        } ?: throw BookImportException(BookImportFailure.FILE_UNREADABLE, "无法读取文件")
+        return digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
+    }
 }
+
+class DuplicateBookImportException(val existingBook: Book) : IllegalStateException("书籍已导入")
 
 private fun BookEntity.toModel() = Book(
     id, title, author, BookFormat.valueOf(format), chapterCount, totalChars, addedAt, lastReadAt, sourceUrl,

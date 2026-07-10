@@ -1,12 +1,23 @@
 package com.lightreader.app.core.web
 
 import android.content.Context
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.pm.ServiceInfo
+import android.os.Build
+import android.util.Log
+import androidx.work.ForegroundInfo
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import androidx.work.WorkManager
+import com.lightreader.app.R
 import com.lightreader.app.ReaderApplication
+import com.lightreader.app.core.data.DownloadWorkScheduler
 import com.lightreader.app.core.formats.ImportedChapter
 import com.lightreader.app.core.model.ExtractionPlan
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.decodeFromString
 import java.io.File
 
@@ -33,13 +44,21 @@ class WebDownloadWorker(
         val directory = File(rootDirectory, "chapters").apply { mkdirs() }
         val chapters = dao.downloadChapters(taskId)
         var completed = chapters.count { it.status == "COMPLETED" && it.contentPath?.let(::File)?.exists() == true }
+        updateForeground(task, completed)
+        var processedInBatch = 0
+        val batchStartedAt = System.currentTimeMillis()
 
         for (chapter in chapters) {
             if (isStopped || dao.downloadTask(taskId)?.status in TERMINAL_STOP_STATUSES) return Result.success()
             if (chapter.status == "COMPLETED" && chapter.contentPath?.let(::File)?.exists() == true) continue
+            if (processedInBatch >= MAX_CHAPTERS_PER_BATCH || System.currentTimeMillis() - batchStartedAt >= MAX_BATCH_DURATION_MS) {
+                dao.updateDownloadTask(task.copy(status = "QUEUED", updatedAt = System.currentTimeMillis()))
+                DownloadWorkScheduler.enqueue(applicationContext, taskId, append = true)
+                return Result.success()
+            }
             try {
                 dao.updateDownloadChapter(chapter.copy(status = "DOWNLOADING", error = null))
-                val text = container.webSourceParser.chapterText(chapter.url, plan, chapter.title)
+                val text = container.sourceRegistry.chapterText(task.sourceId, chapter.url, plan, chapter.title)
                 val file = File(directory, "%05d.txt".format(chapter.orderIndex))
                 file.writeText(text)
                 dao.updateDownloadChapter(chapter.copy(status = "COMPLETED", contentPath = file.absolutePath, error = null))
@@ -51,7 +70,11 @@ class WebDownloadWorker(
                     updatedAt = System.currentTimeMillis(),
                 )
                 dao.updateDownloadTask(task)
-                delay(800)
+                updateForeground(task, completed)
+                processedInBatch++
+                delay(CHAPTER_REQUEST_DELAY_MS)
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Throwable) {
                 dao.updateDownloadChapter(chapter.copy(status = "FAILED", error = error.message?.take(240)))
                 val failed = dao.downloadChapters(taskId).count { it.status == "FAILED" }
@@ -118,6 +141,54 @@ class WebDownloadWorker(
 
     companion object {
         const val TASK_ID = "task_id"
+        private const val NOTIFICATION_CHANNEL_ID = "web_book_downloads"
+        private const val NOTIFICATION_CHANNEL_NAME = "Novel downloads"
+        private const val MAX_CHAPTERS_PER_BATCH = 8
+        private const val MAX_BATCH_DURATION_MS = 7 * 60 * 1_000L
+        private const val CHAPTER_REQUEST_DELAY_MS = 400L
         private val TERMINAL_STOP_STATUSES = setOf("PAUSED", "CANCELED")
+        private const val LOG_TAG = "WebDownloadWorker"
+    }
+
+    private suspend fun updateForeground(task: com.lightreader.app.core.data.DownloadTaskEntity, completed: Int) {
+        try {
+            val manager = applicationContext.getSystemService(NotificationManager::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                manager.createNotificationChannel(
+                    NotificationChannel(
+                        NOTIFICATION_CHANNEL_ID,
+                        NOTIFICATION_CHANNEL_NAME,
+                        NotificationManager.IMPORTANCE_LOW,
+                    ),
+                )
+            }
+            val notification = Notification.Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.stat_sys_download)
+                .setContentTitle(task.title.take(80))
+                .setContentText(applicationContext.getString(R.string.notification_download_progress, completed, task.totalChapters))
+                .setOnlyAlertOnce(true)
+                .setOngoing(true)
+                .setProgress(task.totalChapters.coerceAtLeast(1), completed.coerceAtMost(task.totalChapters), false)
+                .addAction(
+                    Notification.Action.Builder(
+                        null,
+                        applicationContext.getString(R.string.action_cancel),
+                        WorkManager.getInstance(applicationContext).createCancelPendingIntent(id),
+                    ).build(),
+                )
+                .build()
+            val notificationId = id.hashCode() and Int.MAX_VALUE
+            val foregroundInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ForegroundInfo(notificationId, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            } else {
+                ForegroundInfo(notificationId, notification)
+            }
+            setForeground(foregroundInfo)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            // A notification denial must not corrupt a resumable local download task.
+            Log.w(LOG_TAG, "Could not show web download notification", error)
+        }
     }
 }

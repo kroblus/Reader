@@ -592,7 +592,11 @@ private fun ReaderBottomControls(
     val foreground = Color(palette.foreground)
     val secondary = Color(palette.secondary)
     val current = state.pages.getOrNull(state.pageIndex)?.let { overallProgress(state, it) } ?: 0f
-    var sliderValue by remember(state.chapterIndex, state.pageIndex) { mutableFloatStateOf(current) }
+    var sliderValue by remember { mutableFloatStateOf(current) }
+    var sliderDragging by remember { mutableStateOf(false) }
+    LaunchedEffect(current, state.chapterIndex, state.pageIndex) {
+        if (!sliderDragging) sliderValue = current
+    }
     val progressLabel = progressPreview(state, sliderValue)
     val progressPercent = (sliderValue * 100).coerceIn(0f, 100f).toInt()
     val progressStateDescription = stringResource(R.string.reader_progress_state, progressPercent, progressLabel)
@@ -625,8 +629,14 @@ private fun ReaderBottomControls(
                 }
                 Slider(
                     value = sliderValue,
-                    onValueChange = { sliderValue = it },
-                    onValueChangeFinished = { viewModel.jumpToProgress(sliderValue) },
+                    onValueChange = {
+                        sliderDragging = true
+                        sliderValue = it
+                    },
+                    onValueChangeFinished = {
+                        sliderDragging = false
+                        viewModel.jumpToProgress(sliderValue)
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .height(32.dp)
@@ -847,7 +857,9 @@ private fun overallProgress(state: ReaderUiState, page: ReaderPage): Float {
     val chapterIndex = page.chapterIndex.coerceIn(0, (state.chapters.size - 1).coerceAtLeast(0))
     val before = state.chapters.take(chapterIndex).sumOf { it.charCount.toLong() }
     val currentLength = state.chapters.getOrNull(chapterIndex)?.charCount ?: 0
-    return ((before + currentLength * page.progressInChapter) / total.toDouble()).toFloat().coerceIn(0f, 1f)
+    // A saved reading position points at the top of a page. Using the page end here made the
+    // first visible frame look ahead by an entire page and briefly disagree with restored state.
+    return ((before + page.startOffset.coerceIn(0, currentLength)) / total.toDouble()).toFloat().coerceIn(0f, 1f)
 }
 
 private fun ReaderUiState.currentPageBookmarked(): Boolean {
@@ -979,9 +991,16 @@ private fun ChapterListOverlay(
     val foreground = Color(palette.foreground)
     val secondary = Color(palette.secondary)
     val selectedBackground = Color(palette.overlay).copy(alpha = .72f)
-    val readPercent = ((state.pages.getOrNull(state.pageIndex)?.progressInChapter ?: 0f) * 100)
-        .toInt()
-        .coerceIn(0, 100)
+    val currentPage = state.pages.getOrNull(state.pageIndex)
+    val currentChapterLength = state.chapters.getOrNull(state.chapterIndex)?.charCount ?: 0
+    val readPercent = currentPage
+        ?.startOffset
+        ?.toFloat()
+        ?.div(currentChapterLength.coerceAtLeast(1))
+        ?.times(100)
+        ?.toInt()
+        ?.coerceIn(0, 100)
+        ?: 0
 
     ReaderListOverlay(
         visible = visible,

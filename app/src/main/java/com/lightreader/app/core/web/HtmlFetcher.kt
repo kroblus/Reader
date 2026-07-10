@@ -8,6 +8,9 @@ import java.nio.ByteBuffer
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
+import java.io.ByteArrayOutputStream
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
 
 data class FetchResult(
     val originalUrl: String,
@@ -43,20 +46,36 @@ class HtmlFetcher(
     private val client: OkHttpClient,
     private val validator: NovelUrlValidator = NovelUrlValidator(),
 ) {
-    suspend fun fetch(url: String): FetchResult = withContext(Dispatchers.IO) {
+    suspend fun fetch(url: String, maxBytes: Int = DEFAULT_MAX_RESPONSE_BYTES): FetchResult = withContext(Dispatchers.IO) {
         val validated = validator.validate(url)
         val request = Request.Builder()
             .url(validated.toString())
             .header("User-Agent", USER_AGENT)
             .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             .build()
-        client.newCall(request).execute().use { response ->
-            val bytes = response.body?.bytes() ?: ByteArray(0)
-            if (!response.isSuccessful) error("Page request failed: HTTP ${response.code}")
+        try {
+            client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw WebImportException(
+                WebImportFailure.HTTP,
+                "Page request failed: HTTP ${response.code}",
+            )
+            val body = response.body ?: error("Page response was empty.")
+            if (body.contentLength() > maxBytes) throw WebImportException(
+                WebImportFailure.RESPONSE_TOO_LARGE,
+                "Page response exceeds the ${maxBytes / 1024}KB safety limit.",
+            )
+            val bytes = body.byteStream().use { input -> input.readAtMost(maxBytes) }
             if (bytes.isEmpty()) error("Page response was empty.")
             val contentType = response.header("Content-Type")
+            if (!isHtmlLikeContentType(contentType)) throw WebImportException(
+                WebImportFailure.NON_HTML_RESPONSE,
+                "Page response was not HTML (${contentType?.substringBefore(';') ?: "unknown type"}).",
+            )
             val decoded = decodeHtml(bytes, contentType)
-            require(!AccessRestrictionDetector.isBrowserVerification(decoded.html)) { AccessRestrictionDetector.MESSAGE }
+            if (AccessRestrictionDetector.isBrowserVerification(decoded.html)) throw WebImportException(
+                WebImportFailure.ACCESS_RESTRICTED,
+                AccessRestrictionDetector.MESSAGE,
+            )
             FetchResult(
                 originalUrl = url,
                 finalUrl = response.request.url.toString(),
@@ -66,6 +85,13 @@ class HtmlFetcher(
                 charset = decoded.charsetName,
                 html = decoded.html,
             )
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: WebImportException) {
+            throw error
+        } catch (error: IOException) {
+            throw WebImportException(WebImportFailure.NETWORK, "Page request could not reach the network.", error)
         }
     }
 
@@ -121,11 +147,35 @@ class HtmlFetcher(
 
     private fun stripBom(value: String): String = value.trimStart('\uFEFF')
 
+    /** Some small personal sites omit a MIME type, so only reject an explicit non-HTML response. */
+    private fun isHtmlLikeContentType(contentType: String?): Boolean {
+        val mimeType = contentType?.substringBefore(';')?.trim()?.lowercase().orEmpty()
+        return mimeType.isBlank() || mimeType == "text/html" || mimeType == "application/xhtml+xml"
+    }
+
     private data class DecodedHtml(val html: String, val charsetName: String)
+
+    private fun java.io.InputStream.readAtMost(maxBytes: Int): ByteArray {
+        val output = ByteArrayOutputStream(minOf(maxBytes, 32 * 1024))
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        var total = 0
+        while (true) {
+            val count = read(buffer)
+            if (count < 0) break
+            total += count
+            if (total > maxBytes) throw WebImportException(
+                WebImportFailure.RESPONSE_TOO_LARGE,
+                "Page response exceeds the ${maxBytes / 1024}KB safety limit.",
+            )
+            output.write(buffer, 0, count)
+        }
+        return output.toByteArray()
+    }
 
     private companion object {
         const val USER_AGENT = "LightReader/0.1 (personal offline reader)"
         const val META_SCAN_BYTES = 8192
+        const val DEFAULT_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
         val META_CHARSET = Regex("""<meta[^>]+charset\s*=\s*["']?([A-Za-z0-9._-]+)""", RegexOption.IGNORE_CASE)
         val META_HTTP_EQUIV_CHARSET = Regex("""content\s*=\s*["'][^"']*charset=([A-Za-z0-9._-]+)""", RegexOption.IGNORE_CASE)
     }

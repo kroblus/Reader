@@ -64,7 +64,7 @@ TXT/EPUB 文件
 - Android Keystore
 - JUnit / AndroidX Test / Compose UI Test
 
-当前数据库版本为 Room schema `4`，包含下载任务元数据、章节来源 URL、阅读进度诊断字段和迁移测试。
+当前数据库版本为 Room schema `6`，包含下载任务元数据、章节来源 URL、阅读进度诊断字段、内容指纹与迁移测试。
 
 ## 构建与测试
 
@@ -81,18 +81,20 @@ TXT/EPUB 文件
 .\gradlew.bat :app:lintDebug
 .\gradlew.bat :app:assembleDebug
 .\gradlew.bat :app:assembleRelease
-.\gradlew.bat :app:connectedDebugAndroidTest
+.\gradlew.bat :app:connectedQaAndroidTest
 ```
 
-`connectedDebugAndroidTest` 需要在线 Android 模拟器或真机。
+`connectedQaAndroidTest` 需要在线 Android 模拟器或真机。它会安装 `com.lightreader.app.qa`，可安全重置测试数据，不会触碰正式包的数据。
 
-开发签名 Release APK 输出位置：
+发布签名由未提交的 `keystore.properties` 或 CI 环境变量提供：`RELEASE_STORE_FILE`、`RELEASE_STORE_PASSWORD`、`RELEASE_KEY_ALIAS`、`RELEASE_KEY_PASSWORD`。未配置时 `assembleRelease` 只生成未签名 APK，禁止再使用 debug key 伪装发布版本。
+
+已签名 Release APK 输出位置：
 
 ```text
 app/build/outputs/apk/release/app-release.apk
 ```
 
-正式分发前应替换为个人持有的发布密钥。发布前建议使用 `apksigner verify --verbose` 校验签名，并使用 `aapt dump badging` 确认 `versionCode` 和 `versionName` 与计划版本一致。
+正式分发前使用个人持有的发布密钥。发布前建议使用 `apksigner verify --verbose` 校验签名，并使用 `aapt dump badging` 确认 `versionCode` 和 `versionName` 与计划版本一致。
 
 ## 手动回归清单
 

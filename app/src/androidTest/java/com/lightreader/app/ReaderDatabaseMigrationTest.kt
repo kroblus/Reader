@@ -138,4 +138,68 @@ class ReaderDatabaseMigrationTest {
             context.deleteDatabase(name)
         }
     }
+
+    @Test
+    fun migrationFourToFiveAddsBookFingerprintAndIndex() {
+        val name = "reader-migration-${System.nanoTime()}.db"
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(name)
+                .callback(object : SupportSQLiteOpenHelper.Callback(4) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL(
+                            "CREATE TABLE books (id TEXT NOT NULL PRIMARY KEY, title TEXT NOT NULL, author TEXT, format TEXT NOT NULL, rootPath TEXT NOT NULL, addedAt INTEGER NOT NULL, lastReadAt INTEGER, totalChars INTEGER NOT NULL, chapterCount INTEGER NOT NULL, sourceUrl TEXT)",
+                        )
+                        db.execSQL("INSERT INTO books VALUES ('book', '测试书', NULL, 'TXT', '/tmp/book', 1, NULL, 100, 1, NULL)")
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build(),
+        )
+        try {
+            val db = helper.writableDatabase
+            ReaderDatabase.MIGRATION_4_5.migrate(db)
+            db.query("SELECT contentFingerprint FROM books WHERE id = 'book'").use { cursor ->
+                cursor.moveToFirst()
+                assertNull(cursor.getString(0))
+            }
+            db.execSQL("UPDATE books SET contentFingerprint = 'abc' WHERE id = 'book'")
+            db.query("SELECT id FROM books WHERE contentFingerprint = 'abc'").use { cursor -> assertEquals(1, cursor.count) }
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    @Test
+    fun migrationFiveToSixAddsGenericSourceAdapterId() {
+        val name = "reader-migration-${System.nanoTime()}.db"
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(name)
+                .callback(object : SupportSQLiteOpenHelper.Callback(5) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL(
+                            "CREATE TABLE download_tasks (id TEXT NOT NULL PRIMARY KEY, title TEXT NOT NULL, author TEXT, description TEXT, sourceUrl TEXT NOT NULL, status TEXT NOT NULL, totalChapters INTEGER NOT NULL, completedChapters INTEGER NOT NULL, failedChapters INTEGER NOT NULL, contentSelector TEXT NOT NULL, removeSelectorsJson TEXT NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, importedBookId TEXT, error TEXT)",
+                        )
+                        db.execSQL("INSERT INTO download_tasks VALUES ('task', '测试', NULL, NULL, 'https://example.com', 'QUEUED', 1, 0, 0, '#content', '[]', 1, 1, NULL, NULL)")
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build(),
+        )
+        try {
+            val db = helper.writableDatabase
+            ReaderDatabase.MIGRATION_5_6.migrate(db)
+            db.query("SELECT sourceId FROM download_tasks WHERE id = 'task'").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals("generic-html", cursor.getString(0))
+            }
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
 }

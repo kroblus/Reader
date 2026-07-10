@@ -7,7 +7,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lightreader.app.R
 import com.lightreader.app.ReaderApplication
+import com.lightreader.app.core.data.BookImportCandidate
 import com.lightreader.app.core.data.DownloadTaskEntity
+import com.lightreader.app.core.formats.BookImportException
+import com.lightreader.app.core.formats.BookImportFailure
+import com.lightreader.app.core.formats.BookImportOptions
 import com.lightreader.app.core.data.ShelfBookProgress
 import com.lightreader.app.core.model.AppLanguage
 import com.lightreader.app.core.model.Book
@@ -24,6 +28,9 @@ import com.lightreader.app.core.model.WebBookPreview
 import com.lightreader.app.core.reader.BookTextNormalizer
 import com.lightreader.app.core.reader.toReaderStyle
 import com.lightreader.app.core.settings.AiConfiguration
+import com.lightreader.app.core.web.WebImportException
+import com.lightreader.app.core.web.WebImportFailure
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -58,7 +65,10 @@ data class MainUiState(
     val navigation: NavigationState = NavigationState(),
     val busy: BusyState = BusyState(),
     val message: UiText? = null,
+    val pendingDuplicateImport: PendingDuplicateImport? = null,
 )
+
+data class PendingDuplicateImport(val candidate: BookImportCandidate)
 
 data class ShelfBookUi(
     val book: Book,
@@ -169,6 +179,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val navigation = MutableStateFlow(NavigationState())
     private val busy = MutableStateFlow(BusyState())
     private val message = MutableStateFlow<UiText?>(null)
+    private val pendingDuplicateImport = MutableStateFlow<PendingDuplicateImport?>(null)
     private val contentState = combine(
         container.bookRepository.books,
         container.bookRepository.shelfProgress,
@@ -186,7 +197,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         navigation,
         busy,
         message,
-    ) { currentNavigation, isBusy, currentMessage -> Triple(currentNavigation, isBusy, currentMessage) }
+        pendingDuplicateImport,
+    ) { currentNavigation, isBusy, currentMessage, duplicateImport ->
+        ChromeState(currentNavigation, isBusy, currentMessage, duplicateImport)
+    }
     val uiState: StateFlow<MainUiState> = combine(contentState, chromeState) { content, chrome ->
         MainUiState(
             books = content.books,
@@ -194,10 +208,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             preferences = content.preferences,
             tasks = content.tasks,
             libraryTaglineIndex = content.preferences.libraryTaglineIndex,
-            screen = chrome.first.current,
-            navigation = chrome.first,
-            busy = chrome.second,
-            message = chrome.third,
+            screen = chrome.navigation.current,
+            navigation = chrome.navigation,
+            busy = chrome.busy,
+            message = chrome.message,
+            pendingDuplicateImport = chrome.pendingDuplicateImport,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
 
@@ -220,12 +235,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var prefetchJob: Job? = null
     private var bookmarkJob: Job? = null
     private var progressSaveJob: Job? = null
-    private val chapterContentCache = object : LinkedHashMap<ChapterContentCacheKey, ChapterContent>(6, .75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<ChapterContentCacheKey, ChapterContent>): Boolean = size > 6
-    }
-    private val pageCache = object : LinkedHashMap<LayoutCacheKey, List<ReaderPage>>(8, .75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<LayoutCacheKey, List<ReaderPage>>): Boolean = size > 8
-    }
+    private val chapterContentCache = LinkedHashMap<ChapterContentCacheKey, ChapterContent>(6, .75f, true)
+    private val pageCache = LinkedHashMap<LayoutCacheKey, List<ReaderPage>>(8, .75f, true)
+    private var chapterContentCacheBytes = 0L
+    private var pageCacheBytes = 0L
 
     init {
         viewModelScope.launch {
@@ -250,11 +263,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun importBook(uri: Uri) {
         viewModelScope.launch {
             showBusy(R.string.busy_importing_book)
-            runCatching { container.bookRepository.import(uri) }
-                .onSuccess { message.value = text(R.string.message_imported_book, it.title) }
-                .onFailure { message.value = text(R.string.message_import_failed) }
-            hideBusy()
+            val candidate = runCatching { container.bookRepository.inspectImport(uri) }
+                .getOrElse { error ->
+                    message.value = importFailureText(error)
+                    hideBusy()
+                    return@launch
+                }
+            if (candidate.existingBook != null) {
+                pendingDuplicateImport.value = PendingDuplicateImport(candidate)
+                hideBusy()
+            } else {
+                importCandidate(candidate)
+            }
         }
+    }
+
+    fun dismissDuplicateImport() {
+        pendingDuplicateImport.value = null
+    }
+
+    fun openExistingDuplicate() {
+        val existing = pendingDuplicateImport.value?.candidate?.existingBook ?: return
+        pendingDuplicateImport.value = null
+        openBook(existing.id)
+    }
+
+    fun importDuplicateCopy() {
+        val candidate = pendingDuplicateImport.value?.candidate ?: return
+        pendingDuplicateImport.value = null
+        viewModelScope.launch {
+            showBusy(R.string.busy_importing_book)
+            importCandidate(candidate)
+        }
+    }
+
+    private suspend fun importCandidate(candidate: BookImportCandidate) {
+        runCatching {
+            container.bookRepository.import(
+                candidate,
+                BookImportOptions(cleanTxtNoise = uiState.value.preferences.cleanTxtNoise),
+            )
+        }.onSuccess { book ->
+            message.value = text(R.string.message_imported_book, book.title)
+        }.onFailure { error ->
+            message.value = importFailureText(error)
+        }
+        hideBusy()
     }
 
     fun deleteBook(id: String) {
@@ -347,6 +401,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         chapterText = ""
         chapterParagraphs = emptyList()
         loadedChapterId = null
+        clearReaderCaches()
         currentLayoutFingerprint = 0
         boundaryCommitSourceChapterIndex = null
         pendingPageTurns.clear()
@@ -448,7 +503,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val cached = pageCache[key]
         val pages = cached ?: withContext(Dispatchers.Default) {
             container.paginationEngine.paginate(chapterIndex, chapter.title, paragraphs, viewport, preferences.toReaderStyle()).pages
-        }.also { pageCache[key] = it }
+        }.also { cachePages(key, it) }
         applyPages(chapterIndex, chapter, pages, preferences, fromCache = cached != null)
         prefetchAdjacent(chapterIndex, preferences)
     }
@@ -465,7 +520,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val pages = withContext(Dispatchers.Default) {
                         container.paginationEngine.paginate(index, chapter.title, content.paragraphs, targetViewport, preferences.toReaderStyle()).pages
                     }
-                    pageCache[key] = pages
+                    cachePages(key, pages)
                 }
                 refreshAdjacentPreviews(preferences, targetViewport)
             }
@@ -477,12 +532,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         chapterContentCache[key]?.let { return it }
         val rawText = container.bookRepository.readChapter(chapter)
         val paragraphs = withContext(Dispatchers.Default) { normalizer.normalize(rawText) }
-        return ChapterContent(rawText, paragraphs).also { chapterContentCache[key] = it }
+        return ChapterContent(rawText, paragraphs).also { cacheChapterContent(key, it) }
     }
 
     private fun setLoadedChapterContent(content: ChapterContent) {
         chapterText = content.rawText
         chapterParagraphs = content.paragraphs
+    }
+
+    private fun cacheChapterContent(key: ChapterContentCacheKey, content: ChapterContent) {
+        chapterContentCache.remove(key)?.let { chapterContentCacheBytes -= it.estimatedBytes }
+        chapterContentCache[key] = content
+        chapterContentCacheBytes += content.estimatedBytes
+        while (chapterContentCacheBytes > MAX_CHAPTER_CONTENT_CACHE_BYTES && chapterContentCache.size > 1) {
+            val eldest = chapterContentCache.entries.iterator().next()
+            chapterContentCacheBytes -= eldest.value.estimatedBytes
+            chapterContentCache.remove(eldest.key)
+        }
+    }
+
+    private fun cachePages(key: LayoutCacheKey, pages: List<ReaderPage>) {
+        pageCache.remove(key)?.let { pageCacheBytes -= it.estimatedBytes }
+        pageCache[key] = pages
+        pageCacheBytes += pages.estimatedBytes
+        while (pageCacheBytes > MAX_PAGE_CACHE_BYTES && pageCache.size > 1) {
+            val eldest = pageCache.entries.iterator().next()
+            pageCacheBytes -= eldest.value.estimatedBytes
+            pageCache.remove(eldest.key)
+        }
+    }
+
+    private fun clearReaderCaches() {
+        chapterContentCache.clear()
+        pageCache.clear()
+        chapterContentCacheBytes = 0L
+        pageCacheBytes = 0L
     }
 
     private fun applyPages(
@@ -981,9 +1065,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val url = webState.value.url.trim()
         viewModelScope.launch {
             webState.value = webState.value.copy(loading = true, error = null, preview = null)
-            runCatching { container.webSourceParser.preview(url) }
-                .onSuccess { webState.value = webState.value.copy(loading = false, preview = it) }
-                .onFailure { webState.value = webState.value.copy(loading = false, error = text(R.string.message_parse_failed)) }
+            try {
+                val preview = container.webSourceParser.preview(url)
+                webState.value = webState.value.copy(loading = false, preview = preview)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                webState.value = webState.value.copy(loading = false, error = webImportFailureText(error))
+            }
         }
     }
 
@@ -1100,6 +1189,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         busy.value = BusyState()
     }
 
+    private fun importFailureText(error: Throwable): UiText = when ((error as? BookImportException)?.failure) {
+        BookImportFailure.FILE_UNREADABLE -> text(R.string.message_import_file_unreadable)
+        BookImportFailure.EMPTY_CONTENT -> text(R.string.message_import_empty)
+        BookImportFailure.ENCODING_QUALITY -> text(R.string.message_import_encoding)
+        BookImportFailure.UNSUPPORTED_FORMAT -> text(R.string.message_import_unsupported)
+        null -> text(R.string.message_import_failed)
+    }
+
+    private fun webImportFailureText(error: Throwable): UiText = when ((error as? WebImportException)?.failure) {
+        WebImportFailure.NETWORK -> text(R.string.message_web_network)
+        WebImportFailure.HTTP -> text(R.string.message_web_http)
+        WebImportFailure.RESPONSE_TOO_LARGE -> text(R.string.message_web_response_too_large)
+        WebImportFailure.NON_HTML_RESPONSE -> text(R.string.message_web_non_html)
+        WebImportFailure.ACCESS_RESTRICTED -> text(R.string.message_web_access_restricted)
+        null -> if (error is IllegalArgumentException) text(R.string.message_web_invalid_url) else text(R.string.message_parse_failed)
+    }
+
     private fun text(@StringRes id: Int, vararg args: Any): UiText = uiText(id, *args)
 
     private fun buildShelfBooks(
@@ -1136,6 +1242,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val tasks: List<DownloadTaskEntity>,
     )
 
+    private data class ChromeState(
+        val navigation: NavigationState,
+        val busy: BusyState,
+        val message: UiText?,
+        val pendingDuplicateImport: PendingDuplicateImport?,
+    )
+
     private data class LayoutCacheKey(
         val bookId: String,
         val chapterId: Long,
@@ -1148,5 +1261,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private data class ChapterContent(
         val rawText: String,
         val paragraphs: List<BookParagraph>,
-    )
+    ) {
+        val estimatedBytes: Long = rawText.length * 2L + paragraphs.sumOf { paragraph ->
+            paragraph.text.length * 2L + paragraph.sourceOffsets.size * Int.SIZE_BYTES.toLong()
+        }
+    }
+
+    private val List<ReaderPage>.estimatedBytes: Long
+        get() = sumOf { page ->
+            page.lines.sumOf { line -> line.text.length * 2L + 64L } + 96L
+        }
+
+    private companion object {
+        const val MAX_CHAPTER_CONTENT_CACHE_BYTES = 4L * 1024 * 1024
+        const val MAX_PAGE_CACHE_BYTES = 6L * 1024 * 1024
+    }
 }

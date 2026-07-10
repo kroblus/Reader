@@ -40,6 +40,7 @@
     </string-array>
     <string name="action_back">Back</string>
     <string name="action_cancel">Cancel</string>
+    <string name="notification_download_progress">%1$d / %2$d chapters downloaded</string>
     <string name="action_delete">Delete</string>
     <string name="action_keep">Keep</string>
     <string name="action_close">Close</string>
@@ -77,6 +78,10 @@
     <string name="library_app_settings">App settings</string>
     <string name="library_change_skin">Change skin</string>
     <string name="library_deepseek_settings">AI download settings</string>
+    <string name="library_duplicate_import_title">This book is already on the shelf</string>
+    <string name="library_duplicate_import_body">The content of "%1$s" matches an imported book.</string>
+    <string name="library_duplicate_import_open">Open existing</string>
+    <string name="library_duplicate_import_copy">Import another copy</string>
     <string name="library_dom_bridge">Web parser test</string>
     <string name="library_import_novel">Import novel</string>
     <string name="library_my_shelf">My shelf</string>
@@ -243,6 +248,7 @@
     <string name="settings_justified">Justified text</string>
     <string name="settings_keep_screen_on">Keep screen on</string>
     <string name="settings_lock_portrait">Lock portrait</string>
+    <string name="settings_clean_txt_noise">Clean TXT ad and URL lines during import</string>
     <string name="settings_show_progress">Show reading progress</string>
     <string name="settings_show_chapter_title">Show chapter title</string>
     <string name="settings_show_right_progress">Show right progress bar</string>
@@ -283,6 +289,16 @@
     <string name="busy_testing_connection">Testing connection</string>
     <string name="message_imported_book">Imported \"%1$s\"</string>
     <string name="message_import_failed">Import failed</string>
+    <string name="message_import_file_unreadable">Could not read the file. Re-authorize or choose it again.</string>
+    <string name="message_import_empty">The file has no readable content</string>
+    <string name="message_import_encoding">The file encoding looks damaged. Convert it to UTF-8 or GB18030 and retry.</string>
+    <string name="message_import_unsupported">Only TXT and DRM-free EPUB are supported</string>
+    <string name="message_web_invalid_url">Enter a valid HTTPS novel catalog URL.</string>
+    <string name="message_web_network">Could not connect. Check the network and try again.</string>
+    <string name="message_web_http">The website did not return a readable page. Try again later.</string>
+    <string name="message_web_response_too_large">This page is too large to import safely.</string>
+    <string name="message_web_non_html">This link did not return a readable HTML page.</string>
+    <string name="message_web_access_restricted">This site requires browser verification or another authorized access method.</string>
     <string name="message_deleted">Deleted</string>
     <string name="message_book_missing">Book does not exist</string>
     <string name="message_book_has_no_chapters">Book has no chapters</string>

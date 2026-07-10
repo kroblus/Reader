@@ -39,7 +39,7 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
         val contentRight = contentLeft + centeredContentWidth
         val contentTop = max(
             style.verticalPaddingTopDp * viewport.density,
-            viewport.safeTopPx + HEADER_SAFE_RESERVE_DP * viewport.density,
+            viewport.safeTopPx + TOP_CHROME_RESERVE_DP * viewport.density,
         )
         val bottomReserved = max(
             style.verticalPaddingBottomDp * viewport.density,
@@ -216,7 +216,9 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
     }
 
     private companion object {
-        const val HEADER_SAFE_RESERVE_DP = 20f
+        // The reader toolbar overlays the page while visible. Reserve its full
+        // height once so page boundaries never change when chrome auto-hides.
+        const val TOP_CHROME_RESERVE_DP = 52f
         const val FOOTER_SAFE_RESERVE_DP = 22f
         const val TITLE_TEXT_SCALE = 1.45f
         const val TITLE_LINE_HEIGHT_MULTIPLIER = 1.2f

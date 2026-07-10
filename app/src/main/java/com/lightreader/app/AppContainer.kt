@@ -10,7 +10,9 @@ import com.lightreader.app.core.security.EncryptedApiKeyStore
 import com.lightreader.app.core.settings.ReaderSettingsRepository
 import com.lightreader.app.core.settings.AiConfigurationStore
 import com.lightreader.app.core.web.DeepSeekAiExtractionProvider
+import com.lightreader.app.core.web.GenericHtmlNovelSourceAdapter
 import com.lightreader.app.core.web.JsoupWebSourceParser
+import com.lightreader.app.core.web.NovelSourceRegistry
 import com.lightreader.app.core.web.WebSourceParser
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
@@ -31,6 +33,8 @@ class AppContainer(context: Context) {
     val paginationEngine: ReaderLayoutEngine = PaintReaderLayoutEngine()
     val bookRepository = BookRepository(context, database.readerDao())
     val aiProvider = DeepSeekAiExtractionProvider(keyStore, client, aiConfigurationStore)
-    val webSourceParser: WebSourceParser = JsoupWebSourceParser(client, aiProvider)
+    private val genericWebSource = JsoupWebSourceParser(client, aiProvider)
+    val sourceRegistry = NovelSourceRegistry(listOf(GenericHtmlNovelSourceAdapter(genericWebSource)))
+    val webSourceParser: WebSourceParser = sourceRegistry
     val downloadRepository = DownloadRepository(context, database.readerDao(), json, webSourceParser)
 }

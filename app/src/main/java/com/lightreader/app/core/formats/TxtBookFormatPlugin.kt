@@ -7,7 +7,6 @@ import com.lightreader.app.core.reader.BookTextNormalizer
 import com.lightreader.app.core.reader.ChapterParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -24,6 +23,7 @@ import org.mozilla.universalchardet.UniversalDetector
 class TxtBookFormatPlugin : BookFormatPlugin {
     private val normalizer = BookTextNormalizer()
     private val chapterParser = ChapterParser(normalizer)
+    private val cleaner = TxtTextCleaner()
 
     override fun supports(displayName: String, mimeType: String?): Boolean =
         displayName.endsWith(".txt", ignoreCase = true) || mimeType == "text/plain"
@@ -33,10 +33,11 @@ class TxtBookFormatPlugin : BookFormatPlugin {
         source: Uri,
         displayName: String,
         bookDirectory: File,
+        options: BookImportOptions,
     ): ImportResult = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
         val charset = resolver.openInputStream(source)?.use(::detectCharset)
-            ?: error("无法读取文件")
+            ?: throw BookImportException(BookImportFailure.FILE_UNREADABLE, "无法读取文件")
         val chaptersDirectory = File(bookDirectory, "chapters").apply { mkdirs() }
         val chapters = mutableListOf<ImportedChapter>()
         var index = 0
@@ -45,6 +46,8 @@ class TxtBookFormatPlugin : BookFormatPlugin {
         var outputFile: File? = null
         var charCount = 0
         var continuation = 1
+        var decodedCharacters = 0L
+        var replacementCharacters = 0L
 
         fun openChapter(chapterTitle: String) {
             title = chapterTitle.trim().ifBlank { "正文" }
@@ -67,36 +70,66 @@ class TxtBookFormatPlugin : BookFormatPlugin {
             outputFile = null
         }
 
+        fun rotateChapter() {
+            val continuedTitle = "$title（续${continuation++}）"
+            closeChapter()
+            openChapter(continuedTitle)
+        }
+
+        fun appendContent(text: String) {
+            var offset = 0
+            while (offset < text.length) {
+                if (charCount >= MAX_CHAPTER_CHARS - 1) rotateChapter()
+                val available = (MAX_CHAPTER_CHARS - charCount - 1).coerceAtLeast(1)
+                val end = (offset + available).coerceAtMost(text.length)
+                writer?.append(text, offset, end)?.append('\n')
+                charCount += end - offset + 1
+                offset = end
+            }
+        }
+
         openChapter("正文")
         resolver.openInputStream(source)?.use { input ->
-            BufferedReader(InputStreamReader(input, charset), DEFAULT_BUFFER_SIZE).useLines { lines ->
-                lines.forEach { rawLine ->
-                    val line = normalizer.normalizeLine(rawLine)?.text
+            val decoder = charset.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPLACE)
+                .onUnmappableCharacter(CodingErrorAction.REPLACE)
+            InputStreamReader(input, decoder).use { reader ->
+                reader.forEachBoundedLine(MAX_INPUT_SEGMENT_CHARS) { rawLine ->
+                    decodedCharacters += rawLine.length
+                    replacementCharacters += rawLine.count { it == REPLACEMENT_CHAR }
+                    val normalized = normalizer.normalizeLine(rawLine)?.text
+                    val line = normalized?.let { if (options.cleanTxtNoise) cleaner.clean(it) else it }
                     val chapterHeading = line?.let(chapterParser::chapterTitle)
                     if (chapterHeading != null) {
                         closeChapter()
                         continuation = 1
                         openChapter(chapterHeading)
-                    } else if (charCount >= MAX_CHAPTER_CHARS && line == null) {
-                        val continuedTitle = "$title（续${continuation++}）"
-                        closeChapter()
-                        openChapter(continuedTitle)
                     } else if (line != null) {
-                        writer?.append(line)?.append('\n')
-                        charCount += line.length + 1
+                        appendContent(line)
                     }
                 }
             }
-        } ?: error("无法再次打开文件")
+        } ?: throw BookImportException(BookImportFailure.FILE_UNREADABLE, "无法再次打开文件")
         closeChapter()
-        if (chapters.isEmpty()) error("TXT 文件没有可阅读内容")
+        if (replacementCharacters >= MIN_REPLACEMENT_CHARS &&
+            replacementCharacters.toDouble() / decodedCharacters.coerceAtLeast(1) > MAX_REPLACEMENT_RATIO
+        ) {
+            throw BookImportException(BookImportFailure.ENCODING_QUALITY, "TXT 编码质量异常，请转换编码后重试")
+        }
+        if (chapters.isEmpty()) {
+            throw BookImportException(BookImportFailure.EMPTY_CONTENT, "TXT 文件没有可阅读内容")
+        }
         ImportResult(safeBaseName(displayName), format = BookFormat.TXT, chapters = chapters)
     }
 
     companion object {
         internal const val MAX_CHAPTER_CHARS = 256_000
         internal const val CHARSET_SAMPLE_SIZE = 256 * 1024
+        internal const val MAX_INPUT_SEGMENT_CHARS = 32_000
         internal val CHAPTER_PATTERN = ChapterParser.CHAPTER_PATTERN
+        private const val REPLACEMENT_CHAR = '\uFFFD'
+        private const val MIN_REPLACEMENT_CHARS = 12
+        private const val MAX_REPLACEMENT_RATIO = .005
 
         internal fun detectCharset(input: InputStream): Charset {
             val output = ByteArrayOutputStream(CHARSET_SAMPLE_SIZE)
@@ -176,4 +209,41 @@ class TxtBookFormatPlugin : BookFormatPlugin {
         private fun isCjkCharacter(character: Char): Boolean = character.code in 0x3400..0x9FFF ||
             character.code in 0xF900..0xFAFF
     }
+}
+
+private fun InputStreamReader.forEachBoundedLine(
+    maxSegmentChars: Int,
+    onLine: (String) -> Unit,
+) {
+    val buffer = CharArray(DEFAULT_BUFFER_SIZE)
+    val line = StringBuilder(maxSegmentChars)
+    var previousWasCarriageReturn = false
+
+    fun emit() {
+        onLine(line.toString())
+        line.clear()
+    }
+
+    while (true) {
+        val read = read(buffer)
+        if (read < 0) break
+        for (index in 0 until read) {
+            when (val character = buffer[index]) {
+                '\r' -> {
+                    emit()
+                    previousWasCarriageReturn = true
+                }
+                '\n' -> {
+                    if (!previousWasCarriageReturn) emit()
+                    previousWasCarriageReturn = false
+                }
+                else -> {
+                    previousWasCarriageReturn = false
+                    line.append(character)
+                    if (line.length >= maxSegmentChars) emit()
+                }
+            }
+        }
+    }
+    if (line.isNotEmpty()) emit()
 }

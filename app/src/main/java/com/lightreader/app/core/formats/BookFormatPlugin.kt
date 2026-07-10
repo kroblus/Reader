@@ -19,6 +19,24 @@ data class ImportResult(
     val chapters: List<ImportedChapter>,
 )
 
+/** Import behaviour chosen before source content is copied into private storage. */
+data class BookImportOptions(
+    val cleanTxtNoise: Boolean = true,
+)
+
+enum class BookImportFailure {
+    FILE_UNREADABLE,
+    EMPTY_CONTENT,
+    ENCODING_QUALITY,
+    UNSUPPORTED_FORMAT,
+}
+
+class BookImportException(
+    val failure: BookImportFailure,
+    message: String,
+    cause: Throwable? = null,
+) : IllegalStateException(message, cause)
+
 interface BookFormatPlugin {
     fun supports(displayName: String, mimeType: String?): Boolean
     suspend fun import(
@@ -26,6 +44,7 @@ interface BookFormatPlugin {
         source: Uri,
         displayName: String,
         bookDirectory: File,
+        options: BookImportOptions = BookImportOptions(),
     ): ImportResult
 }
 

@@ -28,6 +28,7 @@ class ReaderSettingsRepository(private val context: Context) {
             appLanguage = enumValue(values[APP_LANGUAGE], AppLanguage.SYSTEM),
             libraryTaglineIndex = values[LIBRARY_TAGLINE_INDEX] ?: 0,
             developerToolsEnabled = values[DEVELOPER_TOOLS_ENABLED] ?: false,
+            cleanTxtNoise = values[CLEAN_TXT_NOISE] ?: true,
             layoutPreset = enumValue(values[LAYOUT_PRESET], ReaderLayoutPreset.COMFORT),
             fontSizeSp = values[FONT_SIZE] ?: DEFAULT_FONT_SIZE_SP,
             fontWeight = values[FONT_WEIGHT] ?: 400,
@@ -89,6 +90,7 @@ class ReaderSettingsRepository(private val context: Context) {
             values[APP_LANGUAGE] = value.appLanguage.name
             values[LIBRARY_TAGLINE_INDEX] = value.libraryTaglineIndex
             values[DEVELOPER_TOOLS_ENABLED] = value.developerToolsEnabled
+            values[CLEAN_TXT_NOISE] = value.cleanTxtNoise
             values[LAYOUT_PRESET] = value.layoutPreset.name
             values[FONT_SIZE] = value.fontSizeSp
             values[FONT_WEIGHT] = value.fontWeight
@@ -132,6 +134,7 @@ class ReaderSettingsRepository(private val context: Context) {
         val APP_LANGUAGE = stringPreferencesKey("app_language")
         val LIBRARY_TAGLINE_INDEX = intPreferencesKey("library_tagline_index")
         val DEVELOPER_TOOLS_ENABLED = booleanPreferencesKey("developer_tools_enabled")
+        val CLEAN_TXT_NOISE = booleanPreferencesKey("clean_txt_noise")
         val LAYOUT_PRESET = stringPreferencesKey("reader_layout_preset")
         val FONT_SIZE = floatPreferencesKey("font_size")
         val FONT_WEIGHT = intPreferencesKey("font_weight")

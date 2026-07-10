@@ -63,6 +63,7 @@ data class ReaderPreferences(
     val appLanguage: AppLanguage = AppLanguage.SYSTEM,
     val libraryTaglineIndex: Int = 0,
     val developerToolsEnabled: Boolean = false,
+    val cleanTxtNoise: Boolean = true,
     val layoutPreset: ReaderLayoutPreset = ReaderLayoutPreset.COMFORT,
     val fontSizeSp: Float = 17f,
     val fontWeight: Int = 400,
@@ -204,6 +205,7 @@ data class WebBookPreview(
     val sample: String,
     val extractionPlan: ExtractionPlan,
     val parseWarnings: List<String> = emptyList(),
+    val sourceId: String = "generic-html",
 )
 
 @kotlinx.serialization.Serializable

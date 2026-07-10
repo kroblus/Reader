@@ -7,7 +7,7 @@ import androidx.room.Fts4
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "books")
+@Entity(tableName = "books", indices = [Index("contentFingerprint")])
 data class BookEntity(
     @PrimaryKey val id: String,
     val title: String,
@@ -19,6 +19,7 @@ data class BookEntity(
     val totalChars: Long,
     val chapterCount: Int,
     val sourceUrl: String?,
+    val contentFingerprint: String? = null,
 )
 
 @Entity(
@@ -107,6 +108,7 @@ data class DownloadTaskEntity(
     val updatedAt: Long,
     val importedBookId: String?,
     val error: String?,
+    val sourceId: String = "generic-html",
 )
 
 @Entity(

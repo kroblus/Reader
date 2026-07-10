@@ -40,6 +40,7 @@
     </string-array>
     <string name="action_back">返回</string>
     <string name="action_cancel">取消</string>
+    <string name="notification_download_progress">已下载 %1$d / %2$d 章</string>
     <string name="action_delete">删除</string>
     <string name="action_keep">保留</string>
     <string name="action_close">关闭</string>
@@ -77,6 +78,10 @@
     <string name="library_app_settings">应用设置</string>
     <string name="library_change_skin">更换皮肤</string>
     <string name="library_deepseek_settings">AI 下载设置</string>
+    <string name="library_duplicate_import_title">这本书已经在书架中</string>
+    <string name="library_duplicate_import_body">《%1$s》与已导入文件内容相同。</string>
+    <string name="library_duplicate_import_open">打开已有书籍</string>
+    <string name="library_duplicate_import_copy">仍然导入副本</string>
     <string name="library_dom_bridge">网页解析测试</string>
     <string name="library_import_novel">导入小说</string>
     <string name="library_my_shelf">我的书架</string>
@@ -243,6 +248,7 @@
     <string name="settings_justified">两端对齐</string>
     <string name="settings_keep_screen_on">保持屏幕常亮</string>
     <string name="settings_lock_portrait">锁定竖屏</string>
+    <string name="settings_clean_txt_noise">导入时清理 TXT 广告和网址行</string>
     <string name="settings_show_progress">显示阅读进度</string>
     <string name="settings_show_chapter_title">显示章节标题</string>
     <string name="settings_show_right_progress">显示右侧进度条</string>
@@ -283,6 +289,16 @@
     <string name="busy_testing_connection">正在测试连接</string>
     <string name="message_imported_book">已导入《%1$s》</string>
     <string name="message_import_failed">导入失败</string>
+    <string name="message_import_file_unreadable">无法读取文件，请重新授权或选择文件</string>
+    <string name="message_import_empty">文件没有可阅读内容</string>
+    <string name="message_import_encoding">文件编码质量异常，请转换为 UTF-8 或 GB18030 后重试</string>
+    <string name="message_import_unsupported">仅支持 TXT 和无 DRM EPUB</string>
+    <string name="message_web_invalid_url">请输入有效的 HTTPS 小说目录网址。</string>
+    <string name="message_web_network">无法连接网络，请检查后重试。</string>
+    <string name="message_web_http">网站未返回可阅读页面，请稍后重试。</string>
+    <string name="message_web_response_too_large">页面过大，无法安全导入。</string>
+    <string name="message_web_non_html">该链接未返回可阅读的 HTML 页面。</string>
+    <string name="message_web_access_restricted">该网站需要浏览器验证或其他已授权的访问方式。</string>
     <string name="message_deleted">已删除</string>
     <string name="message_book_missing">书籍不存在</string>
     <string name="message_book_has_no_chapters">书籍没有章节</string>

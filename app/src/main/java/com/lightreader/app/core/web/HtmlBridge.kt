@@ -2,6 +2,7 @@ package com.lightreader.app.core.web
 
 import android.util.Log
 import android.webkit.JavascriptInterface
+import com.lightreader.app.BuildConfig
 import org.jsoup.Jsoup
 
 data class HtmlDomSnapshot(
@@ -29,8 +30,8 @@ class HtmlBridge(
 ) {
     @JavascriptInterface
     fun processHTML(html: String) {
-        val snapshot = HtmlDomSnapshot.from(html)
-        Log.d(TAG, "Received DOM HTML: length=${snapshot.rawHtml.length}, body=${snapshot.bodyPreview(200)}")
+        val snapshot = HtmlDomSnapshot.from(html.take(MAX_DOM_CHARACTERS))
+        if (BuildConfig.DEBUG) Log.d(TAG, "Received DOM HTML: length=${html.length}")
         onHtmlReceived(snapshot)
     }
 
@@ -46,5 +47,6 @@ class HtmlBridge(
         """.trimIndent()
 
         private const val TAG = "HtmlBridge"
+        private const val MAX_DOM_CHARACTERS = 1_000_000
     }
 }

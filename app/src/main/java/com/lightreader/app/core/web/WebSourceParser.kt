@@ -14,6 +14,46 @@ interface WebSourceParser {
     suspend fun chapterText(url: String, plan: ExtractionPlan, chapterTitle: String = ""): String
 }
 
+/** Contract for a specific novel site, with the generic HTML parser as the initial fallback. */
+interface NovelSourceAdapter : WebSourceParser {
+    val id: String
+    fun canHandle(url: String): Boolean
+}
+
+class GenericHtmlNovelSourceAdapter(
+    private val parser: WebSourceParser,
+) : NovelSourceAdapter {
+    override val id: String = "generic-html"
+
+    override fun canHandle(url: String): Boolean = runCatching {
+        val uri = URI(url.trim())
+        uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank()
+    }.getOrDefault(false)
+
+    override suspend fun preview(url: String): WebBookPreview = parser.preview(url).copy(sourceId = id)
+
+    override suspend fun chapterText(url: String, plan: ExtractionPlan, chapterTitle: String): String =
+        parser.chapterText(url, plan, chapterTitle)
+}
+
+class NovelSourceRegistry(
+    adapters: List<NovelSourceAdapter>,
+) : WebSourceParser {
+    private val adapters = adapters.associateBy(NovelSourceAdapter::id)
+    private val orderedAdapters = adapters
+
+    override suspend fun preview(url: String): WebBookPreview = adapterFor(url).preview(url)
+
+    override suspend fun chapterText(url: String, plan: ExtractionPlan, chapterTitle: String): String =
+        adapterFor(url).chapterText(url, plan, chapterTitle)
+
+    suspend fun chapterText(sourceId: String, url: String, plan: ExtractionPlan, chapterTitle: String): String =
+        (adapters[sourceId] ?: adapterFor(url)).chapterText(url, plan, chapterTitle)
+
+    private fun adapterFor(url: String): NovelSourceAdapter = orderedAdapters.firstOrNull { it.canHandle(url) }
+        ?: error("No enabled source adapter supports this URL.")
+}
+
 class JsoupWebSourceParser(
     private val fetcher: HtmlFetcher,
     private val catalogParser: RuleBasedCatalogParser,
@@ -36,7 +76,7 @@ class JsoupWebSourceParser(
     override suspend fun preview(url: String): WebBookPreview = withContext(Dispatchers.IO) {
         val inputUri = validator.validate(url)
         checkRobots(inputUri)
-        val catalogFetch = fetcher.fetch(url)
+        val catalogFetch = fetcher.fetch(url, MAX_CATALOG_BYTES)
         val finalUri = validator.validate(catalogFetch.finalUrl)
         if (!sameOrigin(inputUri, finalUri)) checkRobots(finalUri)
 
@@ -51,7 +91,7 @@ class JsoupWebSourceParser(
         var lastFailure: Throwable? = null
         parsed.chapters.take(SAMPLE_CHAPTER_ATTEMPTS).forEach { chapter ->
             val attempt = runCatching {
-                val fetch = fetcher.fetch(chapter.url)
+                val fetch = fetcher.fetch(chapter.url, MAX_CHAPTER_BYTES)
                 val document = Jsoup.parse(fetch.html, fetch.finalUrl)
                 require(!AccessRestrictionDetector.isBrowserVerification(document.outerHtml())) { AccessRestrictionDetector.MESSAGE }
                 val contentSelector = parsed.extractionPlan.contentSelector.ifBlank {
@@ -99,7 +139,7 @@ class JsoupWebSourceParser(
 
     override suspend fun chapterText(url: String, plan: ExtractionPlan, chapterTitle: String): String = withContext(Dispatchers.IO) {
         validator.validate(url)
-        val fetch = fetcher.fetch(url)
+        val fetch = fetcher.fetch(url, MAX_CHAPTER_BYTES)
         val document = Jsoup.parse(fetch.html, fetch.finalUrl)
         contentExtractor.extract(document, plan, chapterTitle).also {
             require(it.length <= TxtBookFormatPlugin.MAX_CHAPTER_CHARS * 4) { "Chapter body is unexpectedly large." }
@@ -108,7 +148,7 @@ class JsoupWebSourceParser(
 
     private suspend fun checkRobots(uri: URI) {
         val robotsUrl = "${uri.scheme}://${uri.authority}/robots.txt"
-        val rules = runCatching { fetcher.fetch(robotsUrl).html }.getOrNull() ?: return
+        val rules = runCatching { fetcher.fetch(robotsUrl, MAX_ROBOTS_BYTES).html }.getOrNull() ?: return
         var applies = false
         val path = uri.rawPath.ifBlank { "/" }
         rules.lineSequence()
@@ -144,5 +184,8 @@ class JsoupWebSourceParser(
 
     private companion object {
         const val SAMPLE_CHAPTER_ATTEMPTS = 5
+        const val MAX_CATALOG_BYTES = 2 * 1024 * 1024
+        const val MAX_CHAPTER_BYTES = 1 * 1024 * 1024
+        const val MAX_ROBOTS_BYTES = 256 * 1024
     }
 }

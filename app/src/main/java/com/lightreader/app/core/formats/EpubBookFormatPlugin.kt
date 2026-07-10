@@ -22,6 +22,7 @@ class EpubBookFormatPlugin : BookFormatPlugin {
         source: Uri,
         displayName: String,
         bookDirectory: File,
+        options: BookImportOptions,
     ): ImportResult = withContext(Dispatchers.IO) {
         val epubFile = File(bookDirectory, "original.epub")
         context.contentResolver.openInputStream(source)?.use { input ->
@@ -51,7 +52,7 @@ class EpubBookFormatPlugin : BookFormatPlugin {
                 val html = runCatching { readEntry(zip, path) }.getOrNull() ?: return@forEachIndexed
                 val document = Jsoup.parse(html)
                 document.select("script,style,nav,svg,noscript").remove()
-                val body = document.body()?.text()?.trim().orEmpty()
+                val body = document.body().text().trim()
                 if (body.isBlank()) return@forEachIndexed
                 val heading = document.selectFirst("h1,h2,h3")?.text()?.trim()
                     ?.takeIf { it.isNotBlank() } ?: "第${index + 1}章"

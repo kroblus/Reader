@@ -31,4 +31,23 @@ class LargeTxtImportInstrumentedTest {
             target.deleteRecursively()
         }
     }
+
+    @Test
+    fun importsHugeSingleParagraphWithoutCreatingAnOversizedChapter() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val source = File(context.cacheDir, "huge-single-paragraph.txt")
+        source.writer().buffered().use { output ->
+            repeat(2 * 1024) { output.write("山".repeat(1024)) }
+        }
+        val target = File(context.cacheDir, "huge-single-paragraph-import").apply { deleteRecursively(); mkdirs() }
+        try {
+            val result = TxtBookFormatPlugin().import(context, Uri.fromFile(source), source.name, target)
+            assertTrue(result.chapters.size > 1)
+            assertTrue(result.chapters.all { it.charCount <= TxtBookFormatPlugin.MAX_CHAPTER_CHARS })
+            assertTrue(result.chapters.sumOf { it.charCount.toLong() } >= 2L * 1024 * 1024)
+        } finally {
+            source.delete()
+            target.deleteRecursively()
+        }
+    }
 }

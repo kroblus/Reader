@@ -333,6 +333,24 @@ class ReaderUiInstrumentedTest {
     }
 
     @Test
+    fun readerProgressUsesRestoredChapterOnItsFirstVisibleFrame() {
+        seedBook("进度恢复测试", chapterCount = 20, progressChapterIndex = 12)
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("进度恢复测试").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("进度恢复测试").performClick()
+        val expectedProgress = text(
+            R.string.reader_progress,
+            60,
+            text(R.string.reader_progress_chapter, 13, 0),
+        )
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText(expectedProgress).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("reader_bottom_progress_text").assert(hasText(expectedProgress))
+    }
+
+    @Test
     fun readerDirectoryAndBookmarksUseUnifiedOverlay() {
         seedBook("浮层测试小说", chapterCount = 260, progressChapterIndex = 234)
         composeRule.waitUntil(5_000) {

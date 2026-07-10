@@ -266,6 +266,25 @@ fun LibraryScreen(state: MainUiState, viewModel: MainViewModel) {
         )
     }
 
+    state.pendingDuplicateImport?.let { duplicate ->
+        val existing = duplicate.candidate.existingBook ?: return@let
+        AlertDialog(
+            onDismissRequest = viewModel::dismissDuplicateImport,
+            title = { Text(stringResource(R.string.library_duplicate_import_title)) },
+            text = { Text(stringResource(R.string.library_duplicate_import_body, existing.title)) },
+            dismissButton = {
+                TextButton(onClick = viewModel::openExistingDuplicate) {
+                    Text(stringResource(R.string.library_duplicate_import_open))
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::importDuplicateCopy) {
+                    Text(stringResource(R.string.library_duplicate_import_copy))
+                }
+            },
+        )
+    }
+
     if (showSkinPicker) {
         ModalBottomSheet(
             onDismissRequest = { showSkinPicker = false },
@@ -393,6 +412,11 @@ fun AppSettingsScreen(preferences: ReaderPreferences, viewModel: MainViewModel) 
                 )
             }
             AppSettingsSection(stringResource(R.string.app_settings_import_download)) {
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_clean_txt_noise),
+                    checked = preferences.cleanTxtNoise,
+                    onCheckedChange = { viewModel.savePreferences(preferences.copy(cleanTxtNoise = it)) },
+                )
                 SettingsNavigationRow(
                     title = stringResource(R.string.library_web_import),
                     icon = { Icon(Icons.Outlined.CloudDownload, null) },

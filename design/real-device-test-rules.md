@@ -1,6 +1,6 @@
 # LightReader Real-Device Test Rules
 
-Last updated: 2026-07-08
+Last updated: 2026-07-10
 
 ## Goal
 
@@ -37,7 +37,8 @@ The build gate fails if any command exits non-zero. Warnings are allowed only wh
 
 ## APK Gate
 
-Verify the release APK before manual installation:
+Verify the signed release APK before manual installation. A release build without the four
+`RELEASE_*` signing values is intentionally unsigned and must not be distributed:
 
 ```powershell
 $env:ANDROID_HOME = (Get-Content local.properties | Select-String '^sdk.dir=').ToString().Split('=',2)[1]
@@ -57,10 +58,12 @@ Pass criteria:
 Run:
 
 ```powershell
-.\gradlew.bat :app:connectedDebugAndroidTest --console=plain
+.\gradlew.bat :app:connectedQaAndroidTest --console=plain
 ```
 
-The gate must cover these existing instrumented areas:
+This installs and resets only `com.lightreader.app.qa`; it must never be changed back to the
+production `debug` package for a device containing real reading data. The gate must cover these
+existing instrumented areas:
 
 1. Room migrations and core persistence.
 2. TXT import, including legacy Chinese encoding normalization and lazy search indexing.

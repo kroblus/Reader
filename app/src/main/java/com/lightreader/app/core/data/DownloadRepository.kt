@@ -1,22 +1,13 @@
 package com.lightreader.app.core.data
 
 import android.content.Context
-import androidx.work.BackoffPolicy
-import androidx.work.Constraints
-import androidx.work.Data
-import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
 import com.lightreader.app.core.model.BookFormat
 import com.lightreader.app.core.model.WebBookPreview
-import com.lightreader.app.core.web.WebDownloadWorker
 import com.lightreader.app.core.web.WebSourceParser
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.util.UUID
-import java.util.concurrent.TimeUnit
 
 class DownloadRepository(
     private val context: Context,
@@ -47,6 +38,7 @@ class DownloadRepository(
                 updatedAt = now,
                 importedBookId = null,
                 error = null,
+                sourceId = preview.sourceId,
             ),
         )
         dao.insertDownloadChapters(preview.chapters.mapIndexed { index, chapter ->
@@ -101,6 +93,7 @@ class DownloadRepository(
                 updatedAt = now,
                 importedBookId = bookId,
                 error = null,
+                sourceId = preview.sourceId,
             ),
         )
         dao.insertDownloadChapters(newChapters.mapIndexed { index, chapter ->
@@ -122,7 +115,7 @@ class DownloadRepository(
     suspend fun pause(id: String) {
         val task = dao.downloadTask(id) ?: return
         dao.updateDownloadTask(task.copy(status = "PAUSED", updatedAt = System.currentTimeMillis(), error = null))
-        WorkManager.getInstance(context).cancelUniqueWork(workName(id))
+        DownloadWorkScheduler.cancel(context, id)
     }
 
     suspend fun resume(id: String) {
@@ -134,7 +127,7 @@ class DownloadRepository(
 
     suspend fun cancel(id: String) {
         val task = dao.downloadTask(id) ?: return
-        WorkManager.getInstance(context).cancelUniqueWork(workName(id))
+        DownloadWorkScheduler.cancel(context, id)
         dao.updateDownloadTask(
             task.copy(
                 status = "CANCELED",
@@ -145,7 +138,7 @@ class DownloadRepository(
     }
 
     suspend fun delete(id: String) {
-        WorkManager.getInstance(context).cancelUniqueWork(workName(id))
+        DownloadWorkScheduler.cancel(context, id)
         val importedBookExists = dao.book(id) != null
         dao.deleteDownloadTask(id)
         if (!importedBookExists) {
@@ -155,15 +148,8 @@ class DownloadRepository(
 
     private fun enqueue(id: String) {
         if (!enqueueWork) return
-        val request = OneTimeWorkRequestBuilder<WebDownloadWorker>()
-            .setInputData(Data.Builder().putString(WebDownloadWorker.TASK_ID, id).build())
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
-            .build()
-        WorkManager.getInstance(context).enqueueUniqueWork(workName(id), ExistingWorkPolicy.REPLACE, request)
+        DownloadWorkScheduler.enqueue(context, id)
     }
-
-    private fun workName(id: String) = "web-book-$id"
 
     private fun String.normalizeUrlKey(): String =
         trim().substringBefore('#').removeSuffix("/").lowercase()
