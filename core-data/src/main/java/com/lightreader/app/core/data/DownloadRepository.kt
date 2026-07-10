@@ -3,7 +3,6 @@ package com.lightreader.app.core.data
 import android.content.Context
 import com.lightreader.app.core.model.BookFormat
 import com.lightreader.app.core.model.WebBookPreview
-import com.lightreader.app.core.web.WebSourceParser
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -13,7 +12,8 @@ class DownloadRepository(
     private val context: Context,
     private val dao: ReaderDao,
     private val json: Json,
-    private val webSourceParser: WebSourceParser,
+    private val webSourceParser: WebBookPreviewSource,
+    private val scheduler: DownloadTaskScheduler = NoopDownloadTaskScheduler,
     private val enqueueWork: Boolean = true,
 ) {
     val tasks: Flow<List<DownloadTaskEntity>> = dao.observeDownloadTasks()
@@ -117,7 +117,7 @@ class DownloadRepository(
     suspend fun pause(id: String) {
         val task = dao.downloadTask(id) ?: return
         dao.updateDownloadTask(task.copy(status = "PAUSED", updatedAt = System.currentTimeMillis(), error = null))
-        DownloadWorkScheduler.cancel(context, id)
+        scheduler.cancel(id)
     }
 
     suspend fun resume(id: String) {
@@ -129,7 +129,7 @@ class DownloadRepository(
 
     suspend fun cancel(id: String) {
         val task = dao.downloadTask(id) ?: return
-        DownloadWorkScheduler.cancel(context, id)
+        scheduler.cancel(id)
         dao.updateDownloadTask(
             task.copy(
                 status = "CANCELED",
@@ -140,7 +140,7 @@ class DownloadRepository(
     }
 
     suspend fun delete(id: String) {
-        DownloadWorkScheduler.cancel(context, id)
+        scheduler.cancel(id)
         val importedBookExists = dao.book(id) != null
         dao.deleteDownloadTask(id)
         if (!importedBookExists) {
@@ -150,7 +150,7 @@ class DownloadRepository(
 
     private fun enqueue(id: String) {
         if (!enqueueWork) return
-        DownloadWorkScheduler.enqueue(context, id)
+        scheduler.enqueue(id)
     }
 
     private fun String.normalizeUrlKey(): String =

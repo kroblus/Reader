@@ -1,9 +1,9 @@
 package com.lightreader.app.core.web
 
-import com.lightreader.app.core.formats.TxtBookFormatPlugin
 import com.lightreader.app.core.model.ExtractionPlan
 import com.lightreader.app.core.model.WebBookPreview
 import com.lightreader.app.core.model.WebChapter
+import com.lightreader.app.core.reader.ChapterParser
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.URI
@@ -71,7 +71,7 @@ class RuleBasedCatalogParser(
     }
 
     private fun looksLikeChapter(text: String, uri: URI): Boolean =
-        TxtBookFormatPlugin.CHAPTER_PATTERN.matches(text) ||
+        ChapterParser.CHAPTER_PATTERN.matches(text) ||
             ENGLISH_CHAPTER_PATTERN.containsMatchIn(text) ||
             CHAPTER_PATH_PATTERN.containsMatchIn(uri.path.orEmpty())
 

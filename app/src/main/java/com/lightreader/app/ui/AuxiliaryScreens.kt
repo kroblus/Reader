@@ -69,10 +69,11 @@ import com.lightreader.app.core.model.Chapter
 import com.lightreader.app.core.model.SearchResult
 import com.lightreader.app.core.model.WebBookPreview
 import com.lightreader.app.core.settings.AiConfiguration
+import com.lightreader.app.feature.download.DownloadViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SearchScreen(viewModel: MainViewModel) {
+fun SearchScreen(viewModel: ReaderViewModel) {
     val state by viewModel.searchState.collectAsState()
     val readerState by viewModel.readerState.collectAsState()
     Scaffold(
@@ -175,7 +176,12 @@ private fun chapterProgress(result: SearchResult, chapter: Chapter): Int =
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WebImportScreen(tasks: List<DownloadTaskEntity>, viewModel: MainViewModel) {
+fun WebImportScreen(
+    tasks: List<DownloadTaskEntity>,
+    viewModel: DownloadViewModel,
+    onBack: () -> Unit,
+    onOpenDownloadedBook: (String) -> Unit,
+) {
     val state by viewModel.webState.collectAsState()
     var guideExpanded by remember { mutableStateOf(false) }
     var pendingTaskAction by remember { mutableStateOf<DownloadTaskAction?>(null) }
@@ -187,7 +193,7 @@ fun WebImportScreen(tasks: List<DownloadTaskEntity>, viewModel: MainViewModel) {
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
                 title = { Text(stringResource(R.string.web_import_title)) },
                 navigationIcon = {
-                    IconButton(onClick = viewModel::goBack) {
+                    IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.action_back))
                     }
                 },
@@ -224,7 +230,7 @@ fun WebImportScreen(tasks: List<DownloadTaskEntity>, viewModel: MainViewModel) {
                 }
             }
             if (state.loading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-            state.error?.let { error -> item { Text(error.asString(), color = MaterialTheme.colorScheme.error) } }
+            state.error?.let { error -> item { Text(error.toUiText().asString(), color = MaterialTheme.colorScheme.error) } }
             state.preview?.let { preview ->
                 item {
                     Card(Modifier.fillMaxWidth()) {
@@ -259,6 +265,7 @@ fun WebImportScreen(tasks: List<DownloadTaskEntity>, viewModel: MainViewModel) {
                     DownloadTaskCard(
                         task = task,
                         viewModel = viewModel,
+                        onOpenDownloadedBook = onOpenDownloadedBook,
                         onConfirmAction = { pendingTaskAction = it },
                     )
                 }
@@ -339,7 +346,8 @@ private fun PreviewWarnings(preview: WebBookPreview) {
 @Composable
 private fun DownloadTaskCard(
     task: DownloadTaskEntity,
-    viewModel: MainViewModel,
+    viewModel: DownloadViewModel,
+    onOpenDownloadedBook: (String) -> Unit,
     onConfirmAction: (DownloadTaskAction) -> Unit,
 ) {
     var showErrorDetail by remember(task.id) { mutableStateOf(false) }
@@ -361,7 +369,7 @@ private fun DownloadTaskCard(
                     "PAUSED", "FAILED" -> IconButton(onClick = { viewModel.resumeDownload(task.id) }) {
                         Icon(Icons.Outlined.PlayArrow, stringResource(R.string.action_resume_or_retry))
                     }
-                    "COMPLETED" -> IconButton(onClick = { viewModel.openDownloadedBook(task.importedBookId ?: task.id) }) {
+                    "COMPLETED" -> IconButton(onClick = { onOpenDownloadedBook(task.importedBookId ?: task.id) }) {
                         Icon(Icons.AutoMirrored.Outlined.MenuBook, stringResource(R.string.action_open_book))
                     }
                 }
@@ -392,9 +400,8 @@ private fun DownloadTaskCard(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ApiSettingsScreen(viewModel: MainViewModel) {
-    val web by viewModel.webState.collectAsState()
-    val api by viewModel.apiSettingsState.collectAsState()
+fun ApiSettingsScreen(viewModel: AiSettingsViewModel, onBack: () -> Unit) {
+    val api by viewModel.state.collectAsState()
     var confirmDeleteKey by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
@@ -402,7 +409,7 @@ fun ApiSettingsScreen(viewModel: MainViewModel) {
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
                 title = { Text(stringResource(R.string.api_settings_title)) },
                 navigationIcon = {
-                    IconButton(onClick = viewModel::goBack) {
+                    IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.action_back))
                     }
                 },
@@ -415,7 +422,7 @@ fun ApiSettingsScreen(viewModel: MainViewModel) {
         ) {
             Text(stringResource(R.string.api_settings_privacy))
             Text(
-                stringResource(if (web.hasApiKey) R.string.api_settings_configured else R.string.api_settings_not_configured),
+                stringResource(if (api.hasApiKey) R.string.api_settings_configured else R.string.api_settings_not_configured),
                 color = MaterialTheme.colorScheme.primary,
             )
             OutlinedTextField(
@@ -438,8 +445,8 @@ fun ApiSettingsScreen(viewModel: MainViewModel) {
                 Text(stringResource(R.string.api_settings_save_key))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = viewModel::testApiKey, enabled = web.hasApiKey) { Text(stringResource(R.string.api_settings_test_connection)) }
-                OutlinedButton(onClick = { confirmDeleteKey = true }, enabled = web.hasApiKey) { Text(stringResource(R.string.api_settings_delete_key)) }
+                OutlinedButton(onClick = viewModel::testApiKey, enabled = api.hasApiKey) { Text(stringResource(R.string.api_settings_test_connection)) }
+                OutlinedButton(onClick = { confirmDeleteKey = true }, enabled = api.hasApiKey) { Text(stringResource(R.string.api_settings_delete_key)) }
             }
             TextButton(onClick = viewModel::toggleAiAdvancedSettings) {
                 Text(stringResource(if (api.advancedExpanded) R.string.api_settings_hide_advanced else R.string.api_settings_show_advanced))
@@ -465,7 +472,7 @@ fun ApiSettingsScreen(viewModel: MainViewModel) {
 }
 
 @Composable
-private fun AiAdvancedSettings(configuration: AiConfiguration, viewModel: MainViewModel) {
+private fun AiAdvancedSettings(configuration: AiConfiguration, viewModel: AiSettingsViewModel) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedTextField(
             value = configuration.baseUrl,

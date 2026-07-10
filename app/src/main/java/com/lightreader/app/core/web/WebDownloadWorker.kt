@@ -13,7 +13,7 @@ import androidx.work.WorkerParameters
 import androidx.work.WorkManager
 import com.lightreader.app.R
 import com.lightreader.app.ReaderApplication
-import com.lightreader.app.core.data.DownloadWorkScheduler
+import com.lightreader.app.feature.download.DownloadWorkScheduler
 import com.lightreader.app.core.formats.ImportedChapter
 import com.lightreader.app.core.model.ExtractionPlan
 import kotlinx.coroutines.delay

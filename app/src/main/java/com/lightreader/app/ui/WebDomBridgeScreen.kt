@@ -52,7 +52,7 @@ import com.lightreader.app.core.web.HtmlDomSnapshot
 @SuppressLint("JavascriptInterface")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WebDomBridgeScreen(viewModel: MainViewModel) {
+fun WebDomBridgeScreen(viewModel: ReaderViewModel) {
     var inputUrl by rememberSaveable { mutableStateOf("https://example.com/") }
     var requestedUrl by rememberSaveable { mutableStateOf(inputUrl) }
     var status by remember { mutableStateOf<DomBridgeStatus>(DomBridgeStatus.Waiting) }

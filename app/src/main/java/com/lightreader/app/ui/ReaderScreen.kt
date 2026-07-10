@@ -110,6 +110,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.lightreader.app.R
+import com.lightreader.app.feature.download.DownloadViewModel
 import com.lightreader.app.core.model.BookFormat
 import com.lightreader.app.core.model.Bookmark
 import com.lightreader.app.core.model.Chapter
@@ -129,7 +130,12 @@ import kotlin.math.max
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
+fun ReaderScreen(
+    preferences: ReaderPreferences,
+    viewModel: ReaderViewModel,
+    downloadViewModel: DownloadViewModel,
+    settingsViewModel: SettingsViewModel,
+) {
     val state by viewModel.readerState.collectAsState()
     var tocAscending by remember { mutableStateOf(true) }
     var currentTime by remember { mutableStateOf(currentTime()) }
@@ -474,7 +480,7 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                 val book = state.book
                 if (book?.format == BookFormat.WEB && !book.sourceUrl.isNullOrBlank()) {
                     IconButton(
-                        onClick = viewModel::refreshCurrentWebBook,
+                        onClick = { downloadViewModel.refreshWebBook(book) },
                         enabled = !state.loading,
                         modifier = Modifier.size(40.dp),
                     ) {
@@ -494,7 +500,7 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                     preferences = preferences,
                     settingsHeight = settingsDockHeight,
                     autoReading = state.autoReading,
-                    onChange = viewModel::savePreferences,
+                    onChange = settingsViewModel::savePreferences,
                     onToggleAutoReading = viewModel::toggleAutoReading,
                     onOpenMoreSettings = viewModel::openReaderSettingsDetail,
                 )
@@ -509,6 +515,7 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                     state = state,
                     preferences = preferences,
                     viewModel = viewModel,
+                    settingsViewModel = settingsViewModel,
                     attachedToSettings = state.settingsVisible,
                     onShowToc = viewModel::showTableOfContents,
                     onShowBookmarks = viewModel::showBookmarksOverlay,
@@ -598,7 +605,7 @@ private fun ReaderSettingsDock(
 private fun ContinuousReaderPages(
     state: ReaderUiState,
     preferences: ReaderPreferences,
-    viewModel: MainViewModel,
+    viewModel: ReaderViewModel,
     currentTime: String,
     safeTopPx: Int,
     safeBottomPx: Int,
@@ -654,7 +661,8 @@ private fun ContinuousReaderPages(
 private fun ReaderBottomControls(
     state: ReaderUiState,
     preferences: ReaderPreferences,
-    viewModel: MainViewModel,
+    viewModel: ReaderViewModel,
+    settingsViewModel: SettingsViewModel,
     attachedToSettings: Boolean,
     onShowToc: () -> Unit,
     onShowBookmarks: () -> Unit,
@@ -756,7 +764,7 @@ private fun ReaderBottomControls(
                     Icons.Outlined.DarkMode,
                     stringResource(R.string.reader_night),
                     foreground,
-                    viewModel::toggleNightMode,
+                    settingsViewModel::toggleNightMode,
                     selected = preferences.theme == ReaderTheme.NIGHT,
                 )
                 ReaderAction(

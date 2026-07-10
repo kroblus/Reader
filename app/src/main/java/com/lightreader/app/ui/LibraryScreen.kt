@@ -91,7 +91,12 @@ import java.util.Date
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LibraryScreen(state: MainUiState, viewModel: MainViewModel) {
+fun LibraryScreen(
+    state: LibraryUiState,
+    viewModel: LibraryViewModel,
+    onOpenAppSettings: () -> Unit,
+    onSavePreferences: (ReaderPreferences) -> Unit,
+) {
     var pendingDelete by remember { mutableStateOf<Book?>(null) }
     var pendingEdit by remember { mutableStateOf<Book?>(null) }
     var showMoreActions by remember { mutableStateOf(false) }
@@ -155,7 +160,7 @@ fun LibraryScreen(state: MainUiState, viewModel: MainViewModel) {
                                     leadingIcon = { Icon(Icons.Outlined.Settings, null) },
                                     onClick = {
                                         showMoreActions = false
-                                        viewModel.navigate(AppScreen.AppSettings)
+                                        onOpenAppSettings()
                                     },
                                 )
                             }
@@ -292,7 +297,7 @@ fun LibraryScreen(state: MainUiState, viewModel: MainViewModel) {
         ) {
             SkinPickerPanel(
                 selected = state.preferences.appSkin,
-                onSelect = { skin -> viewModel.savePreferences(state.preferences.copy(appSkin = skin)) },
+                onSelect = { skin -> onSavePreferences(state.preferences.copy(appSkin = skin)) },
             )
         }
     }
@@ -348,7 +353,11 @@ private fun EditBookDialog(
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
-fun AppSettingsScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
+fun AppSettingsScreen(
+    preferences: ReaderPreferences,
+    readerViewModel: ReaderViewModel,
+    settingsViewModel: SettingsViewModel,
+) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -358,12 +367,12 @@ fun AppSettingsScreen(preferences: ReaderPreferences, viewModel: MainViewModel) 
                         stringResource(R.string.app_settings_title),
                         modifier = Modifier.combinedClickable(
                             onClick = {},
-                            onLongClick = viewModel::toggleDeveloperTools,
+                            onLongClick = settingsViewModel::toggleDeveloperTools,
                         ),
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = viewModel::goBack) {
+                    IconButton(onClick = readerViewModel::goBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.action_back))
                     }
                 },
@@ -392,47 +401,47 @@ fun AppSettingsScreen(preferences: ReaderPreferences, viewModel: MainViewModel) 
                     AppLanguageRow(
                         language = language,
                         selected = preferences.appLanguage == language,
-                        onClick = { viewModel.saveAppLanguage(language) },
+                        onClick = { settingsViewModel.saveAppLanguage(language) },
                     )
                 }
                 SettingsSwitchRow(
                     title = stringResource(R.string.settings_volume_keys),
                     checked = preferences.volumeKeys,
-                    onCheckedChange = { viewModel.savePreferences(preferences.copy(volumeKeys = it)) },
+                    onCheckedChange = { settingsViewModel.savePreferences(preferences.copy(volumeKeys = it)) },
                 )
                 SettingsSwitchRow(
                     title = stringResource(R.string.settings_keep_screen_on),
                     checked = preferences.keepScreenOn,
-                    onCheckedChange = { viewModel.savePreferences(preferences.copy(keepScreenOn = it)) },
+                    onCheckedChange = { settingsViewModel.savePreferences(preferences.copy(keepScreenOn = it)) },
                 )
                 SettingsSwitchRow(
                     title = stringResource(R.string.settings_lock_portrait),
                     checked = preferences.lockPortrait,
-                    onCheckedChange = { viewModel.savePreferences(preferences.copy(lockPortrait = it)) },
+                    onCheckedChange = { settingsViewModel.savePreferences(preferences.copy(lockPortrait = it)) },
                 )
             }
             AppSettingsSection(stringResource(R.string.app_settings_import_download)) {
                 SettingsSwitchRow(
                     title = stringResource(R.string.settings_clean_txt_noise),
                     checked = preferences.cleanTxtNoise,
-                    onCheckedChange = { viewModel.savePreferences(preferences.copy(cleanTxtNoise = it)) },
+                    onCheckedChange = { settingsViewModel.savePreferences(preferences.copy(cleanTxtNoise = it)) },
                 )
                 SettingsNavigationRow(
                     title = stringResource(R.string.library_web_import),
                     icon = { Icon(Icons.Outlined.CloudDownload, null) },
-                    onClick = { viewModel.navigate(AppScreen.WebImport) },
+                    onClick = { readerViewModel.navigate(AppScreen.WebImport) },
                 )
                 SettingsNavigationRow(
                     title = stringResource(R.string.library_deepseek_settings),
                     icon = { Icon(Icons.Outlined.Key, null) },
-                    onClick = { viewModel.navigate(AppScreen.ApiSettings) },
+                    onClick = { readerViewModel.navigate(AppScreen.ApiSettings) },
                 )
             }
             AppSettingsSection(stringResource(R.string.app_settings_appearance)) {
                 SettingsNavigationRow(
                     title = stringResource(R.string.library_change_skin),
                     icon = { Icon(Icons.Outlined.Palette, null) },
-                    onClick = { viewModel.savePreferences(preferences.copy(appSkin = preferences.appSkin.next())) },
+                    onClick = { settingsViewModel.savePreferences(preferences.copy(appSkin = preferences.appSkin.next())) },
                 )
             }
             if (preferences.developerToolsEnabled) {
@@ -440,7 +449,7 @@ fun AppSettingsScreen(preferences: ReaderPreferences, viewModel: MainViewModel) 
                     SettingsNavigationRow(
                         title = stringResource(R.string.library_dom_bridge),
                         icon = { Icon(Icons.Outlined.Code, null) },
-                        onClick = { viewModel.navigate(AppScreen.WebDomBridge) },
+                        onClick = { readerViewModel.navigate(AppScreen.WebDomBridge) },
                     )
                 }
             }

@@ -48,7 +48,8 @@ class ChapterParser(private val normalizer: BookTextNormalizer = BookTextNormali
     companion object {
         const val DEFAULT_TITLE = "正文"
         private const val MAX_TITLE_LENGTH = 80
-        internal val CHAPTER_PATTERN = Regex(
+        /** Shared by streaming import so chapter recognition remains identical before and after persistence. */
+        val CHAPTER_PATTERN = Regex(
             "^(?:正文[\\s　]*)?(?:(?:第[\\s　]*[0-9０-９零〇一二三四五六七八九十百千万两]+[\\s　]*[章回节卷部篇])|" +
                 "(?:卷[\\s　]*[0-9０-９零〇一二三四五六七八九十百千万两]+)|" +
                 "(?:Chapter[\\s　]+[0-9]+)|序章|楔子|引子|前言|后记|尾声|番外)" +

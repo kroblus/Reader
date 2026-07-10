@@ -1,37 +1,24 @@
 package com.lightreader.app.ui
 
 import android.app.Application
-import android.net.Uri
 import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lightreader.app.R
 import com.lightreader.app.ReaderApplication
-import com.lightreader.app.core.data.BookImportCandidate
-import com.lightreader.app.core.data.DownloadTaskEntity
-import com.lightreader.app.core.formats.BookImportException
-import com.lightreader.app.core.formats.BookImportFailure
-import com.lightreader.app.core.formats.BookImportOptions
-import com.lightreader.app.core.data.ShelfBookProgress
-import com.lightreader.app.core.model.AppLanguage
 import com.lightreader.app.core.model.Book
 import com.lightreader.app.core.model.BookParagraph
-import com.lightreader.app.core.model.BookFormat
 import com.lightreader.app.core.model.Bookmark
 import com.lightreader.app.core.model.Chapter
 import com.lightreader.app.core.model.ReaderPage
 import com.lightreader.app.core.model.ReaderPreferences
-import com.lightreader.app.core.model.ReaderTheme
 import com.lightreader.app.core.model.ReaderViewport
 import com.lightreader.app.core.model.SearchResult
-import com.lightreader.app.core.model.WebBookPreview
 import com.lightreader.app.core.reader.BookTextNormalizer
 import com.lightreader.app.core.reader.MemoryBoundedCache
 import com.lightreader.app.core.reader.toReaderStyle
-import com.lightreader.app.core.settings.AiConfiguration
-import com.lightreader.app.core.web.WebImportException
-import com.lightreader.app.core.web.WebImportFailure
-import kotlinx.coroutines.CancellationException
+import com.lightreader.app.feature.reader.ReaderNavigationPolicy
+import com.lightreader.app.feature.reader.ReaderPageTurnQueue
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -39,11 +26,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.roundToInt
 
 sealed interface AppScreen {
     data object Library : AppScreen
@@ -56,28 +41,12 @@ sealed interface AppScreen {
     data object AppSettings : AppScreen
 }
 
-data class MainUiState(
-    val books: List<Book> = emptyList(),
-    val shelfBooks: List<ShelfBookUi> = emptyList(),
+data class AppUiState(
     val preferences: ReaderPreferences = ReaderPreferences(),
-    val tasks: List<DownloadTaskEntity> = emptyList(),
-    val libraryTaglineIndex: Int = 0,
     val screen: AppScreen = AppScreen.Library,
     val navigation: NavigationState = NavigationState(),
     val busy: BusyState = BusyState(),
     val message: UiText? = null,
-    val pendingDuplicateImport: PendingDuplicateImport? = null,
-)
-
-data class PendingDuplicateImport(val candidate: BookImportCandidate)
-
-data class ShelfBookUi(
-    val book: Book,
-    val currentChapterTitle: String?,
-    val chapterIndex: Int?,
-    val progressPercent: Int,
-    val started: Boolean,
-    val updatedAt: Long?,
 )
 
 data class NavigationState(
@@ -127,32 +96,6 @@ data class BoundaryTurnRequest(
 enum class BoundaryTurnPhase { IDLE, ANIMATING_PREVIEW, COMMITTING_CHAPTER, SETTLING_CHAPTER }
 enum class ReaderOverlay { NONE, TOC, BOOKMARKS }
 
-internal class PendingPageTurnQueue(private val maxSize: Int = 3) {
-    var pendingDelta: Int = 0
-        private set
-
-    fun enqueue(next: Boolean) {
-        val delta = if (next) 1 else -1
-        pendingDelta = (pendingDelta + delta).coerceIn(-maxSize, maxSize)
-    }
-
-    fun poll(): Boolean? = when {
-        pendingDelta > 0 -> {
-            pendingDelta -= 1
-            true
-        }
-        pendingDelta < 0 -> {
-            pendingDelta += 1
-            false
-        }
-        else -> null
-    }
-
-    fun clear() {
-        pendingDelta = 0
-    }
-}
-
 data class SearchUiState(
     val query: String = "",
     val results: List<SearchResult> = emptyList(),
@@ -160,68 +103,32 @@ data class SearchUiState(
     val hasSearched: Boolean = false,
 )
 
-data class WebImportUiState(
-    val url: String = "",
-    val loading: Boolean = false,
-    val preview: WebBookPreview? = null,
-    val error: UiText? = null,
-    val hasApiKey: Boolean = false,
-)
-
-data class ApiSettingsUiState(
-    val keyDraft: String = "",
-    val showKey: Boolean = false,
-    val advancedExpanded: Boolean = false,
-    val configuration: AiConfiguration = AiConfiguration(),
-)
-
-class MainViewModel(application: Application) : AndroidViewModel(application) {
+class ReaderViewModel(application: Application) : AndroidViewModel(application) {
     private val readerApplication = application as ReaderApplication
     private val container = readerApplication.container
     private val navigation = MutableStateFlow(NavigationState())
     private val busy = MutableStateFlow(BusyState())
     private val message = MutableStateFlow<UiText?>(null)
-    private val pendingDuplicateImport = MutableStateFlow<PendingDuplicateImport?>(null)
-    private val contentState = combine(
-        container.bookRepository.books,
-        container.bookRepository.shelfProgress,
-        container.settingsRepository.preferences,
-        container.downloadRepository.tasks,
-    ) { books, progress, preferences, tasks ->
-        MainContentState(
-            books = books,
-            shelfBooks = buildShelfBooks(books, progress),
-            preferences = preferences,
-            tasks = tasks,
-        )
-    }
+    private val contentState = container.settingsRepository.preferences
     private val chromeState = combine(
         navigation,
         busy,
         message,
-        pendingDuplicateImport,
-    ) { currentNavigation, isBusy, currentMessage, duplicateImport ->
-        ChromeState(currentNavigation, isBusy, currentMessage, duplicateImport)
+    ) { currentNavigation, isBusy, currentMessage ->
+        ChromeState(currentNavigation, isBusy, currentMessage)
     }
-    val uiState: StateFlow<MainUiState> = combine(contentState, chromeState) { content, chrome ->
-        MainUiState(
-            books = content.books,
-            shelfBooks = content.shelfBooks,
-            preferences = content.preferences,
-            tasks = content.tasks,
-            libraryTaglineIndex = content.preferences.libraryTaglineIndex,
+    val uiState: StateFlow<AppUiState> = combine(contentState, chromeState) { preferences, chrome ->
+        AppUiState(
+            preferences = preferences,
             screen = chrome.navigation.current,
             navigation = chrome.navigation,
             busy = chrome.busy,
             message = chrome.message,
-            pendingDuplicateImport = chrome.pendingDuplicateImport,
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppUiState())
 
     val readerState = MutableStateFlow(ReaderUiState())
     val searchState = MutableStateFlow(SearchUiState())
-    val webState = MutableStateFlow(WebImportUiState(hasApiKey = container.keyStore.hasKey()))
-    val apiSettingsState = MutableStateFlow(ApiSettingsUiState(configuration = container.aiConfigurationStore.get()))
     private val normalizer = BookTextNormalizer()
     private var viewport = ReaderViewport(0, 0, 1f, 1f)
     private var chapterText = ""
@@ -232,7 +139,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var boundaryTurnNonce = 0L
     private var boundaryCommitSourceChapterIndex: Int? = null
     private var drainingQueuedTurns = false
-    private val pendingPageTurns = PendingPageTurnQueue()
+    private val pendingPageTurns = ReaderPageTurnQueue()
     private var paginationJob: Job? = null
     private var prefetchJob: Job? = null
     private var bookmarkJob: Job? = null
@@ -256,14 +163,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
-            val preferences = container.settingsRepository.preferences.first()
-            val taglineCount = getApplication<Application>().resources.getStringArray(R.array.brand_taglines).size
-            val nextIndex = nextTaglineIndex(preferences.libraryTaglineIndex, taglineCount)
-            if (nextIndex != preferences.libraryTaglineIndex) {
-                container.settingsRepository.saveLibraryTaglineIndex(nextIndex)
-            }
-        }
-        viewModelScope.launch {
             container.settingsRepository.preferences.collect { preferences ->
                 val fingerprint = preferences.toReaderStyle().layoutFingerprint()
                 if (readerState.value.book != null && viewport.widthPx > 0 && fingerprint != currentLayoutFingerprint) {
@@ -274,83 +173,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun importBook(uri: Uri) {
-        viewModelScope.launch {
-            showBusy(R.string.busy_importing_book)
-            val candidate = runCatching { container.bookRepository.inspectImport(uri) }
-                .getOrElse { error ->
-                    message.value = importFailureText(error)
-                    hideBusy()
-                    return@launch
-                }
-            if (candidate.existingBook != null) {
-                pendingDuplicateImport.value = PendingDuplicateImport(candidate)
-                hideBusy()
-            } else {
-                importCandidate(candidate)
-            }
-        }
-    }
-
-    fun dismissDuplicateImport() {
-        pendingDuplicateImport.value = null
-    }
-
-    fun openExistingDuplicate() {
-        val existing = pendingDuplicateImport.value?.candidate?.existingBook ?: return
-        pendingDuplicateImport.value = null
-        openBook(existing.id)
-    }
-
-    fun importDuplicateCopy() {
-        val candidate = pendingDuplicateImport.value?.candidate ?: return
-        pendingDuplicateImport.value = null
-        viewModelScope.launch {
-            showBusy(R.string.busy_importing_book)
-            importCandidate(candidate)
-        }
-    }
-
-    private suspend fun importCandidate(candidate: BookImportCandidate) {
-        runCatching {
-            container.bookRepository.import(
-                candidate,
-                BookImportOptions(cleanTxtNoise = uiState.value.preferences.cleanTxtNoise),
-            )
-        }.onSuccess { book ->
-            message.value = text(R.string.message_imported_book, book.title)
-        }.onFailure { error ->
-            message.value = importFailureText(error)
-        }
-        hideBusy()
-    }
-
-    fun deleteBook(id: String) {
-        viewModelScope.launch {
-            container.bookRepository.deleteBook(id)
-            message.value = text(R.string.message_deleted)
-        }
-    }
-
-    fun updateBookMetadata(bookId: String, title: String, author: String?) {
-        val normalizedTitle = title.trim()
-        if (normalizedTitle.isBlank()) {
-            message.value = text(R.string.library_edit_title_required)
-            return
-        }
-        viewModelScope.launch {
-            runCatching { container.bookRepository.updateBookMetadata(bookId, normalizedTitle, author) }
-                .onSuccess { updated ->
-                    readerState.value.book?.takeIf { it.id == updated.id }?.let {
-                        readerState.value = readerState.value.copy(book = updated)
-                    }
-                    message.value = text(R.string.message_book_info_saved)
-                }
-                .onFailure { message.value = text(R.string.message_book_info_save_failed) }
-        }
-    }
-
     fun clearMessage() { message.value = null }
+
+    /** Feature ViewModels emit user-facing events through the app shell. */
+    fun showMessage(value: UiText) {
+        message.value = value
+    }
+
+    fun updateOpenBookMetadata(book: Book) {
+        readerState.value.book?.takeIf { it.id == book.id }?.let {
+            readerState.value = readerState.value.copy(book = book)
+        }
+    }
 
     fun navigate(target: AppScreen) {
         val state = navigation.value
@@ -576,7 +410,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         val beforeApply = readerState.value
         if (beforeApply.chapters.getOrNull(chapterIndex)?.id != chapter.id) return
-        val pageIndex = pageForOffset(pages, requestedOffset)
+        val pageIndex = ReaderNavigationPolicy.pageForOffset(pages, requestedOffset)
         val fingerprint = preferences.toReaderStyle().layoutFingerprint()
         val settlingAfterBoundary = beforeApply.boundaryTurnPhase == BoundaryTurnPhase.COMMITTING_CHAPTER ||
             boundaryCommitSourceChapterIndex != null
@@ -637,13 +471,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         preferences: ReaderPreferences,
         targetViewport: ReaderViewport,
     ) = LayoutCacheKey(chapter.bookId, chapter.id, preferences.toReaderStyle().layoutFingerprint(), targetViewport)
-
-    private fun pageForOffset(pages: List<ReaderPage>, offset: Int): Int {
-        if (pages.isEmpty()) return 0
-        val exact = pages.indexOfFirst { offset >= it.startOffset && offset < it.endOffset }
-        if (exact >= 0) return exact
-        return pages.indexOfLast { it.startOffset <= offset }.coerceAtLeast(0)
-    }
 
     fun pageSelected(index: Int) {
         val state = readerState.value
@@ -911,15 +738,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun jumpToProgress(progress: Float) {
         val state = readerState.value
-        if (state.chapters.isEmpty()) return
-        val total = state.chapters.sumOf { it.charCount.toLong() }.coerceAtLeast(1L)
-        var target = (progress.coerceIn(0f, 1f) * total).toLong()
-        val index = state.chapters.indexOfFirst { chapter ->
-            if (target < chapter.charCount) true else { target -= chapter.charCount; false }
-        }.takeIf { it >= 0 } ?: state.chapters.lastIndex
+        val target = ReaderNavigationPolicy.progressTarget(state.chapters, progress) ?: return
         saveCurrentProgress(immediate = true)
-        requestedOffset = target.toInt().coerceAtLeast(0)
-        loadChapter(index)
+        requestedOffset = target.charOffset
+        loadChapter(target.chapterIndex)
     }
 
     private fun saveCurrentProgress(immediate: Boolean = false) {
@@ -1030,64 +852,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun savePreferences(preferences: ReaderPreferences) {
-        val normalized = if (preferences.theme != ReaderTheme.NIGHT) {
-            preferences.copy(lastNonNightTheme = preferences.theme)
-        } else preferences
-        viewModelScope.launch { container.settingsRepository.save(normalized) }
-    }
-
-    fun saveAppLanguage(language: AppLanguage) {
-        savePreferences(uiState.value.preferences.copy(appLanguage = language))
-    }
-
-    fun toggleDeveloperTools() {
-        val preferences = uiState.value.preferences
-        val enabled = !preferences.developerToolsEnabled
-        savePreferences(preferences.copy(developerToolsEnabled = enabled))
-        message.value = text(if (enabled) R.string.message_developer_tools_enabled else R.string.message_developer_tools_disabled)
-    }
-
-    fun toggleNightMode() {
-        val preferences = uiState.value.preferences
-        val updated = if (preferences.theme == ReaderTheme.NIGHT) {
-            preferences.copy(theme = preferences.lastNonNightTheme.takeUnless { it == ReaderTheme.NIGHT } ?: ReaderTheme.EYE_CARE)
-        } else {
-            preferences.copy(lastNonNightTheme = preferences.theme, theme = ReaderTheme.NIGHT)
-        }
-        savePreferences(updated)
-    }
-
-    fun updateWebUrl(value: String) { webState.value = webState.value.copy(url = value, preview = null, error = null) }
-
-    fun previewWebBook() {
-        val url = webState.value.url.trim()
-        viewModelScope.launch {
-            webState.value = webState.value.copy(loading = true, error = null, preview = null)
-            try {
-                val preview = container.webSourceParser.preview(url)
-                webState.value = webState.value.copy(loading = false, preview = preview)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                webState.value = webState.value.copy(loading = false, error = webImportFailureText(error))
-            }
-        }
-    }
-
-    fun startWebDownload() {
-        val preview = webState.value.preview ?: return
-        viewModelScope.launch {
-            container.downloadRepository.start(preview)
-            webState.value = webState.value.copy(preview = null, url = "")
-            message.value = text(R.string.message_download_task_created)
-        }
-    }
-
-    fun pauseDownload(id: String) { viewModelScope.launch { container.downloadRepository.pause(id) } }
-    fun resumeDownload(id: String) { viewModelScope.launch { container.downloadRepository.resume(id) } }
-    fun cancelDownload(id: String) { viewModelScope.launch { container.downloadRepository.cancel(id) } }
-    fun deleteDownload(id: String) { viewModelScope.launch { container.downloadRepository.delete(id) } }
     fun openDownloadedBook(id: String) {
         viewModelScope.launch {
             if (container.bookRepository.book(id) != null) {
@@ -1098,81 +862,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun refreshCurrentWebBook() {
-        val book = readerState.value.book ?: return
-        if (book.format != BookFormat.WEB || book.sourceUrl.isNullOrBlank()) {
-            message.value = text(R.string.message_refresh_web_only)
-            return
-        }
-        viewModelScope.launch {
-            showBusy(R.string.busy_checking_updates)
-            message.value = text(R.string.busy_checking_updates)
-            runCatching { container.downloadRepository.refreshBook(book.id) }
-                .onSuccess { count ->
-                    message.value = if (count == 0) text(R.string.message_no_new_chapters) else text(R.string.message_added_chapters_to_refresh, count)
-                }
-                .onFailure { message.value = text(R.string.message_refresh_failed) }
-            hideBusy()
-        }
-    }
-
-    fun updateApiKeyDraft(value: String) {
-        apiSettingsState.value = apiSettingsState.value.copy(keyDraft = value)
-    }
-
-    fun toggleApiKeyVisibility() {
-        apiSettingsState.value = apiSettingsState.value.copy(showKey = !apiSettingsState.value.showKey)
-    }
-
-    fun toggleAiAdvancedSettings() {
-        apiSettingsState.value = apiSettingsState.value.copy(advancedExpanded = !apiSettingsState.value.advancedExpanded)
-    }
-
-    fun updateAiConfigurationDraft(value: AiConfiguration) {
-        apiSettingsState.value = apiSettingsState.value.copy(configuration = value)
-    }
-
-    fun saveApiKeyDraft() {
-        val key = apiSettingsState.value.keyDraft.trim()
-        if (key.isBlank()) return
-        runCatching { container.keyStore.save(key) }
-            .onSuccess {
-                webState.value = webState.value.copy(hasApiKey = true)
-                apiSettingsState.value = apiSettingsState.value.copy(keyDraft = "", showKey = false)
-                message.value = text(R.string.message_api_key_saved)
-            }
-            .onFailure { message.value = text(R.string.message_api_key_save_failed) }
-    }
-
-    fun deleteApiKey() {
-        container.keyStore.clear()
-        webState.value = webState.value.copy(hasApiKey = false)
-        message.value = text(R.string.message_api_key_deleted)
-    }
-
-    fun testApiKey() {
-        viewModelScope.launch {
-            showBusy(R.string.busy_testing_connection)
-            message.value = if (container.aiProvider.testConnection()) text(R.string.message_deepseek_connected) else text(R.string.message_deepseek_failed)
-            hideBusy()
-        }
-    }
-
-    fun aiConfiguration(): AiConfiguration = container.aiConfigurationStore.get()
-
-    fun saveAiConfiguration() {
-        saveAiConfiguration(apiSettingsState.value.configuration)
-    }
-
-    fun saveAiConfiguration(value: AiConfiguration) {
-        runCatching { container.aiConfigurationStore.save(value) }
-            .onSuccess {
-                apiSettingsState.value = apiSettingsState.value.copy(configuration = container.aiConfigurationStore.get())
-                message.value = text(R.string.message_ai_advanced_saved)
-            }
-            .onFailure { message.value = text(R.string.message_ai_advanced_save_failed) }
-    }
-
     fun onVolumeKey(next: Boolean): Boolean {
         val state = uiState.value
         if (state.screen !is AppScreen.Reader || !state.preferences.volumeKeys) return false
@@ -1180,76 +869,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return true
     }
 
-    private fun showBusy(@StringRes labelRes: Int) {
-        busy.value = BusyState(active = true, message = text(labelRes))
-    }
-
-    private fun hideBusy() {
-        busy.value = BusyState()
-    }
-
-    private fun importFailureText(error: Throwable): UiText = when ((error as? BookImportException)?.failure) {
-        BookImportFailure.FILE_UNREADABLE -> text(R.string.message_import_file_unreadable)
-        BookImportFailure.EMPTY_CONTENT -> text(R.string.message_import_empty)
-        BookImportFailure.ENCODING_QUALITY -> text(R.string.message_import_encoding)
-        BookImportFailure.UNSUPPORTED_FORMAT -> text(R.string.message_import_unsupported)
-        null -> text(R.string.message_import_failed)
-    }
-
     @Suppress("DEPRECATION")
     private fun isLowMemory(level: Int): Boolean =
         level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW
 
-    private fun webImportFailureText(error: Throwable): UiText = when ((error as? WebImportException)?.failure) {
-        WebImportFailure.NETWORK -> text(R.string.message_web_network)
-        WebImportFailure.HTTP -> text(R.string.message_web_http)
-        WebImportFailure.RESPONSE_TOO_LARGE -> text(R.string.message_web_response_too_large)
-        WebImportFailure.NON_HTML_RESPONSE -> text(R.string.message_web_non_html)
-        WebImportFailure.ACCESS_RESTRICTED -> text(R.string.message_web_access_restricted)
-        null -> if (error is IllegalArgumentException) text(R.string.message_web_invalid_url) else text(R.string.message_parse_failed)
-    }
-
     private fun text(@StringRes id: Int, vararg args: Any): UiText = uiText(id, *args)
-
-    private fun buildShelfBooks(
-        books: List<Book>,
-        progress: List<ShelfBookProgress>,
-    ): List<ShelfBookUi> {
-        val progressByBook = progress.associateBy { it.bookId }
-        return books.map { book ->
-            val current = progressByBook[book.id]
-            val progressPercent = current?.let {
-                if (book.totalChars > 0L) {
-                    ((it.readChars.toDouble() / book.totalChars.toDouble()) * 100.0)
-                        .roundToInt()
-                        .coerceIn(0, 100)
-                } else {
-                    0
-                }
-            } ?: 0
-            ShelfBookUi(
-                book = book,
-                currentChapterTitle = current?.chapterTitle,
-                chapterIndex = current?.chapterIndex,
-                progressPercent = progressPercent,
-                started = current != null,
-                updatedAt = current?.updatedAt ?: book.lastReadAt,
-            )
-        }
-    }
-
-    private data class MainContentState(
-        val books: List<Book>,
-        val shelfBooks: List<ShelfBookUi>,
-        val preferences: ReaderPreferences,
-        val tasks: List<DownloadTaskEntity>,
-    )
 
     private data class ChromeState(
         val navigation: NavigationState,
         val busy: BusyState,
         val message: UiText?,
-        val pendingDuplicateImport: PendingDuplicateImport?,
     )
 
     private data class LayoutCacheKey(

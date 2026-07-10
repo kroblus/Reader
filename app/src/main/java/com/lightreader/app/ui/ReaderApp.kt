@@ -33,13 +33,50 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.lightreader.app.R
+import com.lightreader.app.feature.download.DownloadViewModel
+import kotlinx.coroutines.flow.collect
 
 @Composable
-fun ReaderApp(viewModel: MainViewModel) {
+fun ReaderApp(
+    viewModel: ReaderViewModel,
+    libraryViewModel: LibraryViewModel,
+    downloadViewModel: DownloadViewModel,
+    aiSettingsViewModel: AiSettingsViewModel,
+    settingsViewModel: SettingsViewModel,
+) {
     val state by viewModel.uiState.collectAsState()
     val readerState by viewModel.readerState.collectAsState()
+    val libraryState by libraryViewModel.state.collectAsState()
+    val downloadTasks by downloadViewModel.tasks.collectAsState()
+    val libraryBusy by libraryViewModel.busy.collectAsState()
+    val downloadBusy by downloadViewModel.busy.collectAsState()
+    val aiSettingsBusy by aiSettingsViewModel.busy.collectAsState()
+    val activeBusy = when {
+        state.busy.active -> state.busy
+        libraryBusy.active -> libraryBusy
+        downloadBusy.active -> downloadBusy.toBusyState()
+        else -> aiSettingsBusy
+    }
     val snackbar = remember { SnackbarHostState() }
     LocalizedApp(state.preferences.appLanguage) {
+        LaunchedEffect(downloadViewModel) {
+            downloadViewModel.events.collect { event -> viewModel.showMessage(event.toUiText()) }
+        }
+        LaunchedEffect(libraryViewModel) {
+            libraryViewModel.events.collect { event ->
+                when (event) {
+                    is LibraryEvent.Message -> viewModel.showMessage(event.value)
+                    is LibraryEvent.OpenBook -> viewModel.openBook(event.bookId)
+                    is LibraryEvent.BookMetadataUpdated -> viewModel.updateOpenBookMetadata(event.book)
+                }
+            }
+        }
+        LaunchedEffect(aiSettingsViewModel) {
+            aiSettingsViewModel.messages.collect(viewModel::showMessage)
+        }
+        LaunchedEffect(settingsViewModel) {
+            settingsViewModel.messages.collect(viewModel::showMessage)
+        }
         val messageText = state.message?.asString()
         LaunchedEffect(state.message, messageText) {
             messageText?.let {
@@ -67,20 +104,42 @@ fun ReaderApp(viewModel: MainViewModel) {
                     label = "readerScreenTransition",
                 ) { screen ->
                     when (screen) {
-                        AppScreen.Library -> LibraryScreen(state, viewModel)
-                        is AppScreen.Reader -> ReaderScreen(state.preferences, viewModel)
+                        AppScreen.Library -> LibraryScreen(
+                            state = libraryState,
+                            viewModel = libraryViewModel,
+                            onOpenAppSettings = { viewModel.navigate(AppScreen.AppSettings) },
+                            onSavePreferences = settingsViewModel::savePreferences,
+                        )
+                        is AppScreen.Reader -> ReaderScreen(
+                            preferences = state.preferences,
+                            viewModel = viewModel,
+                            downloadViewModel = downloadViewModel,
+                            settingsViewModel = settingsViewModel,
+                        )
                         is AppScreen.ReaderSettingsDetail -> ReaderSettingsDetailScreen(
                             preferences = state.preferences,
                             autoReading = readerState.autoReading,
-                            onChange = viewModel::savePreferences,
+                            onChange = settingsViewModel::savePreferences,
                             onToggleAutoReading = viewModel::toggleAutoReading,
                             onBack = viewModel::goBack,
                         )
                         is AppScreen.Search -> SearchScreen(viewModel)
-                        AppScreen.WebImport -> WebImportScreen(state.tasks, viewModel)
+                        AppScreen.WebImport -> WebImportScreen(
+                            tasks = downloadTasks,
+                            viewModel = downloadViewModel,
+                            onBack = viewModel::goBack,
+                            onOpenDownloadedBook = viewModel::openDownloadedBook,
+                        )
                         AppScreen.WebDomBridge -> WebDomBridgeScreen(viewModel)
-                        AppScreen.ApiSettings -> ApiSettingsScreen(viewModel)
-                        AppScreen.AppSettings -> AppSettingsScreen(state.preferences, viewModel)
+                        AppScreen.ApiSettings -> ApiSettingsScreen(
+                            viewModel = aiSettingsViewModel,
+                            onBack = viewModel::goBack,
+                        )
+                        AppScreen.AppSettings -> AppSettingsScreen(
+                            preferences = state.preferences,
+                            readerViewModel = viewModel,
+                            settingsViewModel = settingsViewModel,
+                        )
                     }
                 }
                 SnackbarHost(
@@ -90,7 +149,7 @@ fun ReaderApp(viewModel: MainViewModel) {
                         .navigationBarsPadding()
                         .padding(bottom = if (state.screen is AppScreen.Reader) 104.dp else 8.dp),
                 )
-                if (state.busy.active) {
+                if (activeBusy.active) {
                     Box(
                         Modifier
                             .fillMaxSize()
@@ -111,7 +170,7 @@ fun ReaderApp(viewModel: MainViewModel) {
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                                 Text(
-                                    state.busy.message?.asString() ?: stringResource(R.string.busy_default),
+                                    activeBusy.message?.asString() ?: stringResource(R.string.busy_default),
                                     Modifier.padding(top = 12.dp),
                                     style = MaterialTheme.typography.bodyMedium,
                                 )

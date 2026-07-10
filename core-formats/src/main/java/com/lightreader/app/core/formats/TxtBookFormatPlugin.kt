@@ -5,6 +5,7 @@ import android.net.Uri
 import com.lightreader.app.core.model.BookFormat
 import com.lightreader.app.core.reader.BookTextNormalizer
 import com.lightreader.app.core.reader.ChapterParser
+import com.lightreader.app.core.reader.ReaderTextLimits
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedWriter
@@ -123,10 +124,10 @@ class TxtBookFormatPlugin : BookFormatPlugin {
     }
 
     companion object {
-        internal const val MAX_CHAPTER_CHARS = 256_000
+        const val MAX_CHAPTER_CHARS = ReaderTextLimits.MAX_CHAPTER_CHARS
         internal const val CHARSET_SAMPLE_SIZE = 256 * 1024
         internal const val MAX_INPUT_SEGMENT_CHARS = 32_000
-        internal val CHAPTER_PATTERN = ChapterParser.CHAPTER_PATTERN
+        val CHAPTER_PATTERN = ChapterParser.CHAPTER_PATTERN
         private const val REPLACEMENT_CHAR = '\uFFFD'
         private const val MIN_REPLACEMENT_CHARS = 12
         private const val MAX_REPLACEMENT_RATIO = .005

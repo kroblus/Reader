@@ -65,8 +65,9 @@ TXT/EPUB 文件
 - Android Keystore
 - JUnit / AndroidX Test / Compose UI Test
 - Macrobenchmark / Baseline Profile
+- Gradle core modules: `:core-reader`、`:core-formats`、`:core-data`
 
-当前数据库版本为 Room schema `6`，包含下载任务元数据、章节来源 URL、阅读进度诊断字段、内容指纹与迁移测试。
+当前数据库版本为 Room schema `7`，包含下载任务元数据、章节来源 URL、阅读进度诊断字段、内容指纹、站点适配器版本与迁移测试。
 
 ## 构建与测试
 
@@ -80,6 +81,7 @@ TXT/EPUB 文件
 
 ```powershell
 .\gradlew.bat :app:testDebugUnitTest
+.\gradlew.bat :core-reader:testDebugUnitTest :core-formats:testDebugUnitTest :core-data:assemble
 .\gradlew.bat :app:lintDebug
 .\gradlew.bat :app:assembleDebug
 .\gradlew.bat :app:assembleRelease
@@ -90,6 +92,8 @@ TXT/EPUB 文件
 `connectedQaAndroidTest` 需要在线 Android 模拟器或真机。它会安装 `com.lightreader.app.qa`，可安全重置测试数据，不会触碰正式包的数据。
 
 性能基准的构建和实体设备执行规则见 [design/performance-testing.md](design/performance-testing.md)。模拟器只验证基准接线，不能作为性能分数依据。
+
+模块依赖、Feature ViewModel 职责和下载边界见 [design/architecture.md](design/architecture.md)。
 
 发布签名由未提交的 `keystore.properties` 或 CI 环境变量提供：`RELEASE_STORE_FILE`、`RELEASE_STORE_PASSWORD`、`RELEASE_KEY_ALIAS`、`RELEASE_KEY_PASSWORD`。未配置时 `assembleRelease` 只生成未签名 APK，禁止再使用 debug key 伪装发布版本。
 

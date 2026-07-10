@@ -1,16 +1,17 @@
 package com.lightreader.app.core.web
 
-import com.lightreader.app.core.formats.TxtBookFormatPlugin
 import com.lightreader.app.core.model.ExtractionPlan
 import com.lightreader.app.core.model.WebBookPreview
+import com.lightreader.app.core.reader.ReaderTextLimits
+import com.lightreader.app.core.data.WebBookPreviewSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import org.jsoup.Jsoup
 import java.net.URI
 
-interface WebSourceParser {
-    suspend fun preview(url: String): WebBookPreview
+interface WebSourceParser : WebBookPreviewSource {
+    override suspend fun preview(url: String): WebBookPreview
     suspend fun chapterText(url: String, plan: ExtractionPlan, chapterTitle: String = ""): String
 }
 
@@ -152,7 +153,7 @@ class JsoupWebSourceParser(
         val fetch = fetcher.fetch(url, MAX_CHAPTER_BYTES)
         val document = Jsoup.parse(fetch.html, fetch.finalUrl)
         contentExtractor.extract(document, plan, chapterTitle).also {
-            require(it.length <= TxtBookFormatPlugin.MAX_CHAPTER_CHARS * 4) { "Chapter body is unexpectedly large." }
+            require(it.length <= ReaderTextLimits.MAX_CHAPTER_CHARS * 4) { "Chapter body is unexpectedly large." }
         }
     }
 

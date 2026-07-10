@@ -1,15 +1,16 @@
 package com.lightreader.app.ui
 
+import com.lightreader.app.feature.reader.ReaderPageTurnQueue
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class PendingPageTurnQueueTest {
+class ReaderPageTurnQueueIntegrationTest {
     @Test
     fun doubleNextTapIsDeliveredAsTwoQueuedTurns() {
-        val queue = PendingPageTurnQueue()
+        val queue = ReaderPageTurnQueue()
 
         queue.enqueue(next = true)
         queue.enqueue(next = true)
@@ -22,7 +23,7 @@ class PendingPageTurnQueueTest {
 
     @Test
     fun doublePreviousTapIsDeliveredAsTwoQueuedTurns() {
-        val queue = PendingPageTurnQueue()
+        val queue = ReaderPageTurnQueue()
 
         queue.enqueue(next = false)
         queue.enqueue(next = false)
@@ -35,7 +36,7 @@ class PendingPageTurnQueueTest {
 
     @Test
     fun oppositeTapsCancelAndQueueIsCapped() {
-        val queue = PendingPageTurnQueue()
+        val queue = ReaderPageTurnQueue()
 
         queue.enqueue(next = true)
         queue.enqueue(next = false)

@@ -18,3 +18,8 @@ dependencyResolutionManagement {
 rootProject.name = "LightReader"
 include(":app")
 include(":macrobenchmark")
+include(":core-reader")
+include(":core-formats")
+include(":core-data")
+include(":feature-download")
+include(":feature-reader")
