@@ -10,6 +10,8 @@ import com.lightreader.app.core.data.ChapterEntity
 import com.lightreader.app.core.data.DownloadRepository
 import com.lightreader.app.core.data.ReaderDatabase
 import com.lightreader.app.core.formats.EpubBookFormatPlugin
+import com.lightreader.app.core.formats.BookImportException
+import com.lightreader.app.core.formats.BookImportFailure
 import com.lightreader.app.core.formats.ImportedChapter
 import com.lightreader.app.core.formats.TxtBookFormatPlugin
 import com.lightreader.app.core.model.BookFormat
@@ -173,6 +175,34 @@ class ReaderCoreInstrumentedTest {
     }
 
     @Test
+    fun txtImportHandlesNoChapterEmptyAndCorruptedInputsExplicitly() = kotlinx.coroutines.runBlocking {
+        val plugin = TxtBookFormatPlugin()
+        val root = File(context.cacheDir, "txt-edge-${System.nanoTime()}").apply { mkdirs() }
+        val noChapter = File(root, "no-chapter.txt").apply { writeText("没有章节标题的散文正文。\n仍然可以继续阅读。") }
+        val empty = File(root, "empty.txt").apply { writeText("\uFEFF  \n\n") }
+        val corrupted = File(root, "corrupted.txt").apply {
+            writeBytes(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) + ByteArray(128) { 0xFF.toByte() })
+        }
+        try {
+            val noChapterResult = plugin.import(context, Uri.fromFile(noChapter), noChapter.name, File(root, "no-chapter"))
+            assertEquals(1, noChapterResult.chapters.size)
+            assertEquals("正文", noChapterResult.chapters.single().title)
+
+            val emptyFailure = runCatching {
+                plugin.import(context, Uri.fromFile(empty), empty.name, File(root, "empty"))
+            }.exceptionOrNull() as? BookImportException
+            assertEquals(BookImportFailure.EMPTY_CONTENT, emptyFailure?.failure)
+
+            val corruptFailure = runCatching {
+                plugin.import(context, Uri.fromFile(corrupted), corrupted.name, File(root, "corrupted"))
+            }.exceptionOrNull() as? BookImportException
+            assertEquals(BookImportFailure.ENCODING_QUALITY, corruptFailure?.failure)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun webImportPersistsSourceUrlsAndAppendRefreshChapters() = kotlinx.coroutines.runBlocking {
         val database = Room.inMemoryDatabaseBuilder(context, ReaderDatabase::class.java).build()
         val repository = BookRepository(context, database.readerDao())
@@ -208,6 +238,13 @@ class ReaderCoreInstrumentedTest {
                 listOf("https://example.test/1", "https://example.test/2", "https://example.test/3"),
                 repository.chapters(book.id).map { it.sourceUrl },
             )
+
+            val replayed = repository.appendDownloadedWebChapters(
+                bookId = book.id,
+                chapters = listOf(ImportedChapter("Chapter 3", third, third.readText().length, "https://example.test/3")),
+            )
+            assertEquals(0, replayed)
+            assertEquals(3, repository.chapters(book.id).size)
         } finally {
             database.close()
             root.deleteRecursively()

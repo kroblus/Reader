@@ -26,6 +26,7 @@ import com.lightreader.app.core.model.ReaderViewport
 import com.lightreader.app.core.model.SearchResult
 import com.lightreader.app.core.model.WebBookPreview
 import com.lightreader.app.core.reader.BookTextNormalizer
+import com.lightreader.app.core.reader.MemoryBoundedCache
 import com.lightreader.app.core.reader.toReaderStyle
 import com.lightreader.app.core.settings.AiConfiguration
 import com.lightreader.app.core.web.WebImportException
@@ -175,7 +176,8 @@ data class ApiSettingsUiState(
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
-    private val container = (application as ReaderApplication).container
+    private val readerApplication = application as ReaderApplication
+    private val container = readerApplication.container
     private val navigation = MutableStateFlow(NavigationState())
     private val busy = MutableStateFlow(BusyState())
     private val message = MutableStateFlow<UiText?>(null)
@@ -235,12 +237,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var prefetchJob: Job? = null
     private var bookmarkJob: Job? = null
     private var progressSaveJob: Job? = null
-    private val chapterContentCache = LinkedHashMap<ChapterContentCacheKey, ChapterContent>(6, .75f, true)
-    private val pageCache = LinkedHashMap<LayoutCacheKey, List<ReaderPage>>(8, .75f, true)
-    private var chapterContentCacheBytes = 0L
-    private var pageCacheBytes = 0L
+    private val chapterContentCache = MemoryBoundedCache<ChapterContentCacheKey, ChapterContent>(
+        MAX_CHAPTER_CONTENT_CACHE_BYTES,
+        { it.estimatedBytes },
+    )
+    private val pageCache = MemoryBoundedCache<LayoutCacheKey, List<ReaderPage>>(
+        MAX_PAGE_CACHE_BYTES,
+        { it.estimatedBytes },
+    )
 
     init {
+        viewModelScope.launch {
+            readerApplication.memoryTrimEvents.collect { level ->
+                if (isLowMemory(level)) {
+                    prefetchJob?.cancel()
+                    clearReaderCaches()
+                }
+            }
+        }
         viewModelScope.launch {
             val preferences = container.settingsRepository.preferences.first()
             val taglineCount = getApplication<Application>().resources.getStringArray(R.array.brand_taglines).size
@@ -541,32 +555,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun cacheChapterContent(key: ChapterContentCacheKey, content: ChapterContent) {
-        chapterContentCache.remove(key)?.let { chapterContentCacheBytes -= it.estimatedBytes }
-        chapterContentCache[key] = content
-        chapterContentCacheBytes += content.estimatedBytes
-        while (chapterContentCacheBytes > MAX_CHAPTER_CONTENT_CACHE_BYTES && chapterContentCache.size > 1) {
-            val eldest = chapterContentCache.entries.iterator().next()
-            chapterContentCacheBytes -= eldest.value.estimatedBytes
-            chapterContentCache.remove(eldest.key)
-        }
+        chapterContentCache.put(key, content)
     }
 
     private fun cachePages(key: LayoutCacheKey, pages: List<ReaderPage>) {
-        pageCache.remove(key)?.let { pageCacheBytes -= it.estimatedBytes }
-        pageCache[key] = pages
-        pageCacheBytes += pages.estimatedBytes
-        while (pageCacheBytes > MAX_PAGE_CACHE_BYTES && pageCache.size > 1) {
-            val eldest = pageCache.entries.iterator().next()
-            pageCacheBytes -= eldest.value.estimatedBytes
-            pageCache.remove(eldest.key)
-        }
+        pageCache.put(key, pages)
     }
 
     private fun clearReaderCaches() {
         chapterContentCache.clear()
         pageCache.clear()
-        chapterContentCacheBytes = 0L
-        pageCacheBytes = 0L
     }
 
     private fun applyPages(
@@ -1196,6 +1194,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         BookImportFailure.UNSUPPORTED_FORMAT -> text(R.string.message_import_unsupported)
         null -> text(R.string.message_import_failed)
     }
+
+    @Suppress("DEPRECATION")
+    private fun isLowMemory(level: Int): Boolean =
+        level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW
 
     private fun webImportFailureText(error: Throwable): UiText = when ((error as? WebImportException)?.failure) {
         WebImportFailure.NETWORK -> text(R.string.message_web_network)
