@@ -22,14 +22,14 @@ jobs:
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v4
       - name: Verify local quality gates
-        run: ./gradlew :core-reader:testDebugUnitTest :core-formats:testDebugUnitTest :core-data:assemble :feature-reader:testDebugUnitTest :feature-download:testDebugUnitTest :app:testDebugUnitTest :core-reader:lintDebug :core-formats:lintDebug :core-data:lintDebug :feature-reader:lintDebug :feature-download:lintDebug :app:lintDebug :app:assembleDebug :app:assembleQaAndroidTest :app:assembleBenchmark :macrobenchmark:assemble --stacktrace
+        run: bash ./gradlew :core-reader:testDebugUnitTest :core-formats:testDebugUnitTest :core-data:assemble :feature-reader:testDebugUnitTest :feature-download:testDebugUnitTest :app:testDebugUnitTest :core-reader:lintDebug :core-formats:lintDebug :core-data:lintDebug :feature-reader:lintDebug :feature-download:lintDebug :app:lintDebug :app:assembleDebug :app:assembleQaAndroidTest :app:assembleBenchmark :macrobenchmark:assemble --stacktrace
       - name: Run isolated QA instrumentation tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           arch: x86_64
           profile: pixel_6
-          script: ./gradlew :app:connectedQaAndroidTest --stacktrace
+          script: bash ./gradlew :app:connectedQaAndroidTest --stacktrace
 
   dependency-review:
     name: Dependency review
