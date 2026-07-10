@@ -773,7 +773,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val state = readerState.value
         val preferences = uiState.value.preferences
         if (preferences.pageTurnMode == com.lightreader.app.core.model.PageTurnMode.NONE ||
-            preferences.pageTurnMode == com.lightreader.app.core.model.PageTurnMode.VERTICAL
+            preferences.pageTurnMode == com.lightreader.app.core.model.PageTurnMode.VERTICAL ||
+            preferences.pageTurnMode == com.lightreader.app.core.model.PageTurnMode.SCROLL
         ) {
             return false
         }

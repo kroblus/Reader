@@ -1,6 +1,6 @@
 # 轻阅 LightReader
 
-轻阅是一款本地优先的 Android 小说阅读器，使用 Kotlin 与 Jetpack Compose 构建。当前版本为 `0.1.6`，重点覆盖中文 TXT 阅读体验，同时支持无 DRM EPUB、公开 HTTPS 网页小说导入、书内搜索、书签、网页追更和本机加密保存 DeepSeek API Key。
+轻阅是一款本地优先的 Android 小说阅读器，使用 Kotlin 与 Jetpack Compose 构建。当前版本为 `0.3.0`，重点覆盖中文 TXT 阅读体验，同时支持无 DRM EPUB、公开 HTTPS 网页小说导入、书内搜索、书签、网页追更和本机加密保存 DeepSeek API Key。
 
 最新 APK 可在 [GitHub Releases](https://github.com/kroblus/Reader/releases) 下载。
 
@@ -9,7 +9,7 @@
 - 本地书架：导入 TXT/EPUB，保存阅读进度、书签、全文搜索索引和阅读设置。
 - 中文 TXT 优化：自动识别 UTF-8、UTF-16、GB18030/GBK、Big5 等常见编码，并清洗 BOM、Tab、段首空格和多余空行。
 - 阅读排版：基于 Android `TextPaint` 实测字宽分页，支持章节标题页、段距、行距、首行缩进、边距、字重、两端对齐和多套排版预设。
-- 阅读操作：点击、滑动、音量键翻页；支持横向、纵向、平移、无动画和仿真翻页；支持自动阅读、极简模式、全屏点击下一页。
+- 阅读操作：点击、滑动、音量键翻页；支持横向、纵向分页、连续滚动、平移、无动画和仿真翻页；支持自动阅读、极简模式、全屏点击下一页。
 - 阅读辅助：目录、倒序/正序切换、书签、书内搜索、右侧进度条、页眉页脚、亮度调节、夜间模式。
 - 网页小说：校验公开 HTTPS 目录页，规则解析章节列表，预览正文，创建整本下载任务，支持暂停、恢复、失败重试和网页书籍追更。
 - DOM/WebView 辅助验证：提供 DOM 桥接页面，用于检查 WebView 中实际加载后的 HTML 与正文预览。
@@ -58,11 +58,13 @@ TXT/EPUB 文件
 - Kotlin
 - Jetpack Compose
 - Room
+- KSP（Room 代码生成）
 - WorkManager
 - OkHttp
 - Jsoup
 - Android Keystore
 - JUnit / AndroidX Test / Compose UI Test
+- Macrobenchmark / Baseline Profile
 
 当前数据库版本为 Room schema `6`，包含下载任务元数据、章节来源 URL、阅读进度诊断字段、内容指纹与迁移测试。
 
@@ -82,9 +84,12 @@ TXT/EPUB 文件
 .\gradlew.bat :app:assembleDebug
 .\gradlew.bat :app:assembleRelease
 .\gradlew.bat :app:connectedQaAndroidTest
+.\gradlew.bat :app:assembleBenchmark :macrobenchmark:assemble
 ```
 
 `connectedQaAndroidTest` 需要在线 Android 模拟器或真机。它会安装 `com.lightreader.app.qa`，可安全重置测试数据，不会触碰正式包的数据。
+
+性能基准的构建和实体设备执行规则见 [design/performance-testing.md](design/performance-testing.md)。模拟器只验证基准接线，不能作为性能分数依据。
 
 发布签名由未提交的 `keystore.properties` 或 CI 环境变量提供：`RELEASE_STORE_FILE`、`RELEASE_STORE_PASSWORD`、`RELEASE_KEY_ALIAS`、`RELEASE_KEY_PASSWORD`。未配置时 `assembleRelease` 只生成未签名 APK，禁止再使用 debug key 伪装发布版本。
 

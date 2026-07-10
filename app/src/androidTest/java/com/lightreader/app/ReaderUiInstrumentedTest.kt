@@ -8,9 +8,11 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasNoScrollAction
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -351,6 +353,35 @@ class ReaderUiInstrumentedTest {
     }
 
     @Test
+    fun continuousScrollModeUsesAFreeScrollingReaderSurface() {
+        seedBook("连续滚动测试", chapterTextRepeats = 800)
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("连续滚动测试").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("连续滚动测试").performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithContentDescription(text(R.string.reader_toc)).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithContentDescription(text(R.string.reader_settings_content_description)).performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText(text(R.string.settings_more)).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText(text(R.string.settings_more)).performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText(text(R.string.settings_page_turn)).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText(text(R.string.page_turn_scroll)).performScrollTo().performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.action_back)).performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithTag("reader_continuous_scroll").fetchSemanticsNodes().isNotEmpty()
+        }
+        val reader = composeRule.onNodeWithTag("reader_continuous_scroll")
+        reader.assert(hasScrollAction())
+        reader.performTouchInput { swipeUp() }
+        composeRule.onNodeWithTag("reader_bottom_progress_text").assertIsDisplayed()
+    }
+
+    @Test
     fun readerDirectoryAndBookmarksUseUnifiedOverlay() {
         seedBook("浮层测试小说", chapterCount = 260, progressChapterIndex = 234)
         composeRule.waitUntil(5_000) {
@@ -487,12 +518,13 @@ class ReaderUiInstrumentedTest {
         format: BookFormat = BookFormat.TXT,
         sourceUrl: String? = null,
         chapterSourceUrl: String? = null,
+        chapterTextRepeats: Int = 200,
     ): String = runBlocking {
         val id = "ui-${System.nanoTime()}"
         val directory = java.io.File(application.filesDir, "books/$id/chapters").apply { mkdirs() }
         val chapters = (0 until chapterCount).map { index ->
             val chapterTitle = if (chapterCount == 1) "第一章 入山" else "Chapter %03d".format(index + 1)
-            val content = "$chapterTitle\n" + "山中修行，自此开始。".repeat(200)
+            val content = "$chapterTitle\n" + "山中修行，自此开始。".repeat(chapterTextRepeats)
             val chapterFile = java.io.File(directory, "%05d.txt".format(index)).apply { writeText(content) }
             ChapterEntity(
                 bookId = id,

@@ -17,6 +17,7 @@ interface WebSourceParser {
 /** Contract for a specific novel site, with the generic HTML parser as the initial fallback. */
 interface NovelSourceAdapter : WebSourceParser {
     val id: String
+    val version: String get() = "1"
     fun canHandle(url: String): Boolean
 }
 
@@ -24,13 +25,14 @@ class GenericHtmlNovelSourceAdapter(
     private val parser: WebSourceParser,
 ) : NovelSourceAdapter {
     override val id: String = "generic-html"
+    override val version: String = "1"
 
     override fun canHandle(url: String): Boolean = runCatching {
         val uri = URI(url.trim())
         uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank()
     }.getOrDefault(false)
 
-    override suspend fun preview(url: String): WebBookPreview = parser.preview(url).copy(sourceId = id)
+    override suspend fun preview(url: String): WebBookPreview = parser.preview(url).copy(sourceId = id, sourceVersion = version)
 
     override suspend fun chapterText(url: String, plan: ExtractionPlan, chapterTitle: String): String =
         parser.chapterText(url, plan, chapterTitle)
@@ -42,12 +44,20 @@ class NovelSourceRegistry(
     private val adapters = adapters.associateBy(NovelSourceAdapter::id)
     private val orderedAdapters = adapters
 
-    override suspend fun preview(url: String): WebBookPreview = adapterFor(url).preview(url)
+    init {
+        require(this.adapters.isNotEmpty()) { "At least one source adapter is required." }
+        require(this.adapters.size == orderedAdapters.size) { "Source adapter IDs must be unique." }
+    }
+
+    override suspend fun preview(url: String): WebBookPreview {
+        val adapter = adapterFor(url)
+        return adapter.preview(url).copy(sourceId = adapter.id, sourceVersion = adapter.version)
+    }
 
     override suspend fun chapterText(url: String, plan: ExtractionPlan, chapterTitle: String): String =
         adapterFor(url).chapterText(url, plan, chapterTitle)
 
-    suspend fun chapterText(sourceId: String, url: String, plan: ExtractionPlan, chapterTitle: String): String =
+    suspend fun chapterText(sourceId: String, sourceVersion: String, url: String, plan: ExtractionPlan, chapterTitle: String): String =
         (adapters[sourceId] ?: adapterFor(url)).chapterText(url, plan, chapterTitle)
 
     private fun adapterFor(url: String): NovelSourceAdapter = orderedAdapters.firstOrNull { it.canHandle(url) }

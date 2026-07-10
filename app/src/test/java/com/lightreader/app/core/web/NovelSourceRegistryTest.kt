@@ -13,7 +13,7 @@ class NovelSourceRegistryTest {
 
         assertEquals(
             "alpha:https://other.example/chapter",
-            registry.chapterText("alpha", "https://other.example/chapter", ExtractionPlan(), "Chapter"),
+            registry.chapterText("alpha", "1", "https://other.example/chapter", ExtractionPlan(), "Chapter"),
         )
         assertEquals(
             "beta:https://beta.example/chapter",
@@ -21,10 +21,34 @@ class NovelSourceRegistryTest {
         )
     }
 
-    private class FakeAdapter(override val id: String) : NovelSourceAdapter {
+    @Test
+    fun previewAlwaysPersistsTheSelectedAdapterIdentityAndVersion() = runBlocking {
+        val registry = NovelSourceRegistry(listOf(FakeAdapter("alpha", "2026.07")))
+
+        val preview = registry.preview("https://alpha.example/book")
+
+        assertEquals("alpha", preview.sourceId)
+        assertEquals("2026.07", preview.sourceVersion)
+    }
+
+    private class FakeAdapter(
+        override val id: String,
+        override val version: String = "1",
+    ) : NovelSourceAdapter {
         override fun canHandle(url: String): Boolean = url.contains("$id.example")
 
-        override suspend fun preview(url: String): WebBookPreview = error("Not used by this routing test")
+        override suspend fun preview(url: String): WebBookPreview = WebBookPreview(
+            title = "Test book",
+            author = null,
+            description = null,
+            sourceUrl = url,
+            finalUrl = url,
+            chapters = emptyList(),
+            sample = "",
+            extractionPlan = ExtractionPlan(),
+            sourceId = "wrong-id",
+            sourceVersion = "wrong-version",
+        )
 
         override suspend fun chapterText(url: String, plan: ExtractionPlan, chapterTitle: String): String = "$id:$url"
     }

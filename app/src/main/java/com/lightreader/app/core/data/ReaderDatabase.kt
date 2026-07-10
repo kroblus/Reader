@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DownloadTaskEntity::class,
         DownloadChapterEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class ReaderDatabase : RoomDatabase() {
@@ -28,7 +28,7 @@ abstract class ReaderDatabase : RoomDatabase() {
             context.applicationContext,
             ReaderDatabase::class.java,
             "reader.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build()
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -66,6 +66,12 @@ abstract class ReaderDatabase : RoomDatabase() {
         val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE download_tasks ADD COLUMN sourceId TEXT NOT NULL DEFAULT 'generic-html'")
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE download_tasks ADD COLUMN sourceVersion TEXT NOT NULL DEFAULT '1'")
             }
         }
     }

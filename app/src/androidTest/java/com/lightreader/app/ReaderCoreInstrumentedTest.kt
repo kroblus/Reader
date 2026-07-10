@@ -8,6 +8,7 @@ import com.lightreader.app.core.data.BookRepository
 import com.lightreader.app.core.data.BookEntity
 import com.lightreader.app.core.data.ChapterEntity
 import com.lightreader.app.core.data.DownloadRepository
+import com.lightreader.app.core.data.DuplicateBookImportException
 import com.lightreader.app.core.data.ReaderDatabase
 import com.lightreader.app.core.formats.EpubBookFormatPlugin
 import com.lightreader.app.core.formats.BookImportException
@@ -168,6 +169,28 @@ class ReaderCoreInstrumentedTest {
             val searchResult = repository.search(book.id, "山中").first()
             assertEquals(repository.readChapter(chapter).indexOf("山中"), searchResult.charOffset)
             assertEquals(book.totalChars, database.readerDao().indexedCharacterCount(book.id))
+        } finally {
+            database.close()
+            source.delete()
+        }
+    }
+
+    @Test
+    fun duplicateTxtImportIsDetectedByContentFingerprint() = kotlinx.coroutines.runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(context, ReaderDatabase::class.java).build()
+        val repository = BookRepository(context, database.readerDao())
+        val source = File(context.cacheDir, "duplicate-${System.nanoTime()}.txt").apply {
+            writeText("第一章 入山\n山中修行，自此开始。")
+        }
+        try {
+            val imported = repository.import(Uri.fromFile(source))
+            val candidate = repository.inspectImport(Uri.fromFile(source))
+            assertEquals(imported.id, candidate.existingBook?.id)
+
+            // Passing a candidate is the explicit "keep another copy" path after UI confirmation.
+            // Re-importing the URI must instead refuse the duplicate automatically.
+            val duplicate = runCatching { repository.import(Uri.fromFile(source)) }.exceptionOrNull() as? DuplicateBookImportException
+            assertEquals(imported.id, duplicate?.existingBook?.id)
         } finally {
             database.close()
             source.delete()

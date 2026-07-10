@@ -17,3 +17,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "LightReader"
 include(":app")
+include(":macrobenchmark")

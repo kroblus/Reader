@@ -58,7 +58,7 @@ class WebDownloadWorker(
             }
             try {
                 dao.updateDownloadChapter(chapter.copy(status = "DOWNLOADING", error = null))
-                val text = container.sourceRegistry.chapterText(task.sourceId, chapter.url, plan, chapter.title)
+                val text = container.sourceRegistry.chapterText(task.sourceId, task.sourceVersion, chapter.url, plan, chapter.title)
                 val file = File(directory, "%05d.txt".format(chapter.orderIndex))
                 file.writeText(text)
                 dao.updateDownloadChapter(chapter.copy(status = "COMPLETED", contentPath = file.absolutePath, error = null))

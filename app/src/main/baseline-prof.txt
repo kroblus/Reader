@@ -1,3 +1,6 @@
 HSPLcom/lightreader/app/MainActivity;-><init>()V
 HSPLcom/lightreader/app/ui/ReaderAppKt;->ReaderApp(*)V
 HSPLcom/lightreader/app/ui/LibraryScreenKt;->LibraryScreen(*)V
+HSPLcom/lightreader/app/ui/ReaderScreenKt;->ReaderScreen(*)V
+HSPLcom/lightreader/app/ui/ReaderScreenKt;->ContinuousReaderPages(*)V
+HSPLcom/lightreader/app/ui/ReaderPageCanvasKt;->ReaderPageCanvas(*)V

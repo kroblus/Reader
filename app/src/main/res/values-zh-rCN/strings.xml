@@ -281,6 +281,7 @@
     <string name="page_turn_horizontal">左右</string>
     <string name="page_turn_slide">平移</string>
     <string name="page_turn_vertical">上下</string>
+    <string name="page_turn_scroll">连续滚动</string>
     <string name="page_turn_simulation">仿真</string>
 
     <string name="busy_default">处理中</string>

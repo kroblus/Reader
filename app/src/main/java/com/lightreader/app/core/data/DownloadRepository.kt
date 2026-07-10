@@ -39,6 +39,7 @@ class DownloadRepository(
                 importedBookId = null,
                 error = null,
                 sourceId = preview.sourceId,
+                sourceVersion = preview.sourceVersion,
             ),
         )
         dao.insertDownloadChapters(preview.chapters.mapIndexed { index, chapter ->
@@ -94,6 +95,7 @@ class DownloadRepository(
                 importedBookId = bookId,
                 error = null,
                 sourceId = preview.sourceId,
+                sourceVersion = preview.sourceVersion,
             ),
         )
         dao.insertDownloadChapters(newChapters.mapIndexed { index, chapter ->

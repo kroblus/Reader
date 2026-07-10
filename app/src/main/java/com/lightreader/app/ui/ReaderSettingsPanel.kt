@@ -365,6 +365,7 @@ fun ReaderSettingsDetailScreen(
                         PageTurnMode.SIMULATION,
                         PageTurnMode.HORIZONTAL,
                         PageTurnMode.VERTICAL,
+                        PageTurnMode.SCROLL,
                         PageTurnMode.SLIDE,
                         PageTurnMode.NONE,
                     ).forEach { mode ->
@@ -644,6 +645,7 @@ private fun PageTurnMode.label(): String = when (this) {
     PageTurnMode.HORIZONTAL -> stringResource(R.string.page_turn_horizontal)
     PageTurnMode.SLIDE -> stringResource(R.string.page_turn_slide)
     PageTurnMode.VERTICAL -> stringResource(R.string.page_turn_vertical)
+    PageTurnMode.SCROLL -> stringResource(R.string.page_turn_scroll)
     PageTurnMode.SIMULATION -> stringResource(R.string.page_turn_simulation)
 }
 

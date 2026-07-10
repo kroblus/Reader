@@ -202,4 +202,35 @@ class ReaderDatabaseMigrationTest {
             context.deleteDatabase(name)
         }
     }
+
+    @Test
+    fun migrationSixToSevenAddsSourceAdapterVersion() {
+        val name = "reader-migration-${System.nanoTime()}.db"
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(name)
+                .callback(object : SupportSQLiteOpenHelper.Callback(6) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL(
+                            "CREATE TABLE download_tasks (id TEXT NOT NULL PRIMARY KEY, title TEXT NOT NULL, author TEXT, description TEXT, sourceUrl TEXT NOT NULL, status TEXT NOT NULL, totalChapters INTEGER NOT NULL, completedChapters INTEGER NOT NULL, failedChapters INTEGER NOT NULL, contentSelector TEXT NOT NULL, removeSelectorsJson TEXT NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, importedBookId TEXT, error TEXT, sourceId TEXT NOT NULL)",
+                        )
+                        db.execSQL("INSERT INTO download_tasks VALUES ('task', '测试', NULL, NULL, 'https://example.com', 'QUEUED', 1, 0, 0, '#content', '[]', 1, 1, NULL, NULL, 'generic-html')")
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build(),
+        )
+        try {
+            val db = helper.writableDatabase
+            ReaderDatabase.MIGRATION_6_7.migrate(db)
+            db.query("SELECT sourceVersion FROM download_tasks WHERE id = 'task'").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals("1", cursor.getString(0))
+            }
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
 }

@@ -16,6 +16,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.LightReader"
         android:usesCleartextTraffic="false">
+        <profileable
+            android:shell="true"
+            tools:targetApi="29" />
         <!-- WorkManager owns this service; the override supplies the type required by Android 14+. -->
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"

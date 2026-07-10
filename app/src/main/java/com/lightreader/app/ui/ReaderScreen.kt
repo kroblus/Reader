@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.VerticalPager
@@ -206,6 +207,18 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                 Text(error.asString(), Modifier.align(Alignment.Center), color = foreground)
             }
             state.pages.isNotEmpty() -> {
+                if (preferences.pageTurnMode == PageTurnMode.SCROLL) {
+                    ContinuousReaderPages(
+                        state = state,
+                        preferences = preferences,
+                        viewModel = viewModel,
+                        currentTime = currentTime,
+                        safeTopPx = safeTopPx,
+                        safeBottomPx = safeBottomPx,
+                        pageHeight = maxHeight,
+                        overlayVisible = overlayVisible,
+                    )
+                } else {
                 val includeAdjacentPreviews = preferences.pageTurnMode != PageTurnMode.NONE && preferences.pageTurnMode != PageTurnMode.VERTICAL
                 val displayedPages = remember(state.pages, state.previousPreview, state.nextPreview, includeAdjacentPreviews) {
                     readerPagerPages(state, includeAdjacentPreviews)
@@ -397,6 +410,7 @@ fun ReaderScreen(preferences: ReaderPreferences, viewModel: MainViewModel) {
                         ) { pageContent(it) }
                     }
                 }
+                }
             }
         }
 
@@ -575,6 +589,63 @@ private fun ReaderSettingsDock(
                 onOpenMoreSettings = onOpenMoreSettings,
                 bottomPadding = 0.dp,
             )
+        }
+    }
+}
+
+/** A free-scrolling chapter view. Page boundaries remain internal so saved offsets and bookmarks stay exact. */
+@Composable
+private fun ContinuousReaderPages(
+    state: ReaderUiState,
+    preferences: ReaderPreferences,
+    viewModel: MainViewModel,
+    currentTime: String,
+    safeTopPx: Int,
+    safeBottomPx: Int,
+    pageHeight: Dp,
+    overlayVisible: Boolean,
+) {
+    val chapterId = state.chapters.getOrNull(state.chapterIndex)?.id
+    key(chapterId, state.layoutVersion) {
+        val listState = rememberLazyListState(initialFirstVisibleItemIndex = state.pageIndex)
+        LaunchedEffect(listState) {
+            snapshotFlow { listState.firstVisibleItemIndex }
+                .distinctUntilChanged()
+                .collect(viewModel::pageSelected)
+        }
+        LaunchedEffect(state.pageIndex, state.pages.size) {
+            if (!listState.isScrollInProgress && state.pageIndex in state.pages.indices &&
+                listState.firstVisibleItemIndex != state.pageIndex
+            ) {
+                listState.scrollToItem(state.pageIndex)
+            }
+        }
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag("reader_continuous_scroll"),
+            userScrollEnabled = !overlayVisible,
+        ) {
+            itemsIndexed(
+                items = state.pages,
+                key = { _, page -> "${page.chapterIndex}:${page.pageIndex}" },
+            ) { _, page ->
+                ReaderPageCanvas(
+                    page = page,
+                    bookTitle = state.book?.title.orEmpty(),
+                    pageCount = state.pages.size,
+                    layoutPreferences = state.layoutPreferences ?: preferences,
+                    displayPreferences = preferences,
+                    overallProgress = overallProgress(state, page),
+                    currentTime = currentTime,
+                    safeTopPx = safeTopPx,
+                    safeBottomPx = safeBottomPx,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(pageHeight),
+                )
+            }
         }
     }
 }

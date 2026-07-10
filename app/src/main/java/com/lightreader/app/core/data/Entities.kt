@@ -109,6 +109,7 @@ data class DownloadTaskEntity(
     val importedBookId: String?,
     val error: String?,
     val sourceId: String = "generic-html",
+    val sourceVersion: String = "1",
 )
 
 @Entity(
