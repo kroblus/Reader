@@ -33,3 +33,8 @@ The 2 MB single-paragraph and 100 MB TXT import corpus is intentionally isolated
 **Android large TXT corpus** GitHub workflow. It runs weekly and on demand with its own 60-minute
 budget, while pull-request QA continues to cover every other instrumented scenario. This keeps
 normal feedback predictable without removing the large-file regression gate.
+
+`HtmlBridgeInstrumentedTest` is also kept out of the generic hosted-emulator lane. It needs a
+working WebView JavaScript callback, which GitHub's Android images do not provide reliably. Run
+the complete QA suite on the local WebView-enabled AVD or a disposable physical device; the
+`HtmlBridgeTest` JVM suite continues to cover bridge parsing on every CI run.
