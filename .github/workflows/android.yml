@@ -13,7 +13,7 @@ jobs:
   verify:
     name: Unit, lint, build and QA emulator
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -29,7 +29,7 @@ jobs:
           api-level: 35
           arch: x86_64
           profile: pixel_6
-          script: ANDROID_SERIAL=emulator-5554 bash ./gradlew :app:connectedQaAndroidTest --stacktrace
+          script: ANDROID_SERIAL=emulator-5554 bash ./gradlew :app:connectedQaAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=com.lightreader.app.LargeTxtImportInstrumentedTest --stacktrace
 
   dependency-review:
     name: Dependency review

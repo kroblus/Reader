@@ -28,3 +28,8 @@ backup and approval.
 
 The normal QA suite remains `:app:connectedQaAndroidTest`; it deliberately tests the separate
 `com.lightreader.app.qa` package and does not affect an installed reader's library or settings.
+
+The 2 MB single-paragraph and 100 MB TXT import corpus is intentionally isolated in the
+**Android large TXT corpus** GitHub workflow. It runs weekly and on demand with its own 60-minute
+budget, while pull-request QA continues to cover every other instrumented scenario. This keeps
+normal feedback predictable without removing the large-file regression gate.
