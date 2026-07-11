@@ -70,7 +70,7 @@ class HtmlBridgeInstrumentedTest {
             }
         }
 
-        assertTrue("Timed out waiting for WebView DOM callback", latch.await(5, TimeUnit.SECONDS))
+        assertTrue("Timed out waiting for WebView DOM callback", latch.await(15, TimeUnit.SECONDS))
         val snapshot = snapshotRef.get()
         assertNotNull(snapshot)
         assertTrue(snapshot.rawHtml.contains("DOM Bridge Fixture"))

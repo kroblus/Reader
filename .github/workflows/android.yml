@@ -27,9 +27,10 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
+          target: google_apis
           arch: x86_64
           profile: pixel_6
-          script: bash ./gradlew :app:connectedQaAndroidTest --stacktrace
+          script: ANDROID_SERIAL=emulator-5554 bash ./gradlew :app:connectedQaAndroidTest --stacktrace
 
   dependency-review:
     name: Dependency review
