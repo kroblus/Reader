@@ -14,6 +14,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -35,6 +36,13 @@ class HtmlBridgeInstrumentedTest {
 
     @Test
     fun visibleWebViewCanPassOuterHtmlThroughJavascriptBridge() {
+        // AOSP CI images do not ship a WebView provider. The same bridge still
+        // has JVM coverage there; run this integration assertion only where a
+        // real provider is available (local AVDs and physical devices).
+        assumeTrue(
+            "Requires an installed Android WebView provider",
+            WebView.getCurrentWebViewPackage() != null,
+        )
         val latch = CountDownLatch(1)
         val snapshotRef = AtomicReference<HtmlDomSnapshot>()
         val html = """
