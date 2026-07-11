@@ -1,6 +1,6 @@
 # LightReader Real-Device Test Rules
 
-Last updated: 2026-07-10
+Last updated: 2026-07-11
 
 ## Goal
 
@@ -78,27 +78,33 @@ The automated gate fails if any test fails, times out, or leaves the target app 
 
 ## Launch Smoke Gate
 
-After automated tests, install and launch the current APK on the same physical device:
+After automated tests, install and launch the isolated QA APK on the same physical device. This must not
+force-stop, clear, or overwrite the production package:
 
 ```powershell
-adb install -r app\build\outputs\apk\debug\app-debug.apk
-adb shell am force-stop com.lightreader.app
-adb shell am start -W -n com.lightreader.app/.MainActivity
-adb shell pidof com.lightreader.app
+adb install -r app\build\outputs\apk\qa\app-qa.apk
+adb shell am force-stop com.lightreader.app.qa
+adb shell am start -W -n com.lightreader.app.qa/com.lightreader.app.MainActivity
+adb shell pidof com.lightreader.app.qa
 adb logcat -d -t 300
-adb exec-out screencap -p > build\reports\real-device-home.png
+adb shell screencap -p /sdcard/lightreader-qa-home.png
+adb pull /sdcard/lightreader-qa-home.png build\reports\real-device-home.png
+adb shell rm /sdcard/lightreader-qa-home.png
 ```
 
 Pass criteria:
 
 1. `am start -W` exits successfully and reports the main activity.
 2. `pidof` returns a process id.
-3. Recent `logcat` contains no app crash, fatal exception, ANR, Room migration failure, or strict security error from `com.lightreader.app`.
+3. Recent `logcat` contains no app crash, fatal exception, ANR, Room migration failure, or strict security error from `com.lightreader.app.qa`.
 4. The screenshot shows a non-blank LightReader screen.
 
 ## Manual Real-Device Checklist
 
 If a user-facing release is being validated, complete this checklist after the automated gate:
+
+Installing a production release on a device that already contains `com.lightreader.app` requires an
+explicit backup and approval. The automated checklist never clears production data.
 
 1. Cold launch from a clean install and verify the empty shelf, file import entry, app settings, web import, DeepSeek settings, and DOM bridge entry are reachable.
 2. Import a UTF-8 TXT and a GB18030 or GBK Chinese TXT; verify chapter splitting, readable Chinese text, search results, and persisted reading progress.

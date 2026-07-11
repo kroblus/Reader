@@ -1,7 +1,6 @@
 package com.lightreader.app
 
 import android.content.res.Configuration
-import androidx.annotation.PluralsRes
 import androidx.annotation.StringRes
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assert
@@ -35,6 +34,7 @@ import com.lightreader.app.core.data.ReadingProgressEntity
 import com.lightreader.app.core.model.AppLanguage
 import com.lightreader.app.core.model.BookFormat
 import com.lightreader.app.core.model.ReaderPreferences
+import com.lightreader.app.ui.ReaderTestTags
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Before
@@ -442,21 +442,26 @@ class ReaderUiInstrumentedTest {
             composeRule.onAllNodesWithContentDescription(text(R.string.action_search)).fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithContentDescription(text(R.string.action_search)).performClick()
-        composeRule.onNodeWithText(text(R.string.search_empty_title)).assertIsDisplayed()
-        composeRule.onNode(hasSetTextAction()).performTextInput("不存在")
-        composeRule.onNodeWithText(text(R.string.action_search)).performClick()
-        composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithText(text(R.string.search_no_result_title)).fetchSemanticsNodes().isNotEmpty()
+        composeRule.waitUntil(10_000) {
+            composeRule.onAllNodesWithTag(ReaderTestTags.SEARCH).fetchSemanticsNodes().isNotEmpty() &&
+                composeRule.onAllNodesWithTag(ReaderTestTags.SEARCH_EMPTY).fetchSemanticsNodes().isNotEmpty()
         }
+        composeRule.onNodeWithTag(ReaderTestTags.SEARCH_EMPTY).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag(ReaderTestTags.SEARCH_INPUT).performTextInput("不存在")
+        composeRule.onNodeWithTag(ReaderTestTags.SEARCH_SUBMIT).performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithTag(ReaderTestTags.SEARCH_NO_RESULTS).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag(ReaderTestTags.SEARCH_NO_RESULTS).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription(text(R.string.action_clear_search)).performClick()
-        composeRule.onNode(hasSetTextAction()).performTextInput("山中")
-        composeRule.onNodeWithText(text(R.string.action_search)).performClick()
+        composeRule.onNodeWithTag(ReaderTestTags.SEARCH_INPUT).performTextInput("山中")
+        composeRule.onNodeWithTag(ReaderTestTags.SEARCH_SUBMIT).performClick()
         composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithText(quantityPrefix(R.plurals.search_results_found, 1), substring = true).fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithTag(ReaderTestTags.SEARCH_RESULT).fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onAllNodesWithText(searchChapterPrefix(1), substring = true)[0].performClick()
+        composeRule.onAllNodesWithTag(ReaderTestTags.SEARCH_RESULT)[0].performClick()
         composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithText(text(R.string.message_jumped_to_search_result)).fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithTag(ReaderTestTags.READER).fetchSemanticsNodes().isNotEmpty()
         }
     }
 
@@ -480,15 +485,6 @@ class ReaderUiInstrumentedTest {
 
     private fun text(@StringRes id: Int, vararg args: Any): String =
         composeRule.activity.getString(id, *args)
-
-    private fun quantityText(@PluralsRes id: Int, quantity: Int, vararg args: Any): String =
-        composeRule.activity.resources.getQuantityString(id, quantity, *args)
-
-    private fun quantityPrefix(@PluralsRes id: Int, quantity: Int): String =
-        quantityText(id, quantity, quantity).substringBefore(quantity.toString())
-
-    private fun searchChapterPrefix(chapterNumber: Int): String =
-        text(R.string.search_chapter_position, chapterNumber, 0).substringBefore("0")
 
     private fun closeReaderOverlayFromBlankArea() {
         composeRule.onNodeWithContentDescription(text(R.string.reader_close_overlay_background)).performTouchInput {

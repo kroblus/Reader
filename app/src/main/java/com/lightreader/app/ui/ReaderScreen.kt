@@ -178,6 +178,7 @@ fun ReaderScreen(
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
+            .testTag(ReaderTestTags.READER)
             .background(background)
             .readerPageTapNavigation(
                 toolbarVisible = state.toolbarVisible,
@@ -582,7 +583,7 @@ private fun ReaderSettingsDock(
         modifier = Modifier
             .fillMaxWidth()
             .height(settingsHeight)
-            .testTag("reader_settings_dock"),
+            .testTag(ReaderTestTags.READER_SETTINGS_DOCK),
         color = Color(palette.overlay).copy(alpha = .99f),
         shape = RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp),
         shadowElevation = 4.dp,
@@ -631,7 +632,7 @@ private fun ContinuousReaderPages(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .testTag("reader_continuous_scroll"),
+                .testTag(ReaderTestTags.READER_CONTINUOUS_SCROLL),
             userScrollEnabled = !overlayVisible,
         ) {
             itemsIndexed(
@@ -745,7 +746,7 @@ private fun ReaderBottomControls(
                 stringResource(R.string.reader_progress, progressPercent, progressLabel),
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
-                    .testTag("reader_bottom_progress_text"),
+                    .testTag(ReaderTestTags.READER_PROGRESS),
                 color = secondary,
                 style = MaterialTheme.typography.labelSmall.copy(
                     fontFamily = FontFamily.SansSerif,
@@ -1084,6 +1085,7 @@ private fun ChapterListOverlay(
     ReaderListOverlay(
         visible = visible,
         title = stringResource(R.string.reader_toc),
+        tag = ReaderTestTags.READER_TOC,
         preferences = preferences,
         heightFraction = if (chapters.size <= 6) .36f else .92f,
         onDismiss = onDismiss,
@@ -1195,6 +1197,7 @@ private fun BookmarksOverlay(
     ReaderListOverlay(
         visible = visible,
         title = stringResource(R.string.reader_bookmarks),
+        tag = ReaderTestTags.READER_BOOKMARKS,
         preferences = preferences,
         heightFraction = if (state.bookmarks.size <= 2) .28f else if (state.bookmarks.size <= 4) .42f else .92f,
         onDismiss = onDismiss,
@@ -1308,6 +1311,7 @@ private fun BookmarkOverlayRow(
 private fun ReaderListOverlay(
     visible: Boolean,
     title: String,
+    tag: String,
     preferences: ReaderPreferences,
     heightFraction: Float,
     onDismiss: () -> Unit,
@@ -1351,6 +1355,7 @@ private fun ReaderListOverlay(
         ) {
             Surface(
                 modifier = Modifier
+                    .testTag(tag)
                     .padding(start = 8.dp, top = 14.dp, bottom = 14.dp)
                     .width(panelWidth)
                     .fillMaxHeight(heightFraction.coerceIn(.28f, .92f))

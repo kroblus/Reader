@@ -52,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
@@ -77,6 +78,7 @@ fun SearchScreen(viewModel: ReaderViewModel) {
     val state by viewModel.searchState.collectAsState()
     val readerState by viewModel.readerState.collectAsState()
     Scaffold(
+        modifier = Modifier.testTag(ReaderTestTags.SEARCH),
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
@@ -94,7 +96,7 @@ fun SearchScreen(viewModel: ReaderViewModel) {
                 OutlinedTextField(
                     value = state.query,
                     onValueChange = viewModel::updateSearchQuery,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).testTag(ReaderTestTags.SEARCH_INPUT),
                     label = { Text(stringResource(R.string.search_keyword)) },
                     singleLine = true,
                     leadingIcon = { Icon(Icons.Outlined.Search, null) },
@@ -108,7 +110,11 @@ fun SearchScreen(viewModel: ReaderViewModel) {
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = { viewModel.search() }),
                 )
-                Button(onClick = viewModel::search, enabled = state.query.isNotBlank() && !state.searching) {
+                Button(
+                    onClick = viewModel::search,
+                    enabled = state.query.isNotBlank() && !state.searching,
+                    modifier = Modifier.testTag(ReaderTestTags.SEARCH_SUBMIT),
+                ) {
                     Text(stringResource(R.string.action_search))
                 }
             }
@@ -126,11 +132,19 @@ fun SearchScreen(viewModel: ReaderViewModel) {
             ) {
                 if (!state.searching && state.query.isBlank()) {
                     item {
-                        EmptyStateCard(stringResource(R.string.search_empty_title), stringResource(R.string.search_empty_body))
+                        EmptyStateCard(
+                            stringResource(R.string.search_empty_title),
+                            stringResource(R.string.search_empty_body),
+                            Modifier.testTag(ReaderTestTags.SEARCH_EMPTY),
+                        )
                     }
                 } else if (!state.searching && state.hasSearched && state.results.isEmpty()) {
                     item {
-                        EmptyStateCard(stringResource(R.string.search_no_result_title), stringResource(R.string.search_no_result_body))
+                        EmptyStateCard(
+                            stringResource(R.string.search_no_result_title),
+                            stringResource(R.string.search_no_result_body),
+                            Modifier.testTag(ReaderTestTags.SEARCH_NO_RESULTS),
+                        )
                     }
                 }
                 items(state.results) { result ->
@@ -138,6 +152,7 @@ fun SearchScreen(viewModel: ReaderViewModel) {
                         result = result,
                         chapters = readerState.chapters,
                         onClick = { viewModel.jumpToSearchResult(result) },
+                        modifier = Modifier.testTag(ReaderTestTags.SEARCH_RESULT),
                     )
                 }
             }
@@ -146,12 +161,12 @@ fun SearchScreen(viewModel: ReaderViewModel) {
 }
 
 @Composable
-private fun SearchResultCard(result: SearchResult, chapters: List<Chapter>, onClick: () -> Unit) {
+private fun SearchResultCard(result: SearchResult, chapters: List<Chapter>, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val chapter = chapters.firstOrNull { it.id == result.chapterId }
     val positionLabel = chapter?.let {
         stringResource(R.string.search_chapter_position, it.orderIndex + 1, chapterProgress(result, it))
     } ?: stringResource(R.string.search_char_position, result.charOffset)
-    Card(Modifier.fillMaxWidth().clickable { onClick() }) {
+    Card(modifier.fillMaxWidth().clickable { onClick() }) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(result.chapterTitle, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(highlightedExcerpt(result.excerpt), maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -188,6 +203,7 @@ fun WebImportScreen(
     val trimmedUrl = state.url.trim()
     val urlError = trimmedUrl.isNotBlank() && !trimmedUrl.startsWith("https://", ignoreCase = true)
     Scaffold(
+        modifier = Modifier.testTag(ReaderTestTags.WEB_IMPORT),
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
@@ -404,6 +420,7 @@ fun ApiSettingsScreen(viewModel: AiSettingsViewModel, onBack: () -> Unit) {
     val api by viewModel.state.collectAsState()
     var confirmDeleteKey by remember { mutableStateOf(false) }
     Scaffold(
+        modifier = Modifier.testTag(ReaderTestTags.API_SETTINGS),
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
@@ -500,9 +517,9 @@ private fun AiAdvancedSettings(configuration: AiConfiguration, viewModel: AiSett
 }
 
 @Composable
-private fun EmptyStateCard(title: String, body: String) {
+private fun EmptyStateCard(title: String, body: String, modifier: Modifier = Modifier) {
     Card(
-        Modifier.fillMaxWidth(),
+        modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .56f)),
     ) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {

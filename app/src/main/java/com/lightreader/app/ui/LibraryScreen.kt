@@ -71,6 +71,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringArrayResource
@@ -106,7 +107,7 @@ fun LibraryScreen(
         uri?.let(viewModel::importBook)
     }
 
-    FreshBackdrop(state.preferences.appSkin, Modifier.fillMaxSize()) {
+    FreshBackdrop(state.preferences.appSkin, Modifier.fillMaxSize().testTag(ReaderTestTags.LIBRARY)) {
         Scaffold(
             containerColor = Color.Transparent,
             topBar = {
@@ -170,6 +171,7 @@ fun LibraryScreen(
             },
             floatingActionButton = {
                 ExtendedFloatingActionButton(
+                    modifier = Modifier.testTag(ReaderTestTags.LIBRARY_IMPORT),
                     onClick = { importer.launch(arrayOf("text/plain", "application/epub+zip")) },
                     icon = { Icon(Icons.Outlined.Add, null) },
                     text = {
@@ -359,6 +361,7 @@ fun AppSettingsScreen(
     settingsViewModel: SettingsViewModel,
 ) {
     Scaffold(
+        modifier = Modifier.testTag(ReaderTestTags.APP_SETTINGS),
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
@@ -428,11 +431,13 @@ fun AppSettingsScreen(
                 )
                 SettingsNavigationRow(
                     title = stringResource(R.string.library_web_import),
+                    modifier = Modifier.testTag(ReaderTestTags.APP_SETTINGS_WEB_IMPORT),
                     icon = { Icon(Icons.Outlined.CloudDownload, null) },
                     onClick = { readerViewModel.navigate(AppScreen.WebImport) },
                 )
                 SettingsNavigationRow(
                     title = stringResource(R.string.library_deepseek_settings),
+                    modifier = Modifier.testTag(ReaderTestTags.APP_SETTINGS_API),
                     icon = { Icon(Icons.Outlined.Key, null) },
                     onClick = { readerViewModel.navigate(AppScreen.ApiSettings) },
                 )
@@ -440,6 +445,7 @@ fun AppSettingsScreen(
             AppSettingsSection(stringResource(R.string.app_settings_appearance)) {
                 SettingsNavigationRow(
                     title = stringResource(R.string.library_change_skin),
+                    modifier = Modifier.testTag(ReaderTestTags.APP_SETTINGS_SKIN),
                     icon = { Icon(Icons.Outlined.Palette, null) },
                     onClick = { settingsViewModel.savePreferences(preferences.copy(appSkin = preferences.appSkin.next())) },
                 )
@@ -448,6 +454,7 @@ fun AppSettingsScreen(
                 AppSettingsSection(stringResource(R.string.app_settings_advanced_tools)) {
                     SettingsNavigationRow(
                         title = stringResource(R.string.library_dom_bridge),
+                        modifier = Modifier.testTag(ReaderTestTags.APP_SETTINGS_DOM),
                         icon = { Icon(Icons.Outlined.Code, null) },
                         onClick = { readerViewModel.navigate(AppScreen.WebDomBridge) },
                     )
@@ -509,8 +516,13 @@ private fun SettingsSwitchRow(title: String, checked: Boolean, onCheckedChange: 
 }
 
 @Composable
-private fun SettingsNavigationRow(title: String, icon: @Composable () -> Unit, onClick: () -> Unit) {
-    OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+private fun SettingsNavigationRow(
+    title: String,
+    modifier: Modifier = Modifier,
+    icon: @Composable () -> Unit,
+    onClick: () -> Unit,
+) {
+    OutlinedButton(onClick = onClick, modifier = modifier.fillMaxWidth()) {
         icon()
         Text(title, Modifier.padding(start = 10.dp))
     }
@@ -535,7 +547,7 @@ private fun EmptyLibrary(
     modifier: Modifier = Modifier,
     onImport: () -> Unit,
 ) {
-    Box(modifier, contentAlignment = Alignment.Center) {
+    Box(modifier.testTag(ReaderTestTags.LIBRARY_EMPTY), contentAlignment = Alignment.Center) {
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .92f)),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),

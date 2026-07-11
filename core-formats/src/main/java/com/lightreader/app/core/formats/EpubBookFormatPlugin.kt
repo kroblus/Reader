@@ -30,6 +30,7 @@ class EpubBookFormatPlugin : BookFormatPlugin {
         } ?: error("无法读取 EPUB")
 
         ZipFile(epubFile).use { zip ->
+            zip.entries().asSequence().forEach { entry -> validatedPath(entry.name) }
             if (zip.getEntry("META-INF/encryption.xml") != null) {
                 error("暂不支持加密或 DRM EPUB")
             }

@@ -85,7 +85,7 @@ fun ReaderSettingsPanel(
         Column(
             Modifier
                 .fillMaxWidth()
-                .testTag("reader_settings_panel")
+                .testTag(ReaderTestTags.READER_SETTINGS_PANEL)
                 .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = bottomPadding + 6.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {

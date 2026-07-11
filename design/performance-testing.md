@@ -23,8 +23,10 @@ adb -s $serial shell am instrument -w `
 ```
 
 The benchmark produces JSON and Perfetto traces that can be stored with a release-performance
-report. Never run these commands against the user's primary reader device without an explicit
-backup and approval.
+report. It runs ten cold starts. Establish the first result as a device-specific baseline; two
+consecutive runs on that same device fail the release performance gate when median cold start
+regresses by more than 15%. Never run these commands against the user's primary reader device
+without an explicit backup and approval.
 
 The normal QA suite remains `:app:connectedQaAndroidTest`; it deliberately tests the separate
 `com.lightreader.app.qa` package and does not affect an installed reader's library or settings.
@@ -33,6 +35,12 @@ The 2 MB single-paragraph and 100 MB TXT import corpus is intentionally isolated
 **Android large TXT corpus** GitHub workflow. It runs weekly and on demand with its own 60-minute
 budget, while pull-request QA continues to cover every other instrumented scenario. This keeps
 normal feedback predictable without removing the large-file regression gate.
+
+The corpus also records a 10 MB import. Both 10 MB and 100 MB runs write elapsed time, before/after
+PSS and chapter count JSON under the test package's `qa-evidence/performance` directory. Their hard
+gate is correctness and bounded memory behavior: no OOM/ANR, bounded chapter files and complete
+character coverage. Timing is retained for trend analysis rather than compared across different
+device models.
 
 `HtmlBridgeInstrumentedTest` is also kept out of the generic hosted-emulator lane. It needs a
 working WebView JavaScript callback, which GitHub's Android images do not provide reliably. Run
