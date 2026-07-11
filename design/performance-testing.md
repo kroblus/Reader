@@ -38,3 +38,7 @@ normal feedback predictable without removing the large-file regression gate.
 working WebView JavaScript callback, which GitHub's Android images do not provide reliably. Run
 the complete QA suite on the local WebView-enabled AVD or a disposable physical device; the
 `HtmlBridgeTest` JVM suite continues to cover bridge parsing on every CI run.
+
+The hosted workflows enable KVM group permissions before creating an AVD. Without that setup the
+emulator falls back to software emulation, which can take several minutes to boot and fails before
+the test runner starts.
