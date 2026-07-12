@@ -19,6 +19,9 @@ interface ReaderDao {
     @Query("SELECT * FROM books WHERE contentFingerprint = :fingerprint ORDER BY addedAt DESC LIMIT 1")
     suspend fun bookByContentFingerprint(fingerprint: String): BookEntity?
 
+    @Query("SELECT rootPath FROM books")
+    suspend fun bookRootPaths(): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBook(book: BookEntity)
 

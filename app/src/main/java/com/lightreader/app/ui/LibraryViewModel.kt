@@ -11,9 +11,13 @@ import com.lightreader.app.core.data.ShelfBookProgress
 import com.lightreader.app.core.formats.BookImportException
 import com.lightreader.app.core.formats.BookImportFailure
 import com.lightreader.app.core.formats.BookImportOptions
+import com.lightreader.app.core.formats.ImportProgress
+import com.lightreader.app.core.formats.ImportStage
 import com.lightreader.app.core.model.Book
 import com.lightreader.app.core.model.ReaderPreferences
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +27,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import kotlin.math.max
 
 /** Owns shelf data and import/edit workflows; navigation stays in the app shell. */
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
@@ -33,6 +38,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     val events = eventsChannel.receiveAsFlow()
     val busy = MutableStateFlow(BusyState())
+    private var importJob: Job? = null
     val state: StateFlow<LibraryUiState> = combine(
         container.bookRepository.books,
         container.bookRepository.shelfProgress,
@@ -49,6 +55,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         viewModelScope.launch {
+            container.bookRepository.cleanupOrphanedBookDirectories()
             val preferences = container.settingsRepository.preferences.first()
             val taglineCount = application.resources.getStringArray(R.array.brand_taglines).size
             val nextIndex = nextTaglineIndex(preferences.libraryTaglineIndex, taglineCount)
@@ -59,22 +66,26 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun importBook(uri: Uri) {
-        viewModelScope.launch {
-            busy.value = BusyState(active = true, message = uiText(R.string.busy_importing_book))
-            val candidate = runCatching { container.bookRepository.inspectImport(uri) }
-                .getOrElse { error ->
-                    postMessage(importFailureText(error))
-                    busy.value = BusyState()
-                    return@launch
-                }
-            if (candidate.existingBook != null) {
-                pendingDuplicateImport.value = PendingDuplicateImport(candidate)
+        if (importJob?.isActive == true) return
+        importJob = viewModelScope.launch {
+            try {
+                updateImportProgress(ImportProgress(ImportStage.INSPECTING, 0f))
+                val candidate = container.bookRepository.inspectImport(uri, ::updateImportProgress)
+                if (candidate.existingBook != null) pendingDuplicateImport.value = PendingDuplicateImport(candidate)
+                else importCandidate(candidate)
+            } catch (cancelled: CancellationException) {
+                postMessage(uiText(R.string.message_import_cancelled))
+                throw cancelled
+            } catch (error: Throwable) {
+                postMessage(importFailureText(error))
+            } finally {
                 busy.value = BusyState()
-            } else {
-                importCandidate(candidate)
+                importJob = null
             }
         }
     }
+
+    fun cancelImport() { importJob?.cancel() }
 
     fun dismissDuplicateImport() {
         pendingDuplicateImport.value = null
@@ -89,9 +100,20 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun importDuplicateCopy() {
         val candidate = pendingDuplicateImport.value?.candidate ?: return
         pendingDuplicateImport.value = null
-        viewModelScope.launch {
-            busy.value = BusyState(active = true, message = uiText(R.string.busy_importing_book))
-            importCandidate(candidate)
+        if (importJob?.isActive == true) return
+        importJob = viewModelScope.launch {
+            try {
+                updateImportProgress(ImportProgress(ImportStage.READING, .2f))
+                importCandidate(candidate)
+            } catch (cancelled: CancellationException) {
+                postMessage(uiText(R.string.message_import_cancelled))
+                throw cancelled
+            } catch (error: Throwable) {
+                postMessage(importFailureText(error))
+            } finally {
+                busy.value = BusyState()
+                importJob = null
+            }
         }
     }
 
@@ -123,22 +145,34 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private suspend fun importCandidate(candidate: BookImportCandidate) {
-        runCatching {
-            container.bookRepository.import(
-                candidate,
-                BookImportOptions(cleanTxtNoise = state.value.preferences.cleanTxtNoise),
-            )
-        }.onSuccess { book ->
-            postMessage(uiText(R.string.message_imported_book, book.title))
-        }.onFailure { error ->
-            postMessage(importFailureText(error))
-        }
-        busy.value = BusyState()
+        val book = container.bookRepository.import(
+            candidate,
+            BookImportOptions(cleanTxtNoise = state.value.preferences.cleanTxtNoise),
+            ::updateImportProgress,
+        )
+        postMessage(uiText(R.string.message_imported_book, book.title))
+    }
+
+    private fun updateImportProgress(progress: ImportProgress) {
+        val previous = busy.value.progress ?: 0f
+        busy.value = BusyState(
+            active = true,
+            message = uiText(progress.stage.labelResource()),
+            progress = max(previous, progress.normalizedFraction),
+            cancelable = true,
+        )
     }
 
     private fun postMessage(message: UiText) {
         eventsChannel.trySend(LibraryEvent.Message(message))
     }
+}
+
+private fun ImportStage.labelResource(): Int = when (this) {
+    ImportStage.INSPECTING -> R.string.busy_import_inspecting
+    ImportStage.READING -> R.string.busy_import_reading
+    ImportStage.PARSING -> R.string.busy_import_parsing
+    ImportStage.SAVING -> R.string.busy_import_saving
 }
 
 data class LibraryUiState(

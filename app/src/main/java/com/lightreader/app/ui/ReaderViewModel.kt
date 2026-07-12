@@ -57,6 +57,8 @@ data class NavigationState(
 data class BusyState(
     val active: Boolean = false,
     val message: UiText? = null,
+    val progress: Float? = null,
+    val cancelable: Boolean = false,
 )
 
 data class ReaderUiState(
@@ -195,6 +197,11 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         )
     }
 
+    fun openSearch(bookId: String) {
+        searchState.value = SearchUiState()
+        navigate(AppScreen.Search(bookId))
+    }
+
     private fun replaceCurrent(target: AppScreen) {
         navigation.value = navigation.value.copy(current = target)
     }
@@ -224,7 +231,10 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             saveCurrentProgress(immediate = true)
         }
         val next = popBackStack()
-        if (current is AppScreen.Reader && next !is AppScreen.Reader) setAutoReading(false)
+        if (current is AppScreen.Reader && next !is AppScreen.Reader) {
+            setAutoReading(false)
+            releaseReaderResources()
+        }
         if (current !is AppScreen.Reader && next is AppScreen.Reader) {
             readerState.value = readerState.value.copy(toolbarVisible = true)
         }
@@ -360,7 +370,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         val chapters = readerState.value.chapters
         val targetViewport = viewport
         prefetchJob = viewModelScope.launch {
-            listOf(chapterIndex + 1, chapterIndex - 1, chapterIndex + 2).filter { it in chapters.indices }.distinct().forEach { index ->
+            listOf(chapterIndex + 1, chapterIndex - 1).filter { it in chapters.indices }.distinct().forEach { index ->
                 val chapter = chapters[index]
                 val key = layoutCacheKey(chapter, preferences, targetViewport)
                 if (pageCache[key] == null) {
@@ -399,6 +409,21 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     private fun clearReaderCaches() {
         chapterContentCache.clear()
         pageCache.clear()
+    }
+
+    private fun releaseReaderResources() {
+        paginationJob?.cancel()
+        prefetchJob?.cancel()
+        bookmarkJob?.cancel()
+        paginationJob = null
+        prefetchJob = null
+        bookmarkJob = null
+        chapterText = ""
+        chapterParagraphs = emptyList()
+        loadedChapterId = null
+        pendingPageTurns.clear()
+        clearReaderCaches()
+        readerState.value = ReaderUiState()
     }
 
     private fun applyPages(
@@ -905,7 +930,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         }
 
     private companion object {
-        const val MAX_CHAPTER_CONTENT_CACHE_BYTES = 4L * 1024 * 1024
-        const val MAX_PAGE_CACHE_BYTES = 6L * 1024 * 1024
+        const val MAX_CHAPTER_CONTENT_CACHE_BYTES = 3L * 1024 * 1024
+        const val MAX_PAGE_CACHE_BYTES = 4L * 1024 * 1024
     }
 }

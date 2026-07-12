@@ -81,6 +81,31 @@ class WebDownloadWorkerInstrumentedTest {
         assertEquals("PENDING", chapters.last().status)
     }
 
+    @Test
+    fun controlledTwoHundredChapterDownloadCreatesOneOrderedBook() = runBlocking {
+        server.close()
+        server = QaHttpsFixtureServer(largeChapterCount = 200)
+        val preview = application.container.webSourceParser.preview(server.url("/large-catalog"))
+        assertEquals(200, preview.chapters.size)
+        val repository = unscheduledRepository()
+        val taskId = repository.start(preview)
+
+        val result = worker(taskId, runToCompletion = true).doWork()
+
+        assertTrue(result is ListenableWorker.Result.Success)
+        val task = application.container.database.readerDao().downloadTask(taskId)
+        val chapters = application.container.database.readerDao().chapters(taskId)
+        assertEquals("COMPLETED", task?.status)
+        assertEquals(200, task?.completedChapters)
+        assertEquals(200, chapters.size)
+        assertEquals((0 until 200).toList(), chapters.map { it.orderIndex })
+        assertEquals(1, application.container.database.readerDao().bookRootPaths().size)
+        assertEquals(
+            200,
+            server.requests.mapNotNull { it.path }.filter { it.startsWith("/large-chapter/") }.distinct().size,
+        )
+    }
+
     private fun unscheduledRepository() = DownloadRepository(
         context = context,
         dao = application.container.database.readerDao(),
@@ -89,7 +114,13 @@ class WebDownloadWorkerInstrumentedTest {
         enqueueWork = false,
     )
 
-    private fun worker(taskId: String): WebDownloadWorker = TestListenableWorkerBuilder<WebDownloadWorker>(context)
-        .setInputData(workDataOf(WebDownloadWorker.TASK_ID to taskId))
+    private fun worker(taskId: String, runToCompletion: Boolean = false): WebDownloadWorker =
+        TestListenableWorkerBuilder<WebDownloadWorker>(context)
+        .setInputData(
+            workDataOf(
+                WebDownloadWorker.TASK_ID to taskId,
+                WebDownloadWorker.RUN_TO_COMPLETION_FOR_TEST to runToCompletion,
+            ),
+        )
         .build()
 }

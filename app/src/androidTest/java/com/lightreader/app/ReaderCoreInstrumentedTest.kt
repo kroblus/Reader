@@ -14,6 +14,7 @@ import com.lightreader.app.core.formats.EpubBookFormatPlugin
 import com.lightreader.app.core.formats.BookImportException
 import com.lightreader.app.core.formats.BookImportFailure
 import com.lightreader.app.core.formats.ImportedChapter
+import com.lightreader.app.core.formats.ImportStage
 import com.lightreader.app.core.formats.TxtBookFormatPlugin
 import com.lightreader.app.core.model.BookFormat
 import com.lightreader.app.core.model.ExtractionPlan
@@ -27,6 +28,7 @@ import com.lightreader.app.core.reader.toReaderStyle
 import com.lightreader.app.core.security.EncryptedApiKeyStore
 import com.lightreader.app.core.web.WebSourceParser
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -169,6 +171,38 @@ class ReaderCoreInstrumentedTest {
             val searchResult = repository.search(book.id, "山中").first()
             assertEquals(repository.readChapter(chapter).indexOf("山中"), searchResult.charOffset)
             assertEquals(book.totalChars, database.readerDao().indexedCharacterCount(book.id))
+        } finally {
+            database.close()
+            source.delete()
+        }
+    }
+
+    @Test
+    fun localImportProgressIsMonotonicAndCancellationLeavesNoBookOrDirectory() = kotlinx.coroutines.runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(context, ReaderDatabase::class.java).build()
+        val repository = BookRepository(context, database.readerDao())
+        val source = File(context.cacheDir, "cancel-import-${System.nanoTime()}.txt").apply {
+            bufferedWriter().use { writer ->
+                repeat(60_000) { writer.append("第${it}章 测试\n正文内容用于取消回归。\n") }
+            }
+        }
+        val booksRoot = File(context.filesDir, "books")
+        val beforeDirectories = booksRoot.listFiles()?.map { it.name }?.toSet().orEmpty()
+        val fractions = mutableListOf<Float>()
+        try {
+            val candidate = repository.inspectImport(Uri.fromFile(source)) { fractions += it.normalizedFraction }
+            val failure = runCatching {
+                repository.import(candidate) { progress ->
+                    fractions += progress.normalizedFraction
+                    if (progress.stage == ImportStage.READING && progress.processed > 256 * 1024) {
+                        throw CancellationException("qa cancellation")
+                    }
+                }
+            }.exceptionOrNull()
+            assertTrue(failure is CancellationException)
+            assertTrue(fractions.zipWithNext().all { (left, right) -> right >= left })
+            assertTrue(database.readerDao().bookRootPaths().isEmpty())
+            assertEquals(beforeDirectories, booksRoot.listFiles()?.map { it.name }?.toSet().orEmpty())
         } finally {
             database.close()
             source.delete()

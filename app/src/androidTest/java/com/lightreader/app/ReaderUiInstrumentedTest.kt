@@ -34,6 +34,7 @@ import com.lightreader.app.core.data.ReadingProgressEntity
 import com.lightreader.app.core.model.AppLanguage
 import com.lightreader.app.core.model.BookFormat
 import com.lightreader.app.core.model.ReaderPreferences
+import com.lightreader.app.core.model.ReaderTheme
 import com.lightreader.app.ui.ReaderTestTags
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -89,6 +90,7 @@ class ReaderUiInstrumentedTest {
         composeRule.onNodeWithText(text(R.string.brand_name)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.library_empty_title)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.library_import_file)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(text(R.string.library_import_novel)).assertIsDisplayed()
         composeRule.onAllNodesWithText(text(R.string.library_web_import)).assertCountEquals(0)
         composeRule.onNodeWithContentDescription(text(R.string.action_more)).performClick()
         composeRule.onNodeWithText(text(R.string.library_app_settings)).performClick()
@@ -213,6 +215,37 @@ class ReaderUiInstrumentedTest {
         assertEquals(AppLanguage.SYSTEM, repository.preferences.first().appLanguage)
         repository.save(ReaderPreferences(appLanguage = AppLanguage.EN))
         assertEquals(AppLanguage.EN, repository.preferences.first().appLanguage)
+    }
+
+    @Test
+    fun nightModeReturnsToThePersistedDayThemeAfterRapidTogglesAndRecreation() = runBlocking {
+        application.container.settingsRepository.save(
+            ReaderPreferences(theme = ReaderTheme.SEPIA, lastNonNightTheme = ReaderTheme.SEPIA),
+        )
+        seedBook("夜间切换测试")
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("夜间切换测试").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("夜间切换测试").performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithContentDescription(text(R.string.reader_night_off_description)).fetchSemanticsNodes().isNotEmpty()
+        }
+        repeat(10) {
+            composeRule.onNodeWithContentDescription(text(R.string.reader_night_off_description)).performClick()
+            composeRule.waitUntil(5_000) {
+                composeRule.onAllNodesWithContentDescription(text(R.string.reader_night_on_description)).fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithContentDescription(text(R.string.reader_night_on_description)).performClick()
+            composeRule.waitUntil(5_000) {
+                composeRule.onAllNodesWithContentDescription(text(R.string.reader_night_off_description)).fetchSemanticsNodes().isNotEmpty()
+            }
+        }
+        assertEquals(ReaderTheme.SEPIA, application.container.settingsRepository.preferences.first().theme)
+        composeRule.activityRule.scenario.recreate()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithContentDescription(text(R.string.reader_night_off_description)).fetchSemanticsNodes().isNotEmpty()
+        }
+        assertEquals(ReaderTheme.SEPIA, application.container.settingsRepository.preferences.first().theme)
     }
 
     @Test
@@ -441,10 +474,19 @@ class ReaderUiInstrumentedTest {
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithContentDescription(text(R.string.action_search)).fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithContentDescription(text(R.string.action_search)).performClick()
+        composeRule.onRoot().performTouchInput { click() }
+        composeRule.waitForIdle()
+        composeRule.onRoot().performTouchInput { click() }
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithContentDescription(text(R.string.action_search)).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithContentDescription(text(R.string.action_search)).assertIsDisplayed().performTouchInput { click() }
         composeRule.waitUntil(10_000) {
-            composeRule.onAllNodesWithTag(ReaderTestTags.SEARCH).fetchSemanticsNodes().isNotEmpty() &&
-                composeRule.onAllNodesWithTag(ReaderTestTags.SEARCH_EMPTY).fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithTag(ReaderTestTags.SEARCH).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.waitForIdle()
+        composeRule.waitUntil(10_000) {
+            composeRule.onAllNodesWithTag(ReaderTestTags.SEARCH_EMPTY).fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag(ReaderTestTags.SEARCH_EMPTY).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag(ReaderTestTags.SEARCH_INPUT).performTextInput("不存在")

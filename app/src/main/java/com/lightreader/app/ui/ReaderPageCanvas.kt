@@ -92,12 +92,10 @@ fun ReaderPageCanvas(
                 if (!line.isChapterTitle && layoutPreferences.justified && !line.isLastLineOfParagraph && line.text.length > 1) {
                     val targetWidth = line.availableWidthPx
                     val gap = ((targetWidth - line.widthPx) / (line.text.length - 1)).coerceAtLeast(0f)
-                    var cursorX = x
-                    line.text.forEach { character ->
-                        val value = character.toString()
-                        canvas.nativeCanvas.drawText(value, cursorX, line.baselinePx, paint)
-                        cursorX += paint.measureText(value) + gap
-                    }
+                    val previousLetterSpacing = paint.letterSpacing
+                    paint.letterSpacing = if (paint.textSize > 0f) gap / paint.textSize else 0f
+                    canvas.nativeCanvas.drawText(line.text, x, line.baselinePx, paint)
+                    paint.letterSpacing = previousLetterSpacing
                 } else {
                     canvas.nativeCanvas.drawText(line.text, x, line.baselinePx, paint)
                 }

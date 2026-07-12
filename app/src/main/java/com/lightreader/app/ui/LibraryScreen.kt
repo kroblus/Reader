@@ -9,8 +9,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -20,8 +23,10 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -76,6 +81,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -103,6 +112,7 @@ fun LibraryScreen(
     var showMoreActions by remember { mutableStateOf(false) }
     var showSkinPicker by remember { mutableStateOf(false) }
     val taglines = stringArrayResource(R.array.brand_taglines)
+    val importNovelLabel = stringResource(R.string.library_import_novel)
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(viewModel::importBook)
     }
@@ -171,7 +181,12 @@ fun LibraryScreen(
             },
             floatingActionButton = {
                 ExtendedFloatingActionButton(
-                    modifier = Modifier.testTag(ReaderTestTags.LIBRARY_IMPORT),
+                    modifier = Modifier
+                        .testTag(ReaderTestTags.LIBRARY_IMPORT)
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = importNovelLabel
+                            role = Role.Button
+                        },
                     onClick = { importer.launch(arrayOf("text/plain", "application/epub+zip")) },
                     icon = { Icon(Icons.Outlined.Add, null) },
                     text = {
@@ -382,85 +397,104 @@ fun AppSettingsScreen(
             )
         },
     ) { padding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(padding)
+        BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
+            val wide = maxWidth >= 720.dp
+            val contentModifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .widthIn(max = 1040.dp)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(22.dp),
-        ) {
-            AppSettingsSection(stringResource(R.string.app_settings_reading)) {
-                Text(
-                    stringResource(R.string.app_settings_language),
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.labelLarge.copy(
-                        fontFamily = FontFamily.SansSerif,
-                        fontWeight = FontWeight.SemiBold,
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                AppLanguage.entries.forEach { language ->
-                    AppLanguageRow(
-                        language = language,
-                        selected = preferences.appLanguage == language,
-                        onClick = { settingsViewModel.saveAppLanguage(language) },
-                    )
+                .padding(horizontal = if (wide) 28.dp else 20.dp, vertical = 12.dp)
+            if (wide) {
+                Row(contentModifier, horizontalArrangement = Arrangement.spacedBy(30.dp)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(22.dp)) {
+                        AppReadingSettings(preferences, settingsViewModel)
+                        AppAppearanceSettings(preferences, settingsViewModel)
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(22.dp)) {
+                        AppImportSettings(preferences, readerViewModel, settingsViewModel)
+                        AppDeveloperSettings(preferences, readerViewModel)
+                    }
                 }
-                SettingsSwitchRow(
-                    title = stringResource(R.string.settings_volume_keys),
-                    checked = preferences.volumeKeys,
-                    onCheckedChange = { settingsViewModel.savePreferences(preferences.copy(volumeKeys = it)) },
-                )
-                SettingsSwitchRow(
-                    title = stringResource(R.string.settings_keep_screen_on),
-                    checked = preferences.keepScreenOn,
-                    onCheckedChange = { settingsViewModel.savePreferences(preferences.copy(keepScreenOn = it)) },
-                )
-                SettingsSwitchRow(
-                    title = stringResource(R.string.settings_lock_portrait),
-                    checked = preferences.lockPortrait,
-                    onCheckedChange = { settingsViewModel.savePreferences(preferences.copy(lockPortrait = it)) },
-                )
-            }
-            AppSettingsSection(stringResource(R.string.app_settings_import_download)) {
-                SettingsSwitchRow(
-                    title = stringResource(R.string.settings_clean_txt_noise),
-                    checked = preferences.cleanTxtNoise,
-                    onCheckedChange = { settingsViewModel.savePreferences(preferences.copy(cleanTxtNoise = it)) },
-                )
-                SettingsNavigationRow(
-                    title = stringResource(R.string.library_web_import),
-                    modifier = Modifier.testTag(ReaderTestTags.APP_SETTINGS_WEB_IMPORT),
-                    icon = { Icon(Icons.Outlined.CloudDownload, null) },
-                    onClick = { readerViewModel.navigate(AppScreen.WebImport) },
-                )
-                SettingsNavigationRow(
-                    title = stringResource(R.string.library_deepseek_settings),
-                    modifier = Modifier.testTag(ReaderTestTags.APP_SETTINGS_API),
-                    icon = { Icon(Icons.Outlined.Key, null) },
-                    onClick = { readerViewModel.navigate(AppScreen.ApiSettings) },
-                )
-            }
-            AppSettingsSection(stringResource(R.string.app_settings_appearance)) {
-                SettingsNavigationRow(
-                    title = stringResource(R.string.library_change_skin),
-                    modifier = Modifier.testTag(ReaderTestTags.APP_SETTINGS_SKIN),
-                    icon = { Icon(Icons.Outlined.Palette, null) },
-                    onClick = { settingsViewModel.savePreferences(preferences.copy(appSkin = preferences.appSkin.next())) },
-                )
-            }
-            if (preferences.developerToolsEnabled) {
-                AppSettingsSection(stringResource(R.string.app_settings_advanced_tools)) {
-                    SettingsNavigationRow(
-                        title = stringResource(R.string.library_dom_bridge),
-                        modifier = Modifier.testTag(ReaderTestTags.APP_SETTINGS_DOM),
-                        icon = { Icon(Icons.Outlined.Code, null) },
-                        onClick = { readerViewModel.navigate(AppScreen.WebDomBridge) },
-                    )
+            } else {
+                Column(contentModifier, verticalArrangement = Arrangement.spacedBy(22.dp)) {
+                    AppReadingSettings(preferences, settingsViewModel)
+                    AppImportSettings(preferences, readerViewModel, settingsViewModel)
+                    AppAppearanceSettings(preferences, settingsViewModel)
+                    AppDeveloperSettings(preferences, readerViewModel)
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AppReadingSettings(preferences: ReaderPreferences, settingsViewModel: SettingsViewModel) {
+    AppSettingsSection(stringResource(R.string.app_settings_reading)) {
+        Text(
+            stringResource(R.string.app_settings_language),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        AppLanguage.entries.forEach { language ->
+            AppLanguageRow(language, preferences.appLanguage == language) { settingsViewModel.saveAppLanguage(language) }
+        }
+        SettingsSwitchRow(stringResource(R.string.settings_volume_keys), preferences.volumeKeys) {
+            settingsViewModel.savePreferences(preferences.copy(volumeKeys = it))
+        }
+        SettingsSwitchRow(stringResource(R.string.settings_keep_screen_on), preferences.keepScreenOn) {
+            settingsViewModel.savePreferences(preferences.copy(keepScreenOn = it))
+        }
+        SettingsSwitchRow(stringResource(R.string.settings_lock_portrait), preferences.lockPortrait) {
+            settingsViewModel.savePreferences(preferences.copy(lockPortrait = it))
+        }
+    }
+}
+
+@Composable
+private fun AppImportSettings(
+    preferences: ReaderPreferences,
+    readerViewModel: ReaderViewModel,
+    settingsViewModel: SettingsViewModel,
+) {
+    AppSettingsSection(stringResource(R.string.app_settings_import_download)) {
+        SettingsSwitchRow(stringResource(R.string.settings_clean_txt_noise), preferences.cleanTxtNoise) {
+            settingsViewModel.savePreferences(preferences.copy(cleanTxtNoise = it))
+        }
+        SettingsNavigationRow(
+            stringResource(R.string.library_web_import),
+            Modifier.testTag(ReaderTestTags.APP_SETTINGS_WEB_IMPORT),
+            { Icon(Icons.Outlined.CloudDownload, null) },
+        ) { readerViewModel.navigate(AppScreen.WebImport) }
+        SettingsNavigationRow(
+            stringResource(R.string.library_deepseek_settings),
+            Modifier.testTag(ReaderTestTags.APP_SETTINGS_API),
+            { Icon(Icons.Outlined.Key, null) },
+        ) { readerViewModel.navigate(AppScreen.ApiSettings) }
+    }
+}
+
+@Composable
+private fun AppAppearanceSettings(preferences: ReaderPreferences, settingsViewModel: SettingsViewModel) {
+    AppSettingsSection(stringResource(R.string.app_settings_appearance)) {
+        SettingsNavigationRow(
+            stringResource(R.string.library_change_skin),
+            Modifier.testTag(ReaderTestTags.APP_SETTINGS_SKIN),
+            { Icon(Icons.Outlined.Palette, null) },
+        ) { settingsViewModel.savePreferences(preferences.copy(appSkin = preferences.appSkin.next())) }
+    }
+}
+
+@Composable
+private fun AppDeveloperSettings(preferences: ReaderPreferences, readerViewModel: ReaderViewModel) {
+    if (!preferences.developerToolsEnabled) return
+    AppSettingsSection(stringResource(R.string.app_settings_advanced_tools)) {
+        SettingsNavigationRow(
+            stringResource(R.string.library_dom_bridge),
+            Modifier.testTag(ReaderTestTags.APP_SETTINGS_DOM),
+            { Icon(Icons.Outlined.Code, null) },
+        ) { readerViewModel.navigate(AppScreen.WebDomBridge) }
     }
 }
 
@@ -488,11 +522,11 @@ private fun AppLanguageRow(language: AppLanguage, selected: Boolean, onClick: ()
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RadioButton(selected = selected, onClick = onClick)
+        RadioButton(selected = selected, onClick = null)
         Column(Modifier.weight(1f).padding(start = 8.dp)) {
             Text(language.label(), style = MaterialTheme.typography.bodyLarge)
             Text(language.caption(), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
@@ -506,12 +540,12 @@ private fun SettingsSwitchRow(title: String, checked: Boolean, onCheckedChange: 
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
-            .clickable { onCheckedChange(!checked) }
+            .toggleable(value = checked, role = Role.Switch) { onCheckedChange(it) }
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 
@@ -547,26 +581,41 @@ private fun EmptyLibrary(
     modifier: Modifier = Modifier,
     onImport: () -> Unit,
 ) {
-    Box(modifier.testTag(ReaderTestTags.LIBRARY_EMPTY), contentAlignment = Alignment.Center) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .92f)),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    BoxWithConstraints(modifier.testTag(ReaderTestTags.LIBRARY_EMPTY)) {
+        val compact = maxHeight < 520.dp
+        Box(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 92.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            Column(
-                Modifier.padding(horizontal = 34.dp, vertical = 38.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+            Card(
+                modifier = Modifier.widthIn(max = 520.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .96f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             ) {
+                Column(
+                    Modifier.padding(
+                        horizontal = if (compact) 26.dp else 34.dp,
+                        vertical = if (compact) 18.dp else 38.dp,
+                    ),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                 Box(
-                    Modifier.size(88.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
+                    Modifier
+                        .size(if (compact) 56.dp else 88.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
                     contentAlignment = Alignment.Center,
                 ) {
                     Image(
                         painter = painterResource(R.drawable.ic_logo_lined),
                         contentDescription = null,
-                        modifier = Modifier.size(58.dp),
+                        modifier = Modifier.size(if (compact) 38.dp else 58.dp),
                     )
                 }
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(if (compact) 10.dp else 20.dp))
                 Text(
                     stringResource(R.string.library_empty_title),
                     style = MaterialTheme.typography.titleLarge.copy(
@@ -574,15 +623,19 @@ private fun EmptyLibrary(
                         fontWeight = FontWeight.Bold,
                     ),
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(if (compact) 4.dp else 8.dp))
                 Text(
                     stringResource(R.string.library_empty_body),
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.SansSerif),
                 )
-                Spacer(Modifier.height(18.dp))
-                TextButton(onClick = onImport) { Text(stringResource(R.string.library_import_file)) }
+                Spacer(Modifier.height(if (compact) 8.dp else 18.dp))
+                TextButton(
+                    onClick = onImport,
+                    modifier = Modifier.heightIn(min = ReaderUiTokens.iconTouchTarget),
+                ) { Text(stringResource(R.string.library_import_file)) }
+                }
             }
         }
     }
@@ -606,7 +659,7 @@ private fun BookCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit: () -> U
             Box(Modifier.align(Alignment.TopEnd)) {
                 IconButton(
                     onClick = { showBookActions = true },
-                    modifier = Modifier.padding(5.dp).size(34.dp),
+                    modifier = Modifier.padding(1.dp).size(ReaderUiTokens.iconTouchTarget),
                 ) {
                     Icon(
                         Icons.Outlined.MoreVert,
@@ -803,7 +856,7 @@ private fun RecentReadingCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit
             Box(Modifier.align(Alignment.TopEnd).padding(6.dp)) {
                 IconButton(
                     onClick = { showBookActions = true },
-                    modifier = Modifier.size(36.dp),
+                    modifier = Modifier.size(ReaderUiTokens.iconTouchTarget),
                 ) {
                     Icon(
                         Icons.Outlined.MoreVert,
@@ -868,6 +921,7 @@ private fun PastelBookCover(book: Book, compact: Boolean = false) {
         MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.secondaryContainer,
     )
     val colors = variants[(book.title.hashCode() and Int.MAX_VALUE) % variants.size]
+    val coverTitle = remember(book.title) { book.title.coverDisplayTitle() }
     Card(
         modifier = Modifier.fillMaxWidth().aspectRatio(.72f),
         shape = RoundedCornerShape(if (compact) 14.dp else 16.dp),
@@ -893,7 +947,7 @@ private fun PastelBookCover(book: Book, compact: Boolean = false) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (compact) .76f else 1f),
                 )
                 Text(
-                    book.title,
+                    coverTitle,
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontFamily = FontFamily.SansSerif,
                         fontWeight = FontWeight.Bold,
@@ -918,6 +972,17 @@ private fun PastelBookCover(book: Book, compact: Boolean = false) {
             }
         }
     }
+}
+
+internal fun String.coverDisplayTitle(): String {
+    val cleaned = substringBeforeLast('.', this)
+        .replace(Regex("[_-]+"), " ")
+        .replace(Regex("(?i)\\b(multi|page|sample|copy|final|txt|epub)\\b"), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+    if (cleaned.isBlank()) return trim().ifBlank { "LightReader" }.take(16)
+    val hasCjk = cleaned.any { it.code in 0x3400..0x9FFF }
+    return if (hasCjk) cleaned.take(14) else cleaned.split(' ').take(4).joinToString(" ").take(28)
 }
 
 private fun Array<String>.taglineAt(index: Int): String {

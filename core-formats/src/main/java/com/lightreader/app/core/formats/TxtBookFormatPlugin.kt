@@ -2,11 +2,14 @@ package com.lightreader.app.core.formats
 
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import com.lightreader.app.core.model.BookFormat
 import com.lightreader.app.core.reader.BookTextNormalizer
 import com.lightreader.app.core.reader.ChapterParser
 import com.lightreader.app.core.reader.ReaderTextLimits
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.BufferedWriter
 import java.io.ByteArrayOutputStream
@@ -35,6 +38,7 @@ class TxtBookFormatPlugin : BookFormatPlugin {
         displayName: String,
         bookDirectory: File,
         options: BookImportOptions,
+        onProgress: ImportProgressCallback,
     ): ImportResult = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
         val charset = resolver.openInputStream(source)?.use(::detectCharset)
@@ -49,6 +53,8 @@ class TxtBookFormatPlugin : BookFormatPlugin {
         var continuation = 1
         var decodedCharacters = 0L
         var replacementCharacters = 0L
+        val totalBytes = sourceSize(context, source)
+        val importContext = currentCoroutineContext()
 
         fun openChapter(chapterTitle: String) {
             title = chapterTitle.trim().ifBlank { "正文" }
@@ -90,12 +96,14 @@ class TxtBookFormatPlugin : BookFormatPlugin {
         }
 
         openChapter("正文")
-        resolver.openInputStream(source)?.use { input ->
+        resolver.openInputStream(source)?.use { rawInput ->
+            val input = CountingInputStream(rawInput)
             val decoder = charset.newDecoder()
                 .onMalformedInput(CodingErrorAction.REPLACE)
                 .onUnmappableCharacter(CodingErrorAction.REPLACE)
             InputStreamReader(input, decoder).use { reader ->
                 reader.forEachBoundedLine(MAX_INPUT_SEGMENT_CHARS) { rawLine ->
+                    importContext.ensureActive()
                     decodedCharacters += rawLine.length
                     replacementCharacters += rawLine.count { it == REPLACEMENT_CHAR }
                     val normalized = normalizer.normalizeLine(rawLine)?.text
@@ -108,9 +116,15 @@ class TxtBookFormatPlugin : BookFormatPlugin {
                     } else if (line != null) {
                         appendContent(line)
                     }
+                    val readBytes = input.count
+                    val fraction = totalBytes?.takeIf { it > 0L }
+                        ?.let { .2f + .68f * (readBytes.toFloat() / it).coerceIn(0f, 1f) }
+                        ?: .2f
+                    onProgress(ImportProgress(ImportStage.READING, fraction, readBytes, totalBytes))
                 }
             }
         } ?: throw BookImportException(BookImportFailure.FILE_UNREADABLE, "无法再次打开文件")
+        onProgress(ImportProgress(ImportStage.PARSING, .9f, decodedCharacters, decodedCharacters))
         closeChapter()
         if (replacementCharacters >= MIN_REPLACEMENT_CHARS &&
             replacementCharacters.toDouble() / decodedCharacters.coerceAtLeast(1) > MAX_REPLACEMENT_RATIO
@@ -210,6 +224,25 @@ class TxtBookFormatPlugin : BookFormatPlugin {
         private fun isCjkCharacter(character: Char): Boolean = character.code in 0x3400..0x9FFF ||
             character.code in 0xF900..0xFAFF
     }
+}
+
+private fun sourceSize(context: Context, source: Uri): Long? {
+    context.contentResolver.query(source, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst() && !cursor.isNull(0)) return cursor.getLong(0).takeIf { it >= 0 }
+    }
+    return null
+}
+
+private class CountingInputStream(private val delegate: InputStream) : InputStream() {
+    var count: Long = 0
+        private set
+
+    override fun read(): Int = delegate.read().also { if (it >= 0) count++ }
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int =
+        delegate.read(buffer, offset, length).also { if (it > 0) count += it }
+
+    override fun close() = delegate.close()
 }
 
 private fun InputStreamReader.forEachBoundedLine(

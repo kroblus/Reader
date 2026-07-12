@@ -7,6 +7,8 @@ import java.io.Closeable
 import java.security.KeyStore
 import java.security.SecureRandom
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import okhttp3.mockwebserver.Dispatcher
@@ -17,9 +19,14 @@ import okhttp3.mockwebserver.SocketPolicy
 import org.json.JSONArray
 import org.json.JSONObject
 
-class QaHttpsFixtureServer : Closeable {
+class QaHttpsFixtureServer(
+    private val largeChapterCount: Int = 200,
+    private val responseDelayMs: Long = 0,
+    private val failOnceChapter: Int? = null,
+) : Closeable {
     private val server = MockWebServer()
     val requests = CopyOnWriteArrayList<RecordedRequest>()
+    private val failuresServed = ConcurrentHashMap.newKeySet<Int>()
 
     init {
         val context = InstrumentationRegistry.getInstrumentation().context
@@ -49,7 +56,32 @@ class QaHttpsFixtureServer : Closeable {
         server.shutdown()
     }
 
-    private fun responseFor(request: RecordedRequest): MockResponse = when (request.requestUrl?.encodedPath) {
+    private fun responseFor(request: RecordedRequest): MockResponse {
+        val path = request.requestUrl?.encodedPath.orEmpty()
+        val largeChapter = path.removePrefix("/large-chapter/").toIntOrNull().takeIf { path.startsWith("/large-chapter/") }
+        return when {
+        path == "/large-catalog" -> html(
+            200,
+            buildString {
+                append("<html><head><title>LightReader 200 Chapter QA</title></head><body><h1>LightReader 200 Chapter QA</h1><div class=\"chapters\">")
+                repeat(largeChapterCount) { index -> append("<a href=\"/large-chapter/${index + 1}\">第${index + 1}章</a>") }
+                append("</div></body></html>")
+            },
+        )
+        largeChapter != null && largeChapter in 1..largeChapterCount -> {
+            if (largeChapter == failOnceChapter && failuresServed.add(largeChapter)) {
+                html(500, "transient failure")
+            } else {
+                html(
+                    200,
+                    "<html><body><main class=\"content\"><h1>第${largeChapter}章</h1><p>" +
+                        "QA正文可读，第${largeChapter}章内容，山路、晨钟、石桥与薄雾构成稳定的自动化阅读样本。".repeat(8) +
+                        "</p></main></body></html>",
+                )
+                    .also { if (responseDelayMs > 0) it.setBodyDelay(responseDelayMs, TimeUnit.MILLISECONDS) }
+            }
+        }
+        else -> when (path) {
         "/robots.txt" -> html(200, "<html><body>User-agent: *<br/>Disallow:</body></html>")
         "/catalog" -> html(
             200,
@@ -78,6 +110,8 @@ class QaHttpsFixtureServer : Closeable {
         "/status/404" -> html(404, "missing")
         "/status/500" -> html(500, "server error")
         else -> html(404, "missing")
+        }
+        }
     }
 
     private fun deepSeekResponse(request: RecordedRequest): MockResponse {

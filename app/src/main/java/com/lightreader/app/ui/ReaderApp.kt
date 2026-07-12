@@ -10,10 +10,12 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -24,6 +26,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -57,6 +60,8 @@ fun ReaderApp(
         downloadBusy.active -> downloadBusy.toBusyState()
         else -> aiSettingsBusy
     }
+    val onCancelBusy: (() -> Unit)? =
+        if (libraryBusy.active && libraryBusy.cancelable) libraryViewModel::cancelImport else null
     val snackbar = remember { SnackbarHostState() }
     LocalizedApp(state.preferences.appLanguage) {
         LaunchedEffect(downloadViewModel) {
@@ -87,7 +92,11 @@ fun ReaderApp(
         BackHandler(enabled = state.screen !is AppScreen.Library) { viewModel.goBack() }
         LightReaderTheme(state.preferences.appSkin) {
             ApplyAppSystemBars(state.preferences.appSkin, state.screen is AppScreen.Reader)
-            Box(Modifier.fillMaxSize()) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background,
+            ) {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                 AnimatedContent(
                     targetState = state.screen,
                     transitionSpec = {
@@ -98,7 +107,7 @@ fun ReaderApp(
                             initialState is AppScreen.Reader && targetState is AppScreen.Library ->
                                 fadeIn(tween(120))
                                     .togetherWith(slideOutHorizontally(animationSpec = tween(130)) { it / 10 } + fadeOut(tween(120)))
-                            else -> fadeIn(tween(120)).togetherWith(fadeOut(tween(90)))
+                            else -> fadeIn(tween(100)).togetherWith(fadeOut(tween(70)))
                         }
                     },
                     label = "readerScreenTransition",
@@ -165,19 +174,33 @@ fun ReaderApp(
                                 Modifier.padding(horizontal = 26.dp, vertical = 22.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(36.dp),
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
+                                if (activeBusy.progress != null) {
+                                    LinearProgressIndicator(
+                                        progress = { activeBusy.progress.coerceIn(0f, 1f) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                } else {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(36.dp),
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
                                 Text(
                                     activeBusy.message?.asString() ?: stringResource(R.string.busy_default),
                                     Modifier.padding(top = 12.dp),
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
+                                onCancelBusy?.let { cancel ->
+                                    TextButton(onClick = cancel, modifier = Modifier.padding(top = 8.dp)) {
+                                        Text(stringResource(R.string.action_cancel))
+                                    }
+                                }
                             }
                         }
                     }
                 }
+            }
             }
         }
     }

@@ -74,10 +74,10 @@
     <string name="language_en">English</string>
     <string name="language_en_caption">轻阅内使用英文。</string>
 
-    <string name="library_web_import">从网页导入小说</string>
+    <string name="library_web_import">网页导入</string>
     <string name="library_app_settings">应用设置</string>
     <string name="library_change_skin">更换皮肤</string>
-    <string name="library_deepseek_settings">AI 下载设置</string>
+    <string name="library_deepseek_settings">AI 解析设置</string>
     <string name="library_duplicate_import_title">这本书已经在书架中</string>
     <string name="library_duplicate_import_body">《%1$s》与已导入文件内容相同。</string>
     <string name="library_duplicate_import_open">打开已有书籍</string>
@@ -136,7 +136,7 @@
         <item quantity="other">找到 %1$d 条结果</item>
     </plurals>
 
-    <string name="web_import_title">网页小说</string>
+    <string name="web_import_title">网页导入</string>
     <string name="web_import_url_label">目录页网址</string>
     <string name="web_import_url_error">仅支持 https:// 开头的公开目录页</string>
     <string name="web_import_parse">校验并解析</string>
@@ -171,7 +171,7 @@
     <string name="download_status_completed">已完成</string>
     <string name="download_status_canceled">已取消</string>
 
-    <string name="api_settings_title">DeepSeek 设置</string>
+    <string name="api_settings_title">AI 解析设置</string>
     <string name="api_settings_privacy">API Key 仅使用 Android Keystore 加密保存在本机，不写入数据库、日志或备份。</string>
     <string name="api_settings_configured">当前已配置 API Key</string>
     <string name="api_settings_not_configured">当前未配置 API Key</string>
@@ -199,6 +199,8 @@
     <string name="reader_footer_book_progress">全书 %1$d%%</string>
     <string name="reader_toc">目录</string>
     <string name="reader_night">夜间</string>
+    <string name="reader_night_on_description">夜间模式，已开启；点按切换到日间模式</string>
+    <string name="reader_night_off_description">夜间模式，已关闭；点按开启</string>
     <string name="reader_settings">设置</string>
     <string name="reader_settings_content_description">阅读设置</string>
     <string name="reader_auto">自动</string>
@@ -286,10 +288,15 @@
 
     <string name="busy_default">处理中</string>
     <string name="busy_importing_book">正在导入书籍</string>
+    <string name="busy_import_inspecting">正在检查文件…</string>
+    <string name="busy_import_reading">正在读取文件…</string>
+    <string name="busy_import_parsing">正在解析章节…</string>
+    <string name="busy_import_saving">正在保存书籍…</string>
     <string name="busy_checking_updates">正在检查更新</string>
     <string name="busy_testing_connection">正在测试连接</string>
     <string name="message_imported_book">已导入《%1$s》</string>
     <string name="message_import_failed">导入失败</string>
+    <string name="message_import_cancelled">已取消导入，未保留不完整书籍</string>
     <string name="message_import_file_unreadable">无法读取文件，请重新授权或选择文件</string>
     <string name="message_import_empty">文件没有可阅读内容</string>
     <string name="message_import_encoding">文件编码质量异常，请转换为 UTF-8 或 GB18030 后重试</string>

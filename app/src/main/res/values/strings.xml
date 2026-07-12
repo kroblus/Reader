@@ -74,10 +74,10 @@
     <string name="language_en">English</string>
     <string name="language_en_caption">Use English inside LightReader.</string>
 
-    <string name="library_web_import">Import novel from web</string>
+    <string name="library_web_import">Web import</string>
     <string name="library_app_settings">App settings</string>
     <string name="library_change_skin">Change skin</string>
-    <string name="library_deepseek_settings">AI download settings</string>
+    <string name="library_deepseek_settings">AI parsing settings</string>
     <string name="library_duplicate_import_title">This book is already on the shelf</string>
     <string name="library_duplicate_import_body">The content of "%1$s" matches an imported book.</string>
     <string name="library_duplicate_import_open">Open existing</string>
@@ -136,7 +136,7 @@
         <item quantity="other">Found %1$d results</item>
     </plurals>
 
-    <string name="web_import_title">Web novel</string>
+    <string name="web_import_title">Web import</string>
     <string name="web_import_url_label">Catalog page URL</string>
     <string name="web_import_url_error">Only public catalog pages beginning with https:// are supported.</string>
     <string name="web_import_parse">Validate and parse</string>
@@ -171,7 +171,7 @@
     <string name="download_status_completed">Completed</string>
     <string name="download_status_canceled">Canceled</string>
 
-    <string name="api_settings_title">DeepSeek settings</string>
+    <string name="api_settings_title">AI parsing settings</string>
     <string name="api_settings_privacy">API Key is encrypted on this device with Android Keystore. It is not written to the database, logs, or backups.</string>
     <string name="api_settings_configured">API Key is configured</string>
     <string name="api_settings_not_configured">API Key is not configured</string>
@@ -199,6 +199,8 @@
     <string name="reader_footer_book_progress">Book %1$d%%</string>
     <string name="reader_toc">Contents</string>
     <string name="reader_night">Night</string>
+    <string name="reader_night_on_description">Night mode, on. Tap to return to the daytime theme.</string>
+    <string name="reader_night_off_description">Night mode, off. Tap to turn it on.</string>
     <string name="reader_settings">Settings</string>
     <string name="reader_settings_content_description">Reading settings</string>
     <string name="reader_auto">Auto</string>
@@ -286,10 +288,15 @@
 
     <string name="busy_default">Processing</string>
     <string name="busy_importing_book">Importing book</string>
+    <string name="busy_import_inspecting">Checking file…</string>
+    <string name="busy_import_reading">Reading file…</string>
+    <string name="busy_import_parsing">Parsing chapters…</string>
+    <string name="busy_import_saving">Saving book…</string>
     <string name="busy_checking_updates">Checking updates</string>
     <string name="busy_testing_connection">Testing connection</string>
     <string name="message_imported_book">Imported \"%1$s\"</string>
     <string name="message_import_failed">Import failed</string>
+    <string name="message_import_cancelled">Import cancelled. No incomplete book was kept.</string>
     <string name="message_import_file_unreadable">Could not read the file. Re-authorize or choose it again.</string>
     <string name="message_import_empty">The file has no readable content</string>
     <string name="message_import_encoding">The file encoding looks damaged. Convert it to UTF-8 or GB18030 and retry.</string>

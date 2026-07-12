@@ -2,8 +2,11 @@ package com.lightreader.app.core.formats
 
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import com.lightreader.app.core.model.BookFormat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 import org.jsoup.parser.Parser
@@ -23,14 +26,34 @@ class EpubBookFormatPlugin : BookFormatPlugin {
         displayName: String,
         bookDirectory: File,
         options: BookImportOptions,
+        onProgress: ImportProgressCallback,
     ): ImportResult = withContext(Dispatchers.IO) {
         val epubFile = File(bookDirectory, "original.epub")
+        val totalBytes = sourceSize(context, source)
+        val importContext = currentCoroutineContext()
         context.contentResolver.openInputStream(source)?.use { input ->
-            epubFile.outputStream().buffered().use(input::copyTo)
+            epubFile.outputStream().buffered().use { output ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var copied = 0L
+                while (true) {
+                    importContext.ensureActive()
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    output.write(buffer, 0, read)
+                    copied += read
+                    val fraction = totalBytes?.takeIf { it > 0L }
+                        ?.let { .2f + .35f * (copied.toFloat() / it).coerceIn(0f, 1f) }
+                        ?: .2f
+                    onProgress(ImportProgress(ImportStage.READING, fraction, copied, totalBytes))
+                }
+            }
         } ?: error("无法读取 EPUB")
 
         ZipFile(epubFile).use { zip ->
-            zip.entries().asSequence().forEach { entry -> validatedPath(entry.name) }
+            zip.entries().asSequence().forEach { entry ->
+                importContext.ensureActive()
+                validatedPath(entry.name)
+            }
             if (zip.getEntry("META-INF/encryption.xml") != null) {
                 error("暂不支持加密或 DRM EPUB")
             }
@@ -48,7 +71,9 @@ class EpubBookFormatPlugin : BookFormatPlugin {
             }
             val chapterDirectory = File(bookDirectory, "chapters").apply { mkdirs() }
             val chapters = mutableListOf<ImportedChapter>()
-            opf.getElementsByTag("itemref").forEachIndexed { index, itemRef ->
+            val spineItems = opf.getElementsByTag("itemref")
+            spineItems.forEachIndexed { index, itemRef ->
+                importContext.ensureActive()
                 val path = manifest[itemRef.attr("idref")] ?: return@forEachIndexed
                 val html = runCatching { readEntry(zip, path) }.getOrNull() ?: return@forEachIndexed
                 val document = Jsoup.parse(html)
@@ -63,6 +88,14 @@ class EpubBookFormatPlugin : BookFormatPlugin {
                     file.writeText(text, StandardCharsets.UTF_8)
                     chapters += ImportedChapter(chapterTitle, file, text.length)
                 }
+                onProgress(
+                    ImportProgress(
+                        ImportStage.PARSING,
+                        .55f + .35f * ((index + 1f) / spineItems.size.coerceAtLeast(1)),
+                        (index + 1).toLong(),
+                        spineItems.size.toLong(),
+                    ),
+                )
             }
             if (chapters.isEmpty()) error("EPUB 没有可阅读的正文")
             ImportResult(bookTitle, author, BookFormat.EPUB, chapters)
@@ -109,6 +142,13 @@ class EpubBookFormatPlugin : BookFormatPlugin {
             "EPUB 包含不安全路径"
         }
         return normalized
+    }
+
+    private fun sourceSize(context: Context, source: Uri): Long? {
+        context.contentResolver.query(source, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst() && !cursor.isNull(0)) return cursor.getLong(0).takeIf { it >= 0 }
+        }
+        return null
     }
 
     private companion object { const val MAX_ENTRY_BYTES = 16L * 1024 * 1024 }

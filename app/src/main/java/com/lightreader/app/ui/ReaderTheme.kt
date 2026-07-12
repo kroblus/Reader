@@ -15,6 +15,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -56,32 +57,32 @@ val AppSkinPalette.weakInk: Color get() = mutedInk.copy(alpha = .82f)
 
 fun AppSkin.palette(): AppSkinPalette = when (this) {
     AppSkin.MINT -> AppSkinPalette(
-        primary = Color(0xFF62866F), onPrimary = Color.White,
+        primary = Color(0xFF4F755E), onPrimary = Color.White,
         background = Color(0xFFF7FBF7), surface = Color(0xFFFCFEFC),
         soft = Color(0xFFE3EFE6), accent = Color(0xFFB9D5C0),
-        ink = Color(0xFF26332B), mutedInk = Color(0xFF66756B),
+        ink = Color(0xFF26332B), mutedInk = Color(0xFF55655B),
     )
     AppSkin.OCEAN -> AppSkinPalette(
-        primary = Color(0xFF668EAC), onPrimary = Color.White,
+        primary = Color(0xFF4F7693), onPrimary = Color.White,
         background = Color(0xFFF7FAFD), surface = Color(0xFFFCFDFE),
         soft = Color(0xFFE1ECF5), accent = Color(0xFFB8D2E4),
-        ink = Color(0xFF25333D), mutedInk = Color(0xFF657581),
+        ink = Color(0xFF25333D), mutedInk = Color(0xFF536571),
     )
     AppSkin.APRICOT -> AppSkinPalette(
-        primary = Color(0xFFB98260), onPrimary = Color.White,
+        primary = Color(0xFF965F43), onPrimary = Color.White,
         background = Color(0xFFFFFAF4), surface = Color(0xFFFFFDF9),
         soft = Color(0xFFF6E6D7), accent = Color(0xFFEBC8AA),
-        ink = Color(0xFF3A302A), mutedInk = Color(0xFF7A6B61),
+        ink = Color(0xFF3A302A), mutedInk = Color(0xFF68584F),
     )
     AppSkin.SAKURA -> AppSkinPalette(
-        primary = Color(0xFFB97F8B), onPrimary = Color.White,
+        primary = Color(0xFF915D69), onPrimary = Color.White,
         background = Color(0xFFFFF9FA), surface = Color(0xFFFFFDFD),
         soft = Color(0xFFF5E4E8), accent = Color(0xFFE7BEC7),
-        ink = Color(0xFF392D30), mutedInk = Color(0xFF79696D),
+        ink = Color(0xFF392D30), mutedInk = Color(0xFF67575B),
     )
 }
 
-private fun colors(skin: AppSkin) = skin.palette().let { palette ->
+internal fun appColorScheme(skin: AppSkin) = skin.palette().let { palette ->
     lightColorScheme(
         primary = palette.primary,
         onPrimary = palette.onPrimary,
@@ -101,8 +102,24 @@ private fun colors(skin: AppSkin) = skin.palette().let { palette ->
         onSurface = palette.ink,
         surfaceVariant = palette.soft,
         onSurfaceVariant = palette.mutedInk,
+        surfaceTint = palette.primary,
+        inverseSurface = palette.ink,
+        inverseOnSurface = palette.surface,
+        inversePrimary = palette.accent,
+        surfaceDim = palette.soft,
+        surfaceBright = palette.surface,
+        surfaceContainerLowest = Color.White,
+        surfaceContainerLow = palette.surface,
+        surfaceContainer = palette.soft.copy(alpha = .42f).compositeOver(palette.surface),
+        surfaceContainerHigh = palette.soft.copy(alpha = .62f).compositeOver(palette.surface),
+        surfaceContainerHighest = palette.soft.copy(alpha = .82f).compositeOver(palette.surface),
+        error = Color(0xFF9F3F3F),
+        onError = Color.White,
+        errorContainer = Color(0xFFF6DEDC),
+        onErrorContainer = Color(0xFF521C1C),
         outline = palette.primary.copy(alpha = .38f),
         outlineVariant = palette.primary.copy(alpha = .16f),
+        scrim = Color.Black,
     )
 }
 
@@ -128,7 +145,7 @@ private val ReaderShapes = Shapes(
 @Composable
 fun LightReaderTheme(skin: AppSkin, content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = colors(skin),
+        colorScheme = appColorScheme(skin),
         typography = ReaderTypography,
         shapes = ReaderShapes,
         content = content,

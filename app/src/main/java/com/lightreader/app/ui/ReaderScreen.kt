@@ -340,9 +340,10 @@ fun ReaderScreen(
                                 )
                             }
                         } else Modifier
-                        val pageEffect = Modifier.graphicsLayer {
-                            val pageOffset = (pagerState.currentPage - pagerPageIndex) + pagerState.currentPageOffsetFraction
-                            when (preferences.pageTurnMode) {
+                        val pageEffect = when (preferences.pageTurnMode) {
+                            PageTurnMode.SIMULATION, PageTurnMode.SLIDE -> Modifier.graphicsLayer {
+                                val pageOffset = (pagerState.currentPage - pagerPageIndex) + pagerState.currentPageOffsetFraction
+                                when (preferences.pageTurnMode) {
                                 PageTurnMode.SIMULATION -> {
                                     rotationY = (-pageOffset * 22f).coerceIn(-22f, 22f)
                                     transformOrigin = TransformOrigin(if (pageOffset < 0f) 0f else 1f, .5f)
@@ -352,7 +353,9 @@ fun ReaderScreen(
                                 }
                                 PageTurnMode.SLIDE -> alpha = (1f - abs(pageOffset) * .08f).coerceIn(.9f, 1f)
                                 else -> Unit
+                                }
                             }
+                            else -> Modifier
                         }
                         val boundarySwipe = if (preferences.pageTurnMode == PageTurnMode.VERTICAL && !overlayVisible) {
                             Modifier.pointerInput(
@@ -424,8 +427,8 @@ fun ReaderScreen(
         AnimatedVisibility(
             visible = state.toolbarVisible,
             modifier = Modifier.align(Alignment.TopCenter),
-            enter = slideInVertically(animationSpec = tween(140)) { -it } + fadeIn(tween(120)),
-            exit = slideOutVertically(animationSpec = tween(120)) { -it } + fadeOut(tween(100)),
+            enter = slideInVertically(animationSpec = tween(140)) { -it },
+            exit = slideOutVertically(animationSpec = tween(120)) { -it },
         ) {
             Row(
                 Modifier
@@ -451,9 +454,9 @@ fun ReaderScreen(
                     ),
                 )
                 IconButton(
-                    onClick = { state.book?.let { viewModel.navigate(AppScreen.Search(it.id)) } },
+                    onClick = { state.book?.let { viewModel.openSearch(it.id) } },
                     enabled = state.book != null && !state.loading,
-                    modifier = Modifier.size(40.dp),
+                    modifier = Modifier.size(ReaderUiTokens.iconTouchTarget),
                 ) { Icon(Icons.Outlined.Search, stringResource(R.string.action_search), tint = foreground) }
                 val currentPage = state.pages.getOrNull(state.pageIndex)
                 val isBookmarked = state.currentPageBookmarked()
@@ -494,8 +497,8 @@ fun ReaderScreen(
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().wrapContentHeight()) {
             AnimatedVisibility(
                 visible = state.toolbarVisible && state.settingsVisible && !overlayVisible,
-                enter = slideInVertically(animationSpec = tween(150)) { it / 2 } + fadeIn(tween(120)),
-                exit = slideOutVertically(animationSpec = tween(130)) { it / 2 } + fadeOut(tween(100)),
+                enter = slideInVertically(animationSpec = tween(150)) { it / 2 },
+                exit = slideOutVertically(animationSpec = tween(130)) { it / 2 },
             ) {
                 ReaderSettingsDock(
                     preferences = preferences,
@@ -509,8 +512,8 @@ fun ReaderScreen(
 
             AnimatedVisibility(
                 visible = state.toolbarVisible && !overlayVisible,
-                enter = slideInVertically(animationSpec = tween(140)) { it } + fadeIn(tween(120)),
-                exit = slideOutVertically(animationSpec = tween(120)) { it } + fadeOut(tween(100)),
+                enter = slideInVertically(animationSpec = tween(140)) { it },
+                exit = slideOutVertically(animationSpec = tween(120)) { it },
             ) {
                 ReaderBottomControls(
                     state = state,
@@ -766,6 +769,10 @@ private fun ReaderBottomControls(
                     stringResource(R.string.reader_night),
                     foreground,
                     settingsViewModel::toggleNightMode,
+                    contentDescription = stringResource(
+                        if (preferences.theme == ReaderTheme.NIGHT) R.string.reader_night_on_description
+                        else R.string.reader_night_off_description,
+                    ),
                     selected = preferences.theme == ReaderTheme.NIGHT,
                 )
                 ReaderAction(
@@ -807,13 +814,13 @@ private fun ReaderAction(
     val stateText = stringResource(if (selected) R.string.state_selected else R.string.state_not_selected)
     val itemColor = if (selected) tint else tint.copy(alpha = .86f)
     Column(
-        modifier = Modifier.width(54.dp),
+        modifier = Modifier.width(56.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         IconButton(
             onClick = onClick,
             modifier = Modifier
-                .size(34.dp)
+                .size(ReaderUiTokens.iconTouchTarget)
                 .clip(CircleShape)
                 .background(if (selected) tint.copy(alpha = .18f) else Color.Transparent)
                 .semantics {

@@ -9,6 +9,9 @@ import com.lightreader.app.core.formats.BookImportOptions
 import com.lightreader.app.core.formats.BookFormatPlugin
 import com.lightreader.app.core.formats.EpubBookFormatPlugin
 import com.lightreader.app.core.formats.ImportedChapter
+import com.lightreader.app.core.formats.ImportProgress
+import com.lightreader.app.core.formats.ImportProgressCallback
+import com.lightreader.app.core.formats.ImportStage
 import com.lightreader.app.core.formats.TxtBookFormatPlugin
 import com.lightreader.app.core.model.Book
 import com.lightreader.app.core.model.BookFormat
@@ -54,13 +57,16 @@ class BookRepository(
         }
     }
 
-    suspend fun inspectImport(uri: Uri): BookImportCandidate = withContext(Dispatchers.IO) {
+    suspend fun inspectImport(
+        uri: Uri,
+        onProgress: ImportProgressCallback = {},
+    ): BookImportCandidate = withContext(Dispatchers.IO) {
         val name = displayName(uri)
         val mime = context.contentResolver.getType(uri)
         if (plugins.none { it.supports(name, mime) }) {
             throw BookImportException(BookImportFailure.UNSUPPORTED_FORMAT, "仅支持 TXT 和无 DRM EPUB")
         }
-        val fingerprint = sourceFingerprint(uri)
+        val fingerprint = sourceFingerprint(uri, onProgress)
         BookImportCandidate(
             uri = uri,
             displayName = name,
@@ -70,22 +76,28 @@ class BookRepository(
         )
     }
 
-    suspend fun import(uri: Uri, options: BookImportOptions = BookImportOptions()): Book {
-        val candidate = inspectImport(uri)
+    suspend fun import(
+        uri: Uri,
+        options: BookImportOptions = BookImportOptions(),
+        onProgress: ImportProgressCallback = {},
+    ): Book {
+        val candidate = inspectImport(uri, onProgress)
         if (candidate.existingBook != null) throw DuplicateBookImportException(candidate.existingBook)
-        return import(candidate, options)
+        return import(candidate, options, onProgress)
     }
 
     suspend fun import(
         candidate: BookImportCandidate,
         options: BookImportOptions = BookImportOptions(),
+        onProgress: ImportProgressCallback = {},
     ): Book = withContext(Dispatchers.IO) {
         val plugin = plugins.firstOrNull { it.supports(candidate.displayName, candidate.mimeType) }
             ?: throw BookImportException(BookImportFailure.UNSUPPORTED_FORMAT, "仅支持 TXT 和无 DRM EPUB")
         val id = UUID.randomUUID().toString()
         val directory = File(context.filesDir, "books/$id").apply { mkdirs() }
         try {
-            val result = plugin.import(context, candidate.uri, candidate.displayName, directory, options)
+            val result = plugin.import(context, candidate.uri, candidate.displayName, directory, options, onProgress)
+            onProgress(ImportProgress(ImportStage.SAVING, .94f, result.chapters.size.toLong(), result.chapters.size.toLong()))
             val now = System.currentTimeMillis()
             val book = BookEntity(
                 id = id,
@@ -111,10 +123,19 @@ class BookRepository(
                 )
             }
             dao.insertBookWithChapters(book, chapterRows)
+            onProgress(ImportProgress(ImportStage.SAVING, 1f, chapterRows.size.toLong(), chapterRows.size.toLong()))
             book.toModel()
         } catch (error: Throwable) {
             directory.deleteRecursively()
             throw error
+        }
+    }
+
+    suspend fun cleanupOrphanedBookDirectories() = withContext(Dispatchers.IO) {
+        val referenced = dao.bookRootPaths().map { File(it).canonicalPath }.toSet()
+        val booksRoot = File(context.filesDir, "books")
+        booksRoot.listFiles()?.filter(File::isDirectory)?.forEach { directory ->
+            if (directory.canonicalPath !in referenced) directory.deleteRecursively()
         }
     }
 
@@ -337,17 +358,31 @@ class BookRepository(
         return uri.lastPathSegment ?: "未命名小说.txt"
     }
 
-    private fun sourceFingerprint(uri: Uri): String {
+    private fun sourceFingerprint(uri: Uri, onProgress: ImportProgressCallback): String {
         val digest = MessageDigest.getInstance("SHA-256")
         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        val total = sourceSize(uri)
+        var processed = 0L
+        onProgress(ImportProgress(ImportStage.INSPECTING, 0f, 0, total))
         context.contentResolver.openInputStream(uri)?.use { input ->
             while (true) {
                 val read = input.read(buffer)
                 if (read < 0) break
                 digest.update(buffer, 0, read)
+                processed += read
+                val fraction = if (total != null && total > 0L) processed.toFloat() / total else 0f
+                onProgress(ImportProgress(ImportStage.INSPECTING, fraction.coerceIn(0f, 1f) * .2f, processed, total))
             }
         } ?: throw BookImportException(BookImportFailure.FILE_UNREADABLE, "无法读取文件")
+        onProgress(ImportProgress(ImportStage.INSPECTING, .2f, processed, total))
         return digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
+    }
+
+    private fun sourceSize(uri: Uri): Long? {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst() && !cursor.isNull(0)) return cursor.getLong(0).takeIf { it >= 0 }
+        }
+        return null
     }
 }
 

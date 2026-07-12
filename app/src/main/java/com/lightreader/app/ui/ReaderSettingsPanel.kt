@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -277,14 +279,50 @@ fun ReaderSettingsDetailScreen(
         },
     ) { padding ->
         CompositionLocalProvider(LocalContentColor provides foreground) {
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .padding(padding)
+            BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
+                val wide = maxWidth >= 720.dp
+                val contentModifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .widthIn(max = 1040.dp)
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 18.dp, vertical = 12.dp),
-            ) {
-                DetailSectionTitle(stringResource(R.string.settings_layout))
+                    .padding(horizontal = 18.dp, vertical = 12.dp)
+                if (wide) {
+                    Row(contentModifier, horizontalArrangement = Arrangement.spacedBy(30.dp)) {
+                        ReaderLayoutDetail(
+                            preferences, layout, secondary, chipColors, onChange,
+                            Modifier.weight(1f),
+                        )
+                        ReaderBehaviorDetail(
+                            preferences, autoReading, secondary, chipColors, onChange,
+                            onToggleAutoReading, Modifier.weight(1f),
+                        )
+                    }
+                } else {
+                    Column(contentModifier) {
+                        ReaderLayoutDetail(preferences, layout, secondary, chipColors, onChange)
+                        ReaderBehaviorDetail(
+                            preferences, autoReading, secondary, chipColors, onChange, onToggleAutoReading,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun ReaderLayoutDetail(
+    preferences: ReaderPreferences,
+    layout: com.lightreader.app.core.reader.ReaderLayoutValues,
+    secondary: Color,
+    chipColors: androidx.compose.material3.SelectableChipColors,
+    onChange: (ReaderPreferences) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier) {
+        DetailSectionTitle(stringResource(R.string.settings_layout))
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -354,6 +392,21 @@ fun ReaderSettingsDetailScreen(
                     )
                 }
 
+    }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun ReaderBehaviorDetail(
+    preferences: ReaderPreferences,
+    autoReading: Boolean,
+    secondary: Color,
+    chipColors: androidx.compose.material3.SelectableChipColors,
+    onChange: (ReaderPreferences) -> Unit,
+    onToggleAutoReading: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier) {
                 DetailSectionTitle(stringResource(R.string.settings_section_display))
                 DetailSectionTitle(stringResource(R.string.settings_page_turn))
                 FlowRow(
@@ -422,15 +475,20 @@ fun ReaderSettingsDetailScreen(
                     ReaderTheme.entries.forEach { theme ->
                         FilterChip(
                             selected = preferences.theme == theme,
-                            onClick = { onChange(preferences.copy(theme = theme)) },
+                            onClick = {
+                                onChange(
+                                    preferences.copy(
+                                        theme = theme,
+                                        lastNonNightTheme = if (theme == ReaderTheme.NIGHT) preferences.lastNonNightTheme else theme,
+                                    ),
+                                )
+                            },
                             label = { Text(theme.label()) },
                             shape = RoundedCornerShape(8.dp),
                             colors = chipColors,
                         )
                     }
                 }
-            }
-        }
     }
 }
 
@@ -470,7 +528,7 @@ private fun SettingsPill(
     val stateText = stringResource(if (selected) R.string.state_selected else R.string.state_not_selected)
     Box(
         modifier
-            .heightIn(min = 32.dp)
+            .heightIn(min = 42.dp)
             .clip(RoundedCornerShape(8.dp))
             .border(
                 if (selected) 2.dp else 1.dp,

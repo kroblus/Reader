@@ -77,17 +77,17 @@ data class ReaderLayoutValues(
 )
 
 fun ReaderPreferences.palette(): ReaderPalette = when (theme) {
-    ReaderTheme.EYE_CARE -> ReaderPalette(0xFFDDEBD2, 0xFF1F2A23, 0xFF5F8068, 0xE6F4FAF0)
-    ReaderTheme.SEPIA -> ReaderPalette(0xFFF5ECD8, 0xFF2B2B2B, 0xFF8A7A5C, 0xE6EDE1C9)
-    ReaderTheme.LIGHT_GRAY -> ReaderPalette(0xFFECEDE7, 0xFF2B2B2B, 0xFF777777, 0xE6E2E4DD)
-    ReaderTheme.WARM_BROWN -> ReaderPalette(0xFFE5BE8D, 0xFF332719, 0xFF7C654A, 0xE6D7AC78)
-    ReaderTheme.FROST_BLUE -> ReaderPalette(0xFFE8F3FA, 0xFF1F2E36, 0xFF6F8794, 0xE6D7E9F2)
-    ReaderTheme.SAKURA_PINK -> ReaderPalette(0xFFF7E8EA, 0xFF342629, 0xFF9A757B, 0xE6F0D8DC)
-    ReaderTheme.NIGHT -> ReaderPalette(0xFF111713, 0xFF7F8A78, 0xFF586356, 0xE61B251E)
+    ReaderTheme.EYE_CARE -> ReaderPalette(0xFFDDEBD2, 0xFF1F2A23, 0xFF5F8068, 0xFAF4FAF0)
+    ReaderTheme.SEPIA -> ReaderPalette(0xFFF5ECD8, 0xFF2B2B2B, 0xFF8A7A5C, 0xFAEDE1C9)
+    ReaderTheme.LIGHT_GRAY -> ReaderPalette(0xFFECEDE7, 0xFF2B2B2B, 0xFF777777, 0xFAE2E4DD)
+    ReaderTheme.WARM_BROWN -> ReaderPalette(0xFFE5BE8D, 0xFF332719, 0xFF7C654A, 0xFAD7AC78)
+    ReaderTheme.FROST_BLUE -> ReaderPalette(0xFFE8F3FA, 0xFF1F2E36, 0xFF6F8794, 0xFAD7E9F2)
+    ReaderTheme.SAKURA_PINK -> ReaderPalette(0xFFF7E8EA, 0xFF342629, 0xFF9A757B, 0xFAF0D8DC)
+    ReaderTheme.NIGHT -> ReaderPalette(0xFF111713, 0xFFB7C2B0, 0xFF7C8979, 0xFA1B251E)
     ReaderTheme.CUSTOM -> ReaderPalette(
         customBackground,
         customForeground,
         customSecondary,
-        (customBackground and 0x00FFFFFFFF) or 0xE600000000,
+        (customBackground and 0x00FFFFFFFF) or 0xFA000000,
     )
 }

@@ -24,6 +24,19 @@ data class BookImportOptions(
     val cleanTxtNoise: Boolean = true,
 )
 
+enum class ImportStage { INSPECTING, READING, PARSING, SAVING }
+
+data class ImportProgress(
+    val stage: ImportStage,
+    val fraction: Float,
+    val processed: Long = 0,
+    val total: Long? = null,
+) {
+    val normalizedFraction: Float get() = fraction.coerceIn(0f, 1f)
+}
+
+typealias ImportProgressCallback = (ImportProgress) -> Unit
+
 enum class BookImportFailure {
     FILE_UNREADABLE,
     EMPTY_CONTENT,
@@ -45,6 +58,7 @@ interface BookFormatPlugin {
         displayName: String,
         bookDirectory: File,
         options: BookImportOptions = BookImportOptions(),
+        onProgress: ImportProgressCallback = {},
     ): ImportResult
 }
 

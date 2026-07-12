@@ -38,6 +38,7 @@ class WebDownloadWorker(
             removeSelectors = container.json.decodeFromString(task.removeSelectorsJson),
         )
         val appendTargetBookId = task.importedBookId?.takeIf { it != taskId }
+        val runToCompletionForTest = inputData.getBoolean(RUN_TO_COMPLETION_FOR_TEST, false)
         val rootDirectory = appendTargetBookId
             ?.let { dao.book(it)?.rootPath?.let(::File) ?: error("Target web book was not found.") }
             ?: File(applicationContext.filesDir, "downloads/$taskId").apply { mkdirs() }
@@ -51,7 +52,9 @@ class WebDownloadWorker(
         for (chapter in chapters) {
             if (isStopped || dao.downloadTask(taskId)?.status in TERMINAL_STOP_STATUSES) return Result.success()
             if (chapter.status == "COMPLETED" && chapter.contentPath?.let(::File)?.exists() == true) continue
-            if (processedInBatch >= MAX_CHAPTERS_PER_BATCH || System.currentTimeMillis() - batchStartedAt >= MAX_BATCH_DURATION_MS) {
+            if (!runToCompletionForTest &&
+                (processedInBatch >= MAX_CHAPTERS_PER_BATCH || System.currentTimeMillis() - batchStartedAt >= MAX_BATCH_DURATION_MS)
+            ) {
                 dao.updateDownloadTask(task.copy(status = "QUEUED", updatedAt = System.currentTimeMillis()))
                 DownloadWorkScheduler.enqueue(applicationContext, taskId, append = true)
                 return Result.success()
@@ -72,7 +75,7 @@ class WebDownloadWorker(
                 dao.updateDownloadTask(task)
                 updateForeground(task, completed)
                 processedInBatch++
-                delay(CHAPTER_REQUEST_DELAY_MS)
+                if (!runToCompletionForTest) delay(CHAPTER_REQUEST_DELAY_MS)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
@@ -141,6 +144,7 @@ class WebDownloadWorker(
 
     companion object {
         const val TASK_ID = "task_id"
+        const val RUN_TO_COMPLETION_FOR_TEST = "run_to_completion_for_test"
         private const val NOTIFICATION_CHANNEL_ID = "web_book_downloads"
         private const val NOTIFICATION_CHANNEL_NAME = "Novel downloads"
         private const val MAX_CHAPTERS_PER_BATCH = 8

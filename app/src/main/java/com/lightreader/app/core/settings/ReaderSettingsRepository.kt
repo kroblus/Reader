@@ -16,11 +16,16 @@ import com.lightreader.app.core.model.ReaderLayoutPreset
 import com.lightreader.app.core.model.ReaderPreferences
 import com.lightreader.app.core.model.ReaderTheme
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 private val Context.readerDataStore by preferencesDataStore("reader_preferences")
 
 class ReaderSettingsRepository(private val context: Context) {
+    private val updateMutex = Mutex()
+
     val preferences: Flow<ReaderPreferences> = context.readerDataStore.data.map { values ->
         val usesModernLayoutDefaults = (values[LAYOUT_DEFAULTS_VERSION] ?: 0) >= CURRENT_LAYOUT_DEFAULTS_VERSION
         ReaderPreferences(
@@ -84,7 +89,18 @@ class ReaderSettingsRepository(private val context: Context) {
         )
     }
 
-    suspend fun save(value: ReaderPreferences) {
+    suspend fun save(value: ReaderPreferences) = updateMutex.withLock {
+        write(value)
+    }
+
+    /** Serializes read-modify-write changes so UI actions never transform a stale snapshot. */
+    suspend fun update(transform: (ReaderPreferences) -> ReaderPreferences): ReaderPreferences = updateMutex.withLock {
+        val updated = transform(preferences.first())
+        write(updated)
+        updated
+    }
+
+    private suspend fun write(value: ReaderPreferences) {
         context.readerDataStore.edit { values ->
             values[APP_SKIN] = value.appSkin.name
             values[APP_LANGUAGE] = value.appLanguage.name
