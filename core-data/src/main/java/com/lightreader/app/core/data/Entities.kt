@@ -88,7 +88,23 @@ data class SearchChunkEntity(
     @ColumnInfo(name = "rowid") val rowId: Int = 0,
     val bookId: String,
     val chapterId: String,
+    val chunkStart: Int,
     val content: String,
+)
+
+@Entity(
+    tableName = "search_index_state",
+    foreignKeys = [ForeignKey(
+        entity = BookEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["bookId"],
+        onDelete = ForeignKey.CASCADE,
+    )],
+)
+data class SearchIndexStateEntity(
+    @PrimaryKey val bookId: String,
+    val indexedUtf16Chars: Long,
+    val indexVersion: Int,
 )
 
 @Entity(tableName = "download_tasks")
@@ -136,5 +152,6 @@ data class DownloadChapterEntity(
 data class SearchRow(
     val chapterId: String,
     val chapterTitle: String,
-    val excerpt: String,
+    val chunkStart: Int,
+    val content: String,
 )

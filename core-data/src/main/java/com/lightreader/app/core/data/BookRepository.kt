@@ -20,6 +20,8 @@ import com.lightreader.app.core.model.Chapter
 import com.lightreader.app.core.model.ReadingProgress
 import com.lightreader.app.core.model.SearchResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
@@ -28,6 +30,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
+import com.lightreader.app.core.reader.UnicodeTextBoundary
 
 data class BookImportCandidate(
     val uri: Uri,
@@ -223,7 +226,7 @@ class BookRepository(
                 totalChars = book.totalChars + newChapters.sumOf { it.charCount.toLong() },
             ),
         )
-        dao.deleteSearchChunks(bookId)
+        dao.clearSearchIndex(bookId)
         rows.size
     }
 
@@ -275,40 +278,43 @@ class BookRepository(
     suspend fun deleteBookmark(id: String) = dao.deleteBookmark(id)
 
     suspend fun search(bookId: String, query: String): List<SearchResult> {
-        val tokens = query.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+        val normalizedQuery = query.trim()
+        val tokens = normalizedQuery.split(Regex("\\s+")).filter { it.isNotBlank() }
         if (tokens.isEmpty()) return emptyList()
         ensureSearchIndex(bookId)
-        val fts = tokens.joinToString(" AND ") { "\"${it.replace("\"", "\"\"")}\"*" }
-        val nextSearchOffset = mutableMapOf<Long, Int>()
-        val chapterText = mutableMapOf<Long, String>()
-        val primaryToken = tokens.first()
-        val indexedResults = dao.search(bookId, fts).map {
-            val chapterId = it.chapterId.toLong()
-            val text = chapterText.getOrPut(chapterId) {
-                dao.chapter(chapterId)?.let { chapter -> File(chapter.contentPath).readText() }.orEmpty()
-            }
-            val fromIndex = nextSearchOffset[chapterId] ?: 0
-            val matchIndex = text.indexOf(primaryToken, fromIndex, ignoreCase = true)
-                .takeIf { index -> index >= 0 }
-                ?: text.indexOf(primaryToken, ignoreCase = true).coerceAtLeast(0)
-            nextSearchOffset[chapterId] = (matchIndex + primaryToken.length).coerceAtMost(text.length)
-            SearchResult(chapterId, it.chapterTitle, it.excerpt, matchIndex)
+        if (normalizedQuery.length > SEARCH_CHUNK_OVERLAP || normalizedQuery.any(::isCjkCharacter)) {
+            return exactSearch(bookId, normalizedQuery)
         }
-        return indexedResults.ifEmpty { fallbackSearch(bookId, query.trim()) }
+        val fts = tokens.joinToString(" AND ") { "\"${it.replace("\"", "\"\"")}\"*" }
+        val candidateChapterIds = dao.search(bookId, fts).mapTo(linkedSetOf()) { it.chapterId.toLong() }
+        if (candidateChapterIds.isEmpty()) return exactSearch(bookId, normalizedQuery)
+        val indexedResults = exactSearch(bookId, normalizedQuery, candidateChapterIds)
+        return indexedResults.ifEmpty { exactSearch(bookId, normalizedQuery) }
     }
 
-    private suspend fun fallbackSearch(bookId: String, query: String): List<SearchResult> = withContext(Dispatchers.IO) {
+    private suspend fun exactSearch(
+        bookId: String,
+        query: String,
+        candidateChapterIds: Set<Long>? = null,
+    ): List<SearchResult> = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext emptyList()
         val results = ArrayList<SearchResult>()
         dao.chapters(bookId).forEach { chapter ->
             if (results.size >= 100) return@forEach
+            if (candidateChapterIds != null && chapter.id !in candidateChapterIds) return@forEach
+            currentCoroutineContext().ensureActive()
             val text = File(chapter.contentPath).readText()
             var fromIndex = 0
             while (fromIndex < text.length && results.size < 100) {
+                currentCoroutineContext().ensureActive()
                 val match = text.indexOf(query, fromIndex, ignoreCase = true)
                 if (match < 0) break
-                val excerptStart = (match - 28).coerceAtLeast(0)
-                val excerptEnd = (match + query.length + 42).coerceAtMost(text.length)
+                val excerptStart = UnicodeTextBoundary.previousBoundary(text, (match - 28).coerceAtLeast(0))
+                val excerptEnd = if (match + query.length + 42 >= text.length) {
+                    text.length
+                } else {
+                    UnicodeTextBoundary.safeEnd(text, match + query.length, match + query.length + 42)
+                }
                 val excerpt = buildString {
                     if (excerptStart > 0) append('…')
                     append(text.substring(excerptStart, match))
@@ -325,7 +331,7 @@ class BookRepository(
 
     suspend fun deleteBook(id: String) = withContext(Dispatchers.IO) {
         val root = dao.book(id)?.rootPath
-        dao.deleteSearchChunks(id)
+        dao.clearSearchIndex(id)
         dao.deleteBookRow(id)
         dao.deleteDownloadTask(id)
         root?.let { File(it).deleteRecursively() }
@@ -334,18 +340,43 @@ class BookRepository(
     private suspend fun ensureSearchIndex(bookId: String) = searchIndexMutex.withLock {
         withContext(Dispatchers.IO) {
             val book = dao.book(bookId) ?: error("书籍不存在")
-            if (dao.indexedCharacterCount(bookId) == book.totalChars) return@withContext
-            dao.deleteSearchChunks(bookId)
+            val existingState = dao.searchIndexState(bookId)
+            if (existingState?.indexedUtf16Chars == book.totalChars && existingState.indexVersion == SEARCH_INDEX_VERSION) {
+                return@withContext
+            }
             try {
+                val rows = ArrayList<SearchChunkEntity>()
+                var indexedUtf16Chars = 0L
                 dao.chapters(bookId).forEach { chapter ->
-                    val rows = File(chapter.contentPath).readText().chunked(4_000).map { chunk ->
-                        SearchChunkEntity(bookId = bookId, chapterId = chapter.id.toString(), content = chunk)
+                    currentCoroutineContext().ensureActive()
+                    val text = File(chapter.contentPath).readText()
+                    indexedUtf16Chars += text.length
+                    var start = 0
+                    while (start < text.length) {
+                        val end = UnicodeTextBoundary.safeEnd(text, start, (start + SEARCH_CHUNK_SIZE).coerceAtMost(text.length))
+                        rows += SearchChunkEntity(
+                            bookId = bookId,
+                            chapterId = chapter.id.toString(),
+                            chunkStart = start,
+                            content = text.substring(start, end),
+                        )
+                        if (end == text.length) break
+                        val overlappedStart = UnicodeTextBoundary.previousBoundary(
+                            text,
+                            (end - SEARCH_CHUNK_OVERLAP).coerceAtLeast(start + 1),
+                            start,
+                        )
+                        start = overlappedStart.takeIf { it > start } ?: end
                     }
-                    rows.chunked(50).forEach { dao.insertSearchChunks(it) }
                 }
-                check(dao.indexedCharacterCount(bookId) == book.totalChars) { "全文索引不完整，请重试" }
+                check(indexedUtf16Chars == book.totalChars) { "全文索引不完整，请重试" }
+                dao.replaceSearchIndex(
+                    bookId,
+                    rows,
+                    SearchIndexStateEntity(bookId, indexedUtf16Chars, SEARCH_INDEX_VERSION),
+                )
             } catch (error: Throwable) {
-                dao.deleteSearchChunks(bookId)
+                dao.clearSearchIndex(bookId)
                 throw error
             }
         }
@@ -383,6 +414,15 @@ class BookRepository(
             if (cursor.moveToFirst() && !cursor.isNull(0)) return cursor.getLong(0).takeIf { it >= 0 }
         }
         return null
+    }
+
+    private fun isCjkCharacter(character: Char): Boolean =
+        character.code in 0x3400..0x9FFF || character.code in 0xF900..0xFAFF
+
+    private companion object {
+        const val SEARCH_CHUNK_SIZE = 4_000
+        const val SEARCH_CHUNK_OVERLAP = 256
+        const val SEARCH_INDEX_VERSION = 1
     }
 }
 

@@ -345,4 +345,5 @@
     <string name="dom_https_only">Only HTTPS pages are loaded.</string>
     <string name="dom_loading">Loading %1$s</string>
     <string name="dom_body_preview">Body text preview</string>
+    <string name="message_import_content_limit">The book is too large or complex to import safely.</string>
 </resources>

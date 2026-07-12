@@ -51,5 +51,15 @@ class TxtBookFormatPluginTest {
         assertFalse(TxtBookFormatPlugin.CHAPTER_PATTERN.matches("他说第一章的故事并没有结束。"))
     }
 
+    @Test
+    fun utf8WinsOverBomlessUtf16HeuristicsAndAllowsAnIncompleteSampleTail() {
+        val asciiAlternating = ("x ".repeat(2_100) + "needle").toByteArray(StandardCharsets.UTF_8)
+        assertEquals(StandardCharsets.UTF_8, detect(asciiAlternating))
+
+        val source = "甲".repeat(TxtBookFormatPlugin.CHARSET_SAMPLE_SIZE / 3 + 2).toByteArray(StandardCharsets.UTF_8)
+        val truncated = source.copyOf(TxtBookFormatPlugin.CHARSET_SAMPLE_SIZE)
+        assertEquals(StandardCharsets.UTF_8, detect(truncated))
+    }
+
     private fun detect(bytes: ByteArray) = TxtBookFormatPlugin.detectCharset(ByteArrayInputStream(bytes))
 }

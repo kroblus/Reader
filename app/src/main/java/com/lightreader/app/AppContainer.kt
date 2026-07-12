@@ -7,6 +7,7 @@ import com.lightreader.app.feature.download.DownloadWorkScheduler
 import com.lightreader.app.core.data.ReaderDatabase
 import com.lightreader.app.core.reader.PaintReaderLayoutEngine
 import com.lightreader.app.core.reader.ReaderLayoutEngine
+import com.lightreader.app.core.performance.ReaderEngineMetrics
 import com.lightreader.app.core.security.EncryptedApiKeyStore
 import com.lightreader.app.core.settings.ReaderSettingsRepository
 import com.lightreader.app.core.settings.AiConfigurationStore
@@ -37,6 +38,7 @@ class AppContainer(context: Context) {
     val aiConfigurationStore = AiConfigurationStore(context)
     val settingsRepository = ReaderSettingsRepository(context)
     val paginationEngine: ReaderLayoutEngine = PaintReaderLayoutEngine()
+    val engineMetrics = ReaderEngineMetrics(context)
     val bookRepository = BookRepository(context, database.readerDao())
     val aiProvider = DeepSeekAiExtractionProvider(keyStore, client, aiConfigurationStore)
     private val genericWebSource = JsoupWebSourceParser(client, aiProvider)

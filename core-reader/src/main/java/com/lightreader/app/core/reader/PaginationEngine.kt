@@ -192,19 +192,24 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
     }
 
     private fun findLineEnd(paint: TextPaint, text: String, start: Int, width: Float): Int {
-        var low = start + 1
-        var high = text.length
-        var best = start
-        while (low <= high) {
-            val middle = (low + high) ushr 1
-            if (paint.measureText(text, start, middle) <= width) {
-                best = middle
-                low = middle + 1
-            } else {
-                high = middle - 1
-            }
-        }
-        return if (best == start) (start + 1).coerceAtMost(text.length) else best
+        // Supplying a multi-hundred-kilobyte paragraph as shaping context for every line causes
+        // quadratic behavior on some Android text stacks. No phone viewport can contain 4096
+        // UTF-16 units on one line, so the bounded context keeps the operation linear without
+        // changing visible line breaks.
+        val measurementEnd = (start + MAX_LINE_BREAK_CONTEXT_CHARS).coerceAtMost(text.length)
+        val count = paint.breakText(text, start, measurementEnd, true, width, null).coerceAtLeast(1)
+        val measuredEnd = (start + count).coerceAtMost(text.length)
+        val graphemeSafeEnd = UnicodeTextBoundary.safeEnd(text, start, measuredEnd)
+        return adjustForLatinWordBoundary(text, start, graphemeSafeEnd)
+    }
+
+    private fun adjustForLatinWordBoundary(text: String, start: Int, proposedEnd: Int): Int {
+        if (proposedEnd >= text.length || proposedEnd - start < MIN_WORD_WRAP_LENGTH) return proposedEnd
+        val previous = text.getOrNull(proposedEnd - 1) ?: return proposedEnd
+        val next = text.getOrNull(proposedEnd) ?: return proposedEnd
+        if (!previous.isLetterOrDigit() || !next.isLetterOrDigit()) return proposedEnd
+        val whitespace = text.lastIndexOfAny(charArrayOf(' ', '\t'), proposedEnd - 1)
+        return whitespace.takeIf { it > start + (proposedEnd - start) / 2 } ?: proposedEnd
     }
 
     private fun adjustForChinesePunctuation(text: String, start: Int, proposedEnd: Int): Int {
@@ -226,5 +231,7 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
         const val FORBIDDEN_LINE_START = "，。！？；：、”’）】》〉」』〕］｝…—·～"
         const val FORBIDDEN_LINE_END = "“‘（【《〈「『〔［｛"
         const val PAIRED_PUNCTUATION = "…—"
+        const val MIN_WORD_WRAP_LENGTH = 8
+        const val MAX_LINE_BREAK_CONTEXT_CHARS = 4_096
     }
 }

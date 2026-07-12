@@ -1,14 +1,14 @@
 # 轻阅 LightReader
 
-轻阅是一款本地优先的 Android 小说阅读器，使用 Kotlin 与 Jetpack Compose 构建。当前版本为 `0.3.1`，重点覆盖中文 TXT 阅读体验，同时支持无 DRM EPUB、公开 HTTPS 网页导入、书内搜索、书签、网页追更和本机加密保存 DeepSeek API Key。
+轻阅是一款本地优先的 Android 小说阅读器，使用 Kotlin 与 Jetpack Compose 构建。当前版本为 `0.3.2`，重点覆盖中文 TXT 阅读体验，同时支持无 DRM EPUB、公开 HTTPS 网页导入、书内搜索、书签、网页追更和本机加密保存 DeepSeek API Key。
 
 最新 APK 可在 [GitHub Releases](https://github.com/kroblus/Reader/releases) 下载。
 
 ## 功能概览
 
 - 本地书架：导入 TXT/EPUB，显示阶段与进度并支持安全取消；保存阅读进度、书签、全文搜索索引和阅读设置。
-- 中文 TXT 优化：自动识别 UTF-8、UTF-16、GB18030/GBK、Big5 等常见编码，并清洗 BOM、Tab、段首空格和多余空行。
-- 阅读排版：基于 Android `TextPaint` 实测字宽分页，支持章节标题页、段距、行距、首行缩进、边距、字重、两端对齐和多套排版预设。
+- 中文 TXT/EPUB 优化：自动识别 UTF-8、UTF-16、GB18030/GBK、Big5 等常见编码，保留 EPUB 段落结构，并清洗 BOM、Tab、段首空格和多余空行。
+- 阅读排版：基于 Android `TextPaint` 实测字宽分页，使用 Unicode 安全边界保护 emoji 和组合字符，支持章节标题页、段距、行距、首行缩进、边距、字重、两端对齐和多套排版预设。
 - 阅读操作：点击、滑动、音量键翻页；支持横向、纵向分页、连续滚动、平移、无动画和仿真翻页；支持自动阅读、极简模式、全屏点击下一页。
 - 阅读辅助：目录、倒序/正序切换、书签、书内搜索、右侧进度条、页眉页脚、亮度调节，以及可恢复原阅读背景的夜间模式。
 - 网页小说：校验公开 HTTPS 目录页，规则解析章节列表，预览正文，创建整本下载任务，支持暂停、恢复、失败重试和网页书籍追更。

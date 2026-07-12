@@ -233,4 +233,41 @@ class ReaderDatabaseMigrationTest {
             context.deleteDatabase(name)
         }
     }
+
+    @Test
+    fun migrationSevenToEightRebuildsOnlyDisposableSearchState() {
+        val name = "reader-migration-${System.nanoTime()}.db"
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(name)
+                .callback(object : SupportSQLiteOpenHelper.Callback(7) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL("CREATE TABLE books (id TEXT NOT NULL PRIMARY KEY, title TEXT NOT NULL, author TEXT, format TEXT NOT NULL, rootPath TEXT NOT NULL, addedAt INTEGER NOT NULL, lastReadAt INTEGER, totalChars INTEGER NOT NULL, chapterCount INTEGER NOT NULL, sourceUrl TEXT, contentFingerprint TEXT)")
+                        db.execSQL("CREATE VIRTUAL TABLE search_chunks USING FTS4(bookId TEXT NOT NULL, chapterId TEXT NOT NULL, content TEXT NOT NULL)")
+                        db.execSQL("INSERT INTO books VALUES ('book', '测试书', NULL, 'TXT', '/tmp/book', 1, NULL, 5, 1, NULL, NULL)")
+                        db.execSQL("INSERT INTO search_chunks(bookId, chapterId, content) VALUES ('book', '1', '旧索引')")
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build(),
+        )
+        try {
+            val db = helper.writableDatabase
+            ReaderDatabase.MIGRATION_7_8.migrate(db)
+            db.query("SELECT title FROM books WHERE id = 'book'").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals("测试书", cursor.getString(0))
+            }
+            db.query("SELECT COUNT(*) FROM search_chunks").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(0, cursor.getInt(0))
+            }
+            db.execSQL("INSERT INTO search_chunks(bookId, chapterId, chunkStart, content) VALUES ('book', '1', 0, '新索引')")
+            db.execSQL("INSERT INTO search_index_state VALUES ('book', 5, 1)")
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
 }

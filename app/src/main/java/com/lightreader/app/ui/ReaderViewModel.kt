@@ -15,12 +15,15 @@ import com.lightreader.app.core.model.ReaderPreferences
 import com.lightreader.app.core.model.ReaderViewport
 import com.lightreader.app.core.model.SearchResult
 import com.lightreader.app.core.reader.BookTextNormalizer
-import com.lightreader.app.core.reader.MemoryBoundedCache
+import com.lightreader.app.core.reader.UnicodeTextBoundary
 import com.lightreader.app.core.reader.toReaderStyle
+import com.lightreader.app.feature.reader.ReaderChapterCacheKey
+import com.lightreader.app.feature.reader.ReaderChapterContent
+import com.lightreader.app.feature.reader.ReaderLayoutCacheKey
 import com.lightreader.app.feature.reader.ReaderNavigationPolicy
 import com.lightreader.app.feature.reader.ReaderPageTurnQueue
+import com.lightreader.app.feature.reader.ReaderSessionController
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -28,7 +31,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 sealed interface AppScreen {
     data object Library : AppScreen
@@ -142,25 +144,14 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     private var boundaryCommitSourceChapterIndex: Int? = null
     private var drainingQueuedTurns = false
     private val pendingPageTurns = ReaderPageTurnQueue()
-    private var paginationJob: Job? = null
-    private var prefetchJob: Job? = null
     private var bookmarkJob: Job? = null
-    private var progressSaveJob: Job? = null
-    private val chapterContentCache = MemoryBoundedCache<ChapterContentCacheKey, ChapterContent>(
-        MAX_CHAPTER_CONTENT_CACHE_BYTES,
-        { it.estimatedBytes },
-    )
-    private val pageCache = MemoryBoundedCache<LayoutCacheKey, List<ReaderPage>>(
-        MAX_PAGE_CACHE_BYTES,
-        { it.estimatedBytes },
-    )
+    private val sessionController = ReaderSessionController(viewModelScope)
 
     init {
         viewModelScope.launch {
             readerApplication.memoryTrimEvents.collect { level ->
                 if (isLowMemory(level)) {
-                    prefetchJob?.cancel()
-                    clearReaderCaches()
+                    sessionController.onMemoryPressure()
                 }
             }
         }
@@ -254,8 +245,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
 
     fun openBook(bookId: String) {
         navigate(AppScreen.Reader(bookId))
-        paginationJob?.cancel()
-        prefetchJob?.cancel()
+        sessionController.cancelAll()
         chapterText = ""
         chapterParagraphs = emptyList()
         loadedChapterId = null
@@ -312,39 +302,93 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun loadChapter(index: Int) {
-        paginationJob?.cancel()
-        paginationJob = viewModelScope.launch {
-            val chapter = readerState.value.chapters.getOrNull(index) ?: return@launch
+        sessionController.launchPagination {
+            val chapter = readerState.value.chapters.getOrNull(index) ?: return@launchPagination
             val preferences = uiState.value.preferences
             val key = layoutCacheKey(chapter, preferences, viewport)
-            val cachedPages = pageCache[key]
-            val cachedContent = chapterContentCache[ChapterContentCacheKey(chapter.bookId, chapter.id)]
+            val cachedPages = sessionController.pages(key)
+            val cachedContent = sessionController.chapter(ReaderChapterCacheKey(chapter.bookId, chapter.id))
             if (cachedPages != null) {
                 cachedContent?.let(::setLoadedChapterContent)
                 loadedChapterId = chapter.id
                 applyPages(index, chapter, cachedPages, preferences, fromCache = true)
                 prefetchAdjacent(index, preferences)
-                return@launch
+                return@launchPagination
             }
 
             readerState.value = readerState.value.copy(loading = true, error = null)
             val content = runCatching { loadChapterContent(chapter) }
                 .getOrElse {
                     readerState.value = readerState.value.copy(loading = false, error = text(R.string.message_read_chapter_failed))
-                    return@launch
+                    return@launchPagination
                 }
             setLoadedChapterContent(content)
             loadedChapterId = chapter.id
+            if (requestedOffset == 0) showFirstPagePreview(index, chapter, content.paragraphs, preferences)
             paginateAndApply(index, chapter, content.paragraphs, preferences)
         }
+    }
+
+    private suspend fun showFirstPagePreview(
+        chapterIndex: Int,
+        chapter: Chapter,
+        paragraphs: List<BookParagraph>,
+        preferences: ReaderPreferences,
+    ) {
+        if (viewport.widthPx <= 0 || viewport.heightPx <= 0) return
+        val previewParagraphs = paragraphPrefix(paragraphs, FIRST_PAGE_PREVIEW_CHARS)
+        val firstPage = container.engineMetrics.measure(
+            "first_visible_page",
+            mapOf("preview_chars" to previewParagraphs.sumOf { it.text.length }),
+        ) {
+            sessionController.compute {
+                container.paginationEngine.paginate(
+                    chapterIndex,
+                    chapter.title,
+                    previewParagraphs,
+                    viewport,
+                    preferences.toReaderStyle(),
+                ).pages.firstOrNull()
+            }
+        } ?: return
+        val state = readerState.value
+        if (state.chapters.getOrNull(chapterIndex)?.id != chapter.id) return
+        readerState.value = state.copy(
+            chapterIndex = chapterIndex,
+            pages = listOf(firstPage.copy(pageIndex = 0)),
+            pageIndex = 0,
+            loading = true,
+            error = null,
+            layoutPreferences = preferences,
+            layoutVersion = state.layoutVersion + 1,
+        )
+    }
+
+    private fun paragraphPrefix(paragraphs: List<BookParagraph>, maxChars: Int): List<BookParagraph> {
+        val result = ArrayList<BookParagraph>()
+        var remaining = maxChars
+        paragraphs.forEach { paragraph ->
+            if (remaining <= 0) return@forEach
+            if (paragraph.text.length <= remaining) {
+                result += paragraph
+                remaining -= paragraph.text.length
+            } else {
+                val end = UnicodeTextBoundary.safeEnd(paragraph.text, 0, remaining)
+                result += paragraph.copy(
+                    text = paragraph.text.substring(0, end),
+                    sourceOffsets = paragraph.sourceOffsets.copyOfRange(0, end),
+                )
+                remaining = 0
+            }
+        }
+        return result
     }
 
     private fun repaginate(preferences: ReaderPreferences) {
         if (viewport.widthPx <= 0 || viewport.heightPx <= 0) return
         val state = readerState.value
         val chapter = state.chapters.getOrNull(state.chapterIndex) ?: return
-        paginationJob?.cancel()
-        paginationJob = viewModelScope.launch {
+        sessionController.launchPagination {
             readerState.value = readerState.value.copy(loading = true)
             paginateAndApply(state.chapterIndex, chapter, chapterParagraphs, preferences)
         }
@@ -358,10 +402,28 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     ) {
         if (viewport.widthPx <= 0 || viewport.heightPx <= 0) return
         val key = layoutCacheKey(chapter, preferences, viewport)
-        val cached = pageCache[key]
-        val pages = cached ?: withContext(Dispatchers.Default) {
-            container.paginationEngine.paginate(chapterIndex, chapter.title, paragraphs, viewport, preferences.toReaderStyle()).pages
-        }.also { cachePages(key, it) }
+        val cached = sessionController.pages(key)
+        val metricMetadata = mapOf(
+            "chapter_chars" to paragraphs.sumOf { it.text.length },
+            "viewport_width" to viewport.widthPx,
+            "viewport_height" to viewport.heightPx,
+        )
+        val pages = if (cached != null) {
+            container.engineMetrics.record("pagination_cache_hit", 0.0, metricMetadata)
+            cached
+        } else {
+            container.engineMetrics.measure("paginate_chapter", metricMetadata) {
+                sessionController.compute {
+                    container.paginationEngine.paginate(
+                        chapterIndex,
+                        chapter.title,
+                        paragraphs,
+                        viewport,
+                        preferences.toReaderStyle(),
+                    ).pages
+                }
+            }.also { cachePages(key, it) }
+        }
         applyPages(chapterIndex, chapter, pages, preferences, fromCache = cached != null)
         prefetchAdjacent(chapterIndex, preferences)
     }
@@ -369,13 +431,13 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     private fun prefetchAdjacent(chapterIndex: Int, preferences: ReaderPreferences) {
         val chapters = readerState.value.chapters
         val targetViewport = viewport
-        prefetchJob = viewModelScope.launch {
+        sessionController.launchPrefetch {
             listOf(chapterIndex + 1, chapterIndex - 1).filter { it in chapters.indices }.distinct().forEach { index ->
                 val chapter = chapters[index]
                 val key = layoutCacheKey(chapter, preferences, targetViewport)
-                if (pageCache[key] == null) {
+                if (sessionController.pages(key) == null) {
                     val content = runCatching { loadChapterContent(chapter) }.getOrNull() ?: return@forEach
-                    val pages = withContext(Dispatchers.Default) {
+                    val pages = sessionController.compute {
                         container.paginationEngine.paginate(index, chapter.title, content.paragraphs, targetViewport, preferences.toReaderStyle()).pages
                     }
                     cachePages(key, pages)
@@ -385,38 +447,40 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private suspend fun loadChapterContent(chapter: Chapter): ChapterContent {
-        val key = ChapterContentCacheKey(chapter.bookId, chapter.id)
-        chapterContentCache[key]?.let { return it }
-        val rawText = container.bookRepository.readChapter(chapter)
-        val paragraphs = withContext(Dispatchers.Default) { normalizer.normalize(rawText) }
-        return ChapterContent(rawText, paragraphs).also { cacheChapterContent(key, it) }
+    private suspend fun loadChapterContent(chapter: Chapter): ReaderChapterContent {
+        val key = ReaderChapterCacheKey(chapter.bookId, chapter.id)
+        sessionController.chapter(key)?.let { return it }
+        val rawText = container.engineMetrics.measure(
+            "read_chapter",
+            mapOf("chapter_chars" to chapter.charCount),
+        ) { container.bookRepository.readChapter(chapter) }
+        val paragraphs = container.engineMetrics.measure(
+            "normalize_chapter",
+            mapOf("chapter_chars" to rawText.length),
+        ) { sessionController.compute { normalizer.normalize(rawText) } }
+        return ReaderChapterContent(rawText, paragraphs).also { cacheChapterContent(key, it) }
     }
 
-    private fun setLoadedChapterContent(content: ChapterContent) {
+    private fun setLoadedChapterContent(content: ReaderChapterContent) {
         chapterText = content.rawText
         chapterParagraphs = content.paragraphs
     }
 
-    private fun cacheChapterContent(key: ChapterContentCacheKey, content: ChapterContent) {
-        chapterContentCache.put(key, content)
+    private fun cacheChapterContent(key: ReaderChapterCacheKey, content: ReaderChapterContent) {
+        sessionController.putChapter(key, content)
     }
 
-    private fun cachePages(key: LayoutCacheKey, pages: List<ReaderPage>) {
-        pageCache.put(key, pages)
+    private fun cachePages(key: ReaderLayoutCacheKey, pages: List<ReaderPage>) {
+        sessionController.putPages(key, pages)
     }
 
     private fun clearReaderCaches() {
-        chapterContentCache.clear()
-        pageCache.clear()
+        sessionController.clearCaches()
     }
 
     private fun releaseReaderResources() {
-        paginationJob?.cancel()
-        prefetchJob?.cancel()
+        sessionController.cancelAll()
         bookmarkJob?.cancel()
-        paginationJob = null
-        prefetchJob = null
         bookmarkJob = null
         chapterText = ""
         chapterParagraphs = emptyList()
@@ -486,7 +550,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         useLastPage: Boolean,
     ): AdjacentChapterPreview? {
         val chapter = state.chapters.getOrNull(index) ?: return null
-        val pages = pageCache[layoutCacheKey(chapter, preferences, targetViewport)] ?: return null
+        val pages = sessionController.pages(layoutCacheKey(chapter, preferences, targetViewport)) ?: return null
         val page = if (useLastPage) pages.lastOrNull() else pages.firstOrNull()
         return page?.let { AdjacentChapterPreview(index, it, pages.size) }
     }
@@ -495,7 +559,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         chapter: Chapter,
         preferences: ReaderPreferences,
         targetViewport: ReaderViewport,
-    ) = LayoutCacheKey(chapter.bookId, chapter.id, preferences.toReaderStyle().layoutFingerprint(), targetViewport)
+    ) = ReaderLayoutCacheKey(chapter.bookId, chapter.id, preferences.toReaderStyle().layoutFingerprint(), targetViewport)
 
     fun pageSelected(index: Int) {
         val state = readerState.value
@@ -774,9 +838,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         val book = state.book ?: return
         val chapter = state.chapters.getOrNull(state.chapterIndex) ?: return
         val page = state.pages.getOrNull(state.pageIndex) ?: return
-        progressSaveJob?.cancel()
-        progressSaveJob = viewModelScope.launch {
-            if (!immediate) delay(250)
+        sessionController.launchProgressSave(immediate) {
             container.bookRepository.saveProgress(
                 book.id, chapter.id, page.startOffset, state.chapterIndex,
                 state.pageIndex, chapter.title, currentLayoutFingerprint,
@@ -855,7 +917,11 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         if (query.isBlank()) return
         viewModelScope.launch {
             searchState.value = searchState.value.copy(query = query, searching = true, hasSearched = true)
-            val results = runCatching { container.bookRepository.search(target.bookId, query) }
+            val results = runCatching {
+                container.engineMetrics.measure("search_book", mapOf("query_chars" to query.length)) {
+                    container.bookRepository.search(target.bookId, query)
+                }
+            }
                 .getOrElse { message.value = text(R.string.message_search_failed); emptyList() }
             searchState.value = searchState.value.copy(results = results, searching = false)
         }
@@ -900,37 +966,14 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun text(@StringRes id: Int, vararg args: Any): UiText = uiText(id, *args)
 
+    private companion object {
+        const val FIRST_PAGE_PREVIEW_CHARS = 8_192
+    }
+
     private data class ChromeState(
         val navigation: NavigationState,
         val busy: BusyState,
         val message: UiText?,
     )
 
-    private data class LayoutCacheKey(
-        val bookId: String,
-        val chapterId: Long,
-        val styleHash: Int,
-        val viewport: ReaderViewport,
-    )
-
-    private data class ChapterContentCacheKey(val bookId: String, val chapterId: Long)
-
-    private data class ChapterContent(
-        val rawText: String,
-        val paragraphs: List<BookParagraph>,
-    ) {
-        val estimatedBytes: Long = rawText.length * 2L + paragraphs.sumOf { paragraph ->
-            paragraph.text.length * 2L + paragraph.sourceOffsets.size * Int.SIZE_BYTES.toLong()
-        }
-    }
-
-    private val List<ReaderPage>.estimatedBytes: Long
-        get() = sumOf { page ->
-            page.lines.sumOf { line -> line.text.length * 2L + 64L } + 96L
-        }
-
-    private companion object {
-        const val MAX_CHAPTER_CONTENT_CACHE_BYTES = 3L * 1024 * 1024
-        const val MAX_PAGE_CACHE_BYTES = 4L * 1024 * 1024
-    }
 }

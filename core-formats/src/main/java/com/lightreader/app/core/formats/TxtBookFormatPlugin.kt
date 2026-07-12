@@ -7,6 +7,7 @@ import com.lightreader.app.core.model.BookFormat
 import com.lightreader.app.core.reader.BookTextNormalizer
 import com.lightreader.app.core.reader.ChapterParser
 import com.lightreader.app.core.reader.ReaderTextLimits
+import com.lightreader.app.core.reader.UnicodeTextBoundary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -88,7 +89,12 @@ class TxtBookFormatPlugin : BookFormatPlugin {
             while (offset < text.length) {
                 if (charCount >= MAX_CHAPTER_CHARS - 1) rotateChapter()
                 val available = (MAX_CHAPTER_CHARS - charCount - 1).coerceAtLeast(1)
-                val end = (offset + available).coerceAtMost(text.length)
+                val proposedEnd = (offset + available).coerceAtMost(text.length)
+                val end = UnicodeTextBoundary.safeEnd(text, offset, proposedEnd)
+                if (end - offset > available && charCount > 0) {
+                    rotateChapter()
+                    continue
+                }
                 writer?.append(text, offset, end)?.append('\n')
                 charCount += end - offset + 1
                 offset = end
@@ -164,8 +170,9 @@ class TxtBookFormatPlugin : BookFormatPlugin {
             }
             if (count >= 2 && sample[0] == 0xFF.toByte() && sample[1] == 0xFE.toByte()) return StandardCharsets.UTF_16LE
             if (count >= 2 && sample[0] == 0xFE.toByte() && sample[1] == 0xFF.toByte()) return StandardCharsets.UTF_16BE
-            detectBomlessUtf16(sample)?.let { return it }
+            detectBomlessUtf16ByNullPattern(sample)?.let { return it }
             if (isValidUtf8(sample)) return StandardCharsets.UTF_8
+            detectBomlessUtf16ByCjk(sample)?.let { return it }
 
             val detector = UniversalDetector(null)
             detector.handleData(sample, 0, sample.size)
@@ -185,19 +192,40 @@ class TxtBookFormatPlugin : BookFormatPlugin {
         }
 
         private fun isValidUtf8(bytes: ByteArray): Boolean = runCatching {
+            val prefixLength = completeUtf8PrefixLength(bytes)
             StandardCharsets.UTF_8.newDecoder()
                 .onMalformedInput(CodingErrorAction.REPORT)
                 .onUnmappableCharacter(CodingErrorAction.REPORT)
-                .decode(ByteBuffer.wrap(bytes))
+                .decode(ByteBuffer.wrap(bytes, 0, prefixLength))
         }.isSuccess
 
-        private fun detectBomlessUtf16(bytes: ByteArray): Charset? {
+        private fun completeUtf8PrefixLength(bytes: ByteArray): Int {
+            if (bytes.isEmpty()) return 0
+            var leadIndex = bytes.lastIndex
+            while (leadIndex >= 0 && bytes[leadIndex].toInt() and 0xC0 == 0x80) leadIndex--
+            if (leadIndex < 0) return bytes.size
+            val lead = bytes[leadIndex].toInt() and 0xFF
+            val expectedLength = when {
+                lead and 0x80 == 0 -> 1
+                lead and 0xE0 == 0xC0 -> 2
+                lead and 0xF0 == 0xE0 -> 3
+                lead and 0xF8 == 0xF0 -> 4
+                else -> return bytes.size
+            }
+            return if (bytes.size - leadIndex < expectedLength) leadIndex else bytes.size
+        }
+
+        private fun detectBomlessUtf16ByCjk(bytes: ByteArray): Charset? {
             if (bytes.size < 8) return null
             val leCjk = decodeStrict(bytes, StandardCharsets.UTF_16LE)?.count(::isCjkCharacter) ?: 0
             val beCjk = decodeStrict(bytes, StandardCharsets.UTF_16BE)?.count(::isCjkCharacter) ?: 0
             if (leCjk >= 2 && leCjk > beCjk * 2) return StandardCharsets.UTF_16LE
             if (beCjk >= 2 && beCjk > leCjk * 2) return StandardCharsets.UTF_16BE
+            return null
+        }
 
+        private fun detectBomlessUtf16ByNullPattern(bytes: ByteArray): Charset? {
+            if (bytes.size < 8) return null
             val pairs = minOf(bytes.size, 4096) / 2
             var evenZeroes = 0
             var oddZeroes = 0
@@ -207,8 +235,8 @@ class TxtBookFormatPlugin : BookFormatPlugin {
             }
             val allowedOppositeZeroes = maxOf(1, pairs / 20)
             return when {
-                oddZeroes * 10 >= pairs && evenZeroes <= allowedOppositeZeroes -> StandardCharsets.UTF_16LE
-                evenZeroes * 10 >= pairs && oddZeroes <= allowedOppositeZeroes -> StandardCharsets.UTF_16BE
+                oddZeroes * 5 >= pairs * 3 && evenZeroes <= allowedOppositeZeroes -> StandardCharsets.UTF_16LE
+                evenZeroes * 5 >= pairs * 3 && oddZeroes <= allowedOppositeZeroes -> StandardCharsets.UTF_16BE
                 else -> null
             }
         }
@@ -253,9 +281,9 @@ private fun InputStreamReader.forEachBoundedLine(
     val line = StringBuilder(maxSegmentChars)
     var previousWasCarriageReturn = false
 
-    fun emit() {
-        onLine(line.toString())
-        line.clear()
+    fun emit(endExclusive: Int = line.length) {
+        onLine(line.substring(0, endExclusive))
+        line.delete(0, endExclusive)
     }
 
     while (true) {
@@ -274,7 +302,10 @@ private fun InputStreamReader.forEachBoundedLine(
                 else -> {
                     previousWasCarriageReturn = false
                     line.append(character)
-                    if (line.length >= maxSegmentChars) emit()
+                    if (line.length > maxSegmentChars) {
+                        val safeEnd = UnicodeTextBoundary.previousBoundary(line, maxSegmentChars)
+                        if (safeEnd > 0) emit(safeEnd)
+                    }
                 }
             }
         }

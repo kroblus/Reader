@@ -145,11 +145,16 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private suspend fun importCandidate(candidate: BookImportCandidate) {
-        val book = container.bookRepository.import(
-            candidate,
-            BookImportOptions(cleanTxtNoise = state.value.preferences.cleanTxtNoise),
-            ::updateImportProgress,
-        )
+        val book = container.engineMetrics.measure(
+            "import_book",
+            mapOf("clean_txt_noise" to state.value.preferences.cleanTxtNoise),
+        ) {
+            container.bookRepository.import(
+                candidate,
+                BookImportOptions(cleanTxtNoise = state.value.preferences.cleanTxtNoise),
+                ::updateImportProgress,
+            )
+        }
         postMessage(uiText(R.string.message_imported_book, book.title))
     }
 
@@ -230,6 +235,7 @@ private fun importFailureText(error: Throwable): UiText = when ((error as? BookI
     BookImportFailure.FILE_UNREADABLE -> uiText(R.string.message_import_file_unreadable)
     BookImportFailure.EMPTY_CONTENT -> uiText(R.string.message_import_empty)
     BookImportFailure.ENCODING_QUALITY -> uiText(R.string.message_import_encoding)
+    BookImportFailure.CONTENT_LIMIT -> uiText(R.string.message_import_content_limit)
     BookImportFailure.UNSUPPORTED_FORMAT -> uiText(R.string.message_import_unsupported)
     null -> uiText(R.string.message_import_failed)
 }

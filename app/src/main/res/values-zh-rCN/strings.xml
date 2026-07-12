@@ -345,4 +345,5 @@
     <string name="dom_https_only">仅加载 HTTPS 页面</string>
     <string name="dom_loading">正在加载 %1$s</string>
     <string name="dom_body_preview">Body 文本预览</string>
+    <string name="message_import_content_limit">书籍内容过大或结构过于复杂，无法安全导入</string>
 </resources>

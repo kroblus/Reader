@@ -4,7 +4,8 @@ param(
     [switch]$RequirePhysical,
     [switch]$IncludeLargeCorpus,
     [switch]$ExcludeWebView,
-    [string]$TestClass
+    [string]$TestClass,
+    [string]$PerformanceBaseline
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,7 +20,16 @@ function Invoke-Adb {
 
 function Ensure-AdbTestPackage([string]$PackageName, [string]$ApkPath) {
     & adb -s $Serial shell pm path $PackageName 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) { Invoke-Adb install -r -t $ApkPath }
+    if ($LASTEXITCODE -ne 0) {
+        $installOutput = (& adb -s $Serial install -r -t $ApkPath 2>&1) -join "`n"
+        if ($LASTEXITCODE -ne 0) {
+            $installOutput | Set-Content -Encoding UTF8 (Join-Path $report "install-preflight.txt")
+            if ($installOutput -match "INSTALL_FAILED_USER_RESTRICTED") {
+                throw "0 tests executed: $Serial rejected USB package installation. Unlock the device and enable USB installation / USB debugging security settings, or run .\scripts\run-reader-user-tests.ps1 -Serial emulator-5554."
+            }
+            throw "0 tests executed: failed to install $PackageName during QA preflight. See $report\install-preflight.txt"
+        }
+    }
 }
 
 $deviceLine = (& adb devices -l | Select-String "^$([regex]::Escape($Serial))\s+device\b").Line
@@ -40,6 +50,7 @@ $metadata = [ordered]@{
     physical = -not $isEmulator
 }
 $metadata | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 (Join-Path $report "device.json")
+"QA install preflight started for $Serial" | Set-Content -Encoding UTF8 (Join-Path $report "preflight.txt")
 
 $excluded = @()
 if (-not $IncludeLargeCorpus) { $excluded += "com.lightreader.app.LargeTxtImportInstrumentedTest" }
@@ -188,9 +199,33 @@ Invoke-Adb shell screencap -p $remoteScreenshot
 Invoke-Adb pull $remoteScreenshot (Join-Path $report "qa-home.png")
 Invoke-Adb shell rm $remoteScreenshot
 
+$metricOutput = Join-Path $report "reader-engine.jsonl"
+$metricLines = @(& adb -s $Serial exec-out run-as $qaPackage cat files/qa-evidence/performance/reader-engine.jsonl 2>$null)
+$validMetricLines = @($metricLines | Where-Object {
+    try {
+        $_ | ConvertFrom-Json -ErrorAction Stop | Out-Null
+        $true
+    } catch {
+        $false
+    }
+})
+if ($validMetricLines.Count -gt 0) {
+    $validMetricLines | Set-Content -Encoding UTF8 $metricOutput
+} else {
+    Remove-Item $metricOutput -ErrorAction SilentlyContinue
+}
+
 $additionalOutput = Join-Path $root "app\build\outputs\connected_android_test_additional_output"
 if (Test-Path $additionalOutput) {
     Copy-Item -Recurse -Force $additionalOutput (Join-Path $report "evidence")
+}
+
+if ($PerformanceBaseline) {
+    $currentPerformance = Get-ChildItem $report -Recurse -Filter "reader-engine-benchmark.json" |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $currentPerformance) { throw "Reader engine benchmark evidence was not produced." }
+    & (Join-Path $root "scripts\compare-reader-performance.ps1") -Baseline $PerformanceBaseline -Current $currentPerformance.FullName
+    if ($LASTEXITCODE -ne 0) { throw "Reader engine performance comparison failed." }
 }
 
 $fatal = Select-String -Path (Join-Path $report "logcat.txt") -Pattern "FATAL EXCEPTION|ANR in $qaPackage|Room.*migration|Migration didn.t properly handle|StrictMode.*violation|qa-fake-key" -CaseSensitive:$false

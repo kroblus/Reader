@@ -15,6 +15,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.text
+import androidx.compose.ui.text.AnnotatedString
 import com.lightreader.app.R
 import com.lightreader.app.core.model.FontFamilyOption
 import com.lightreader.app.core.model.ReaderPage
@@ -22,6 +24,7 @@ import com.lightreader.app.core.model.ReaderPreferences
 import com.lightreader.app.core.reader.effectiveLayout
 import com.lightreader.app.core.reader.palette
 import com.lightreader.app.core.reader.toReaderStyle
+import com.lightreader.app.core.reader.UnicodeTextBoundary
 import kotlin.math.roundToInt
 
 @Composable
@@ -81,7 +84,9 @@ fun ReaderPageCanvas(
 
     Canvas(
         modifier.semantics {
-            contentDescription = page.text.take(240).ifBlank { blankPageDescription }
+            val accessibleText = page.text.ifBlank { blankPageDescription }
+            text = AnnotatedString(accessibleText)
+            if (page.text.isBlank()) contentDescription = blankPageDescription
         },
     ) {
         drawRect(Color(palette.background))
@@ -89,9 +94,10 @@ fun ReaderPageCanvas(
             page.lines.forEach { line ->
                 val x = line.xOffsetPx
                 val paint = if (line.isChapterTitle) titlePaint else textPaint
-                if (!line.isChapterTitle && layoutPreferences.justified && !line.isLastLineOfParagraph && line.text.length > 1) {
+                val graphemeGaps = (UnicodeTextBoundary.graphemeCount(line.text) - 1).coerceAtLeast(0)
+                if (!line.isChapterTitle && layoutPreferences.justified && !line.isLastLineOfParagraph && graphemeGaps > 0) {
                     val targetWidth = line.availableWidthPx
-                    val gap = ((targetWidth - line.widthPx) / (line.text.length - 1)).coerceAtLeast(0f)
+                    val gap = ((targetWidth - line.widthPx) / graphemeGaps).coerceAtLeast(0f)
                     val previousLetterSpacing = paint.letterSpacing
                     paint.letterSpacing = if (paint.textSize > 0f) gap / paint.textSize else 0f
                     canvas.nativeCanvas.drawText(line.text, x, line.baselinePx, paint)

@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import com.lightreader.app.R
 import com.lightreader.app.core.web.HtmlBridge
 import com.lightreader.app.core.web.HtmlDomSnapshot
+import com.lightreader.app.core.web.NovelUrlValidator
 
 @SuppressLint("JavascriptInterface")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -60,6 +61,7 @@ fun WebDomBridgeScreen(viewModel: ReaderViewModel) {
     var snapshot by remember { mutableStateOf<HtmlDomSnapshot?>(null) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val webViewRef = remember { WebViewRef() }
+    val urlValidator = remember { NovelUrlValidator() }
     val bridge: HtmlBridge = remember {
         HtmlBridge { domSnapshot ->
             mainHandler.post {
@@ -71,8 +73,21 @@ fun WebDomBridgeScreen(viewModel: ReaderViewModel) {
     val client = remember {
         object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String?) {
+                if (url == null || runCatching { urlValidator.validate(url) }.isFailure) {
+                    view.stopLoading()
+                    status = DomBridgeStatus.PageFailed("Only validated HTTPS pages are allowed.")
+                    return
+                }
                 status = DomBridgeStatus.PageFinished
                 view.evaluateJavascript(HtmlBridge.extractionScript, null)
+            }
+
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val allowed = runCatching { urlValidator.validate(request.url.toString()) }.isSuccess
+                if (!allowed && request.isForMainFrame) {
+                    status = DomBridgeStatus.PageFailed("Only validated HTTPS pages are allowed.")
+                }
+                return !allowed
             }
 
             override fun onReceivedError(
@@ -141,9 +156,9 @@ fun WebDomBridgeScreen(viewModel: ReaderViewModel) {
                     modifier = Modifier.weight(1f),
                     label = { Text(stringResource(R.string.dom_url_label)) },
                     singleLine = true,
-                    isError = inputUrl.isNotBlank() && !inputUrl.startsWith("https://", ignoreCase = true),
+                    isError = inputUrl.isNotBlank() && runCatching { urlValidator.validate(inputUrl) }.isFailure,
                     supportingText = {
-                        if (inputUrl.isNotBlank() && !inputUrl.startsWith("https://", ignoreCase = true)) {
+                        if (inputUrl.isNotBlank() && runCatching { urlValidator.validate(inputUrl) }.isFailure) {
                             Text(stringResource(R.string.dom_https_only))
                         }
                     },
@@ -155,7 +170,7 @@ fun WebDomBridgeScreen(viewModel: ReaderViewModel) {
                         status = DomBridgeStatus.Loading(normalizedUrl)
                         snapshot = null
                     },
-                    enabled = inputUrl.trim().startsWith("https://", ignoreCase = true),
+                    enabled = runCatching { urlValidator.validate(inputUrl) }.isSuccess,
                 ) {
                     Text(stringResource(R.string.action_load))
                 }

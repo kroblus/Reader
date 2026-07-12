@@ -11,6 +11,7 @@ import com.lightreader.app.core.data.DownloadRepository
 import com.lightreader.app.core.data.DuplicateBookImportException
 import com.lightreader.app.core.data.ReaderDatabase
 import com.lightreader.app.core.formats.EpubBookFormatPlugin
+import com.lightreader.app.core.formats.EpubImportLimits
 import com.lightreader.app.core.formats.BookImportException
 import com.lightreader.app.core.formats.BookImportFailure
 import com.lightreader.app.core.formats.ImportedChapter
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -407,12 +409,119 @@ class ReaderCoreInstrumentedTest {
             }
             entry("META-INF/container.xml", "<container><rootfiles><rootfile full-path='OEBPS/content.opf'/></rootfiles></container>")
             entry("OEBPS/content.opf", "<package><metadata><dc:title>仙途</dc:title></metadata><manifest><item id='c1' href='c1.xhtml' media-type='application/xhtml+xml'/></manifest><spine><itemref idref='c1'/></spine></package>")
-            entry("OEBPS/c1.xhtml", "<html><body><h1>第一章</h1><p>山中修行，自此开始。</p></body></html>")
+            entry("OEBPS/c1.xhtml", "<html><body><h1>第一章</h1><p>山中修行</p><p>自此<br/>开始。</p></body></html>")
         }
         val target = File(context.cacheDir, "epub-import").apply { deleteRecursively(); mkdirs() }
         val result = EpubBookFormatPlugin().import(context, Uri.fromFile(source), source.name, target)
         assertEquals("仙途", result.title)
         assertEquals(1, result.chapters.size)
-        assertTrue(result.chapters.first().file.readText().contains("山中修行"))
+        val imported = result.chapters.first().file.readText()
+        assertEquals("山中修行\n自此\n开始。", imported)
+        assertFalse(imported.startsWith("第一章"))
+    }
+
+    @Test
+    fun unicodePaginationPreservesEveryVisibleCluster() {
+        val raw = buildString {
+            repeat(80) { append("繁體中文，e\u0301，👩🏽‍💻，🇨🇳，العربية مرحبا。") }
+        }
+        val paragraphs = BookTextNormalizer().normalize(raw)
+        val result = PaintReaderLayoutEngine().paginate(
+            0,
+            "Unicode",
+            paragraphs,
+            ReaderViewport(720, 1280, 2f, 2f),
+            ReaderPreferences().toReaderStyle(),
+        )
+        val rendered = result.pages.flatMap { it.lines }.filterNot { it.isChapterTitle }.joinToString("") { it.text }
+        assertEquals(paragraphs.joinToString("") { it.text }, rendered)
+        result.pages.flatMap { it.lines }.filterNot { it.isChapterTitle }.forEach { line ->
+            assertFalse(line.text.first().isLowSurrogate())
+            assertFalse(line.text.last().isHighSurrogate())
+            assertFalse(line.text.first() == '\u200D' || line.text.last() == '\u200D')
+        }
+    }
+
+    @Test
+    fun txtStreamingBoundariesPreserveEmojiAtThirtyTwoAndTwoHundredFiftySixKilobytes() = kotlinx.coroutines.runBlocking {
+        val cluster = "👩🏽‍💻"
+        val raw = "甲".repeat(31_998) + cluster + "乙".repeat(TxtBookFormatPlugin.MAX_CHAPTER_CHARS) + cluster + "终"
+        val source = File(context.cacheDir, "unicode-boundary.txt").apply { writeText(raw) }
+        val target = File(context.cacheDir, "unicode-boundary-import").apply { deleteRecursively(); mkdirs() }
+        try {
+            val result = TxtBookFormatPlugin().import(context, Uri.fromFile(source), source.name, target)
+            val persisted = result.chapters.joinToString("") { it.file.readText().replace("\n", "") }
+            if (raw != persisted) {
+                val mismatch = raw.indices.firstOrNull { it >= persisted.length || raw[it] != persisted[it] }
+                    ?: minOf(raw.length, persisted.length)
+                val expectedWindow = raw.substring(mismatch.coerceAtMost(raw.length), (mismatch + 24).coerceAtMost(raw.length))
+                val actualWindow = persisted.substring(mismatch.coerceAtMost(persisted.length), (mismatch + 24).coerceAtMost(persisted.length))
+                throw AssertionError(
+                    "TXT mismatch at $mismatch expectedLength=${raw.length} actualLength=${persisted.length} " +
+                        "expectedWindow=$expectedWindow actualWindow=$actualWindow chapters=${result.chapters.map { it.charCount }}",
+                )
+            }
+            assertFalse(persisted.contains('\uFFFD'))
+            assertTrue(result.chapters.all { it.charCount <= TxtBookFormatPlugin.MAX_CHAPTER_CHARS + cluster.length })
+        } finally {
+            source.delete()
+            target.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun epubLimitsReturnTypedFailuresWithoutLargeFixtures() = kotlinx.coroutines.runBlocking {
+        val source = File(context.cacheDir, "limited.epub")
+        ZipOutputStream(source.outputStream()).use { zip ->
+            fun entry(name: String, body: String) {
+                zip.putNextEntry(ZipEntry(name)); zip.write(body.toByteArray()); zip.closeEntry()
+            }
+            entry("META-INF/container.xml", "<container><rootfiles><rootfile full-path='OEBPS/content.opf'/></rootfiles></container>")
+            entry("OEBPS/content.opf", "<package><manifest><item id='c1' href='c1.xhtml'/></manifest><spine><itemref idref='c1'/></spine></package>")
+            entry("OEBPS/c1.xhtml", "<html><body><p>正文内容超过测试上限</p></body></html>")
+        }
+        val target = File(context.cacheDir, "limited-epub-import").apply { deleteRecursively(); mkdirs() }
+        try {
+            val failure = runCatching {
+                EpubBookFormatPlugin(EpubImportLimits(maxTotalExtractedTextBytes = 4)).import(
+                    context,
+                    Uri.fromFile(source),
+                    source.name,
+                    target,
+                )
+            }.exceptionOrNull() as? BookImportException
+            assertEquals(BookImportFailure.CONTENT_LIMIT, failure?.failure)
+        } finally {
+            source.delete()
+            target.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun searchFindsCrossChunkTextAndUsesUtf16IndexLength() = kotlinx.coroutines.runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(context, ReaderDatabase::class.java).build()
+        val repository = BookRepository(context, database.readerDao())
+        val prefix = "x ".repeat(1_998) + " "
+        val source = File(context.cacheDir, "search-boundary.txt").apply {
+            writeText(prefix + "needle 👩🏽‍💻 tail")
+        }
+        try {
+            val book = repository.import(Uri.fromFile(source))
+            val chapter = repository.chapters(book.id).single()
+            val text = repository.readChapter(chapter)
+            val needleResults = repository.search(book.id, "needle")
+            val directCandidates = database.readerDao().search(book.id, "\"needle\"*")
+            assertTrue(
+                "needleOffset=${text.indexOf("needle")} results=${needleResults.size} candidates=${directCandidates.size} " +
+                    "indexed=${database.readerDao().indexedCharacterCount(book.id)} textLength=${text.length}",
+                needleResults.isNotEmpty(),
+            )
+            assertEquals(text.indexOf("needle"), needleResults.single().charOffset)
+            assertEquals(text.indexOf("👩🏽‍💻"), repository.search(book.id, "👩🏽‍💻").single().charOffset)
+            assertEquals(book.totalChars, database.readerDao().indexedCharacterCount(book.id))
+        } finally {
+            database.close()
+            source.delete()
+        }
     }
 }

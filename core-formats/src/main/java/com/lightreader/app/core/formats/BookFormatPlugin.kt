@@ -41,6 +41,7 @@ enum class BookImportFailure {
     FILE_UNREADABLE,
     EMPTY_CONTENT,
     ENCODING_QUALITY,
+    CONTENT_LIMIT,
     UNSUPPORTED_FORMAT,
 }
 

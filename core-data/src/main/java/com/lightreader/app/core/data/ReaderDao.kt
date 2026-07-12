@@ -77,16 +77,26 @@ interface ReaderDao {
     @Insert
     suspend fun insertSearchChunks(chunks: List<SearchChunkEntity>)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSearchIndexState(state: SearchIndexStateEntity)
+
     @Query("DELETE FROM search_chunks WHERE bookId = :bookId")
     suspend fun deleteSearchChunks(bookId: String)
 
-    @Query("SELECT COALESCE(SUM(LENGTH(content)), 0) FROM search_chunks WHERE bookId = :bookId")
+    @Query("DELETE FROM search_index_state WHERE bookId = :bookId")
+    suspend fun deleteSearchIndexState(bookId: String)
+
+    @Query("SELECT * FROM search_index_state WHERE bookId = :bookId")
+    suspend fun searchIndexState(bookId: String): SearchIndexStateEntity?
+
+    @Query("SELECT COALESCE((SELECT indexedUtf16Chars FROM search_index_state WHERE bookId = :bookId), 0)")
     suspend fun indexedCharacterCount(bookId: String): Long
 
     @Query("""
         SELECT search_chunks.chapterId AS chapterId,
                chapters.title AS chapterTitle,
-               snippet(search_chunks, '<b>', '</b>', '…', -1, 18) AS excerpt
+               search_chunks.chunkStart AS chunkStart,
+               search_chunks.content AS content
         FROM search_chunks
         JOIN chapters ON chapters.id = CAST(search_chunks.chapterId AS INTEGER)
         WHERE search_chunks MATCH :ftsQuery AND search_chunks.bookId = :bookId
@@ -94,6 +104,24 @@ interface ReaderDao {
         LIMIT 100
     """)
     suspend fun search(bookId: String, ftsQuery: String): List<SearchRow>
+
+    @Transaction
+    suspend fun replaceSearchIndex(
+        bookId: String,
+        chunks: List<SearchChunkEntity>,
+        state: SearchIndexStateEntity,
+    ) {
+        deleteSearchChunks(bookId)
+        deleteSearchIndexState(bookId)
+        chunks.chunked(50).forEach { insertSearchChunks(it) }
+        insertSearchIndexState(state)
+    }
+
+    @Transaction
+    suspend fun clearSearchIndex(bookId: String) {
+        deleteSearchChunks(bookId)
+        deleteSearchIndexState(bookId)
+    }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDownloadTask(task: DownloadTaskEntity)
