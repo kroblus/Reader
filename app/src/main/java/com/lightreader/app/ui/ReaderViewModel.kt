@@ -25,6 +25,7 @@ import com.lightreader.app.feature.reader.ReaderPageTurnQueue
 import com.lightreader.app.feature.reader.ReaderSessionController
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -100,13 +101,6 @@ data class BoundaryTurnRequest(
 enum class BoundaryTurnPhase { IDLE, ANIMATING_PREVIEW, COMMITTING_CHAPTER, SETTLING_CHAPTER }
 enum class ReaderOverlay { NONE, TOC, BOOKMARKS }
 
-data class SearchUiState(
-    val query: String = "",
-    val results: List<SearchResult> = emptyList(),
-    val searching: Boolean = false,
-    val hasSearched: Boolean = false,
-)
-
 class ReaderViewModel(application: Application) : AndroidViewModel(application) {
     private val readerApplication = application as ReaderApplication
     private val container = readerApplication.container
@@ -132,7 +126,6 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppUiState())
 
     val readerState = MutableStateFlow(ReaderUiState())
-    val searchState = MutableStateFlow(SearchUiState())
     private val normalizer = BookTextNormalizer()
     private var viewport = ReaderViewport(0, 0, 1f, 1f)
     private var chapterText = ""
@@ -145,6 +138,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     private var drainingQueuedTurns = false
     private val pendingPageTurns = ReaderPageTurnQueue()
     private var bookmarkJob: Job? = null
+    private var openBookJob: Job? = null
     private val sessionController = ReaderSessionController(viewModelScope)
 
     init {
@@ -189,7 +183,6 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun openSearch(bookId: String) {
-        searchState.value = SearchUiState()
         navigate(AppScreen.Search(bookId))
     }
 
@@ -244,8 +237,11 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun openBook(bookId: String) {
+        saveCurrentProgress(immediate = true)
+        openBookJob?.cancel()
         navigate(AppScreen.Reader(bookId))
-        sessionController.cancelAll()
+        sessionController.cancelReaderWork()
+        bookmarkJob?.cancel()
         chapterText = ""
         chapterParagraphs = emptyList()
         loadedChapterId = null
@@ -254,8 +250,9 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         boundaryCommitSourceChapterIndex = null
         pendingPageTurns.clear()
         setAutoReading(false)
-        viewModelScope.launch {
+        openBookJob = viewModelScope.launch {
             readerState.value = ReaderUiState(loading = true)
+            sessionController.awaitProgressSave()
             val book = container.bookRepository.book(bookId) ?: run {
                 readerState.value = ReaderUiState(error = text(R.string.message_book_missing))
                 return@launch
@@ -266,6 +263,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
                 return@launch
             }
             val progress = container.bookRepository.progress(bookId)
+            coroutineContext.ensureActive()
             val chapterIndex = progress?.let { saved -> chapters.indexOfFirst { it.id == saved.chapterId } }
                 ?.takeIf { it >= 0 }
                 ?: progress?.chapterIndex?.coerceIn(chapters.indices)
@@ -479,7 +477,9 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun releaseReaderResources() {
-        sessionController.cancelAll()
+        openBookJob?.cancel()
+        openBookJob = null
+        sessionController.cancelReaderWork()
         bookmarkJob?.cancel()
         bookmarkJob = null
         chapterText = ""
@@ -838,10 +838,11 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         val book = state.book ?: return
         val chapter = state.chapters.getOrNull(state.chapterIndex) ?: return
         val page = state.pages.getOrNull(state.pageIndex) ?: return
+        val layoutFingerprint = currentLayoutFingerprint
         sessionController.launchProgressSave(immediate) {
             container.bookRepository.saveProgress(
                 book.id, chapter.id, page.startOffset, state.chapterIndex,
-                state.pageIndex, chapter.title, currentLayoutFingerprint,
+                state.pageIndex, chapter.title, layoutFingerprint,
             )
         }
     }
@@ -900,30 +901,6 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             container.bookRepository.bookmarks(bookId).collect { bookmarks ->
                 readerState.value = readerState.value.copy(bookmarks = bookmarks)
             }
-        }
-    }
-
-    fun updateSearchQuery(value: String) {
-        searchState.value = searchState.value.copy(query = value, hasSearched = false)
-    }
-
-    fun clearSearchQuery() {
-        searchState.value = SearchUiState()
-    }
-
-    fun search() {
-        val target = navigation.value.current as? AppScreen.Search ?: return
-        val query = searchState.value.query.trim()
-        if (query.isBlank()) return
-        viewModelScope.launch {
-            searchState.value = searchState.value.copy(query = query, searching = true, hasSearched = true)
-            val results = runCatching {
-                container.engineMetrics.measure("search_book", mapOf("query_chars" to query.length)) {
-                    container.bookRepository.search(target.bookId, query)
-                }
-            }
-                .getOrElse { message.value = text(R.string.message_search_failed); emptyList() }
-            searchState.value = searchState.value.copy(results = results, searching = false)
         }
     }
 

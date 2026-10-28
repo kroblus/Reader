@@ -31,8 +31,8 @@ android {
         applicationId = "com.lightreader.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 16
-        versionName = "0.3.2"
+        versionCode = 17
+        versionName = "0.3.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         testApplicationId = "com.lightreader.app.qa.test"
         testInstrumentationRunnerArguments["clearPackageData"] = "true"
@@ -126,6 +126,7 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

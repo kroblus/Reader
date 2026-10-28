@@ -5,7 +5,6 @@ import android.view.WindowManager
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -56,8 +55,10 @@ class ReaderUserJourneyInstrumentedTest {
         composeRule.onNodeWithTag(ReaderTestTags.APP_SETTINGS).assertIsDisplayed()
         composeRule.onAllNodesWithText(text(R.string.library_dom_bridge)).assertCountEquals(0)
 
-        evidence.step("Enable developer tools with the documented long-press gesture")
-        composeRule.onNodeWithText(text(R.string.app_settings_title)).performTouchInput { longClick() }
+        evidence.step("Enable developer tools by tapping Version seven times")
+        val versionRow = composeRule.onNodeWithTag(ReaderTestTags.APP_SETTINGS_VERSION)
+        versionRow.performScrollTo()
+        repeat(7) { versionRow.performClick() }
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithText(text(R.string.library_dom_bridge)).fetchSemanticsNodes().isNotEmpty()
         }
@@ -96,7 +97,8 @@ class ReaderUserJourneyInstrumentedTest {
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithTag(ReaderTestTags.READER).fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithContentDescription(text(R.string.reader_bookmarks)).performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.reader_more_actions)).performClick()
+        composeRule.onNodeWithText(text(R.string.reader_bookmark_list)).performClick()
         composeRule.onNodeWithTag(ReaderTestTags.READER_BOOKMARKS).assertIsDisplayed()
         composeRule.onAllNodesWithText(text(R.string.reader_no_bookmarks)).assertCountEquals(0)
         assertEquals(saved.id, runBlocking { application.container.bookRepository.bookmarks(book.id).first().single().id })

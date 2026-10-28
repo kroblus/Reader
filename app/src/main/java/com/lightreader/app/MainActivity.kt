@@ -13,6 +13,8 @@ import com.lightreader.app.ui.LibraryViewModel
 import com.lightreader.app.ui.ReaderViewModel
 import com.lightreader.app.ui.SettingsViewModel
 import com.lightreader.app.ui.ReaderApp
+import com.lightreader.app.ui.BookSearchGateway
+import com.lightreader.app.ui.BookSearchViewModel
 
 class MainActivity : ComponentActivity() {
     private val viewModel by viewModels<ReaderViewModel>()
@@ -22,10 +24,13 @@ class MainActivity : ComponentActivity() {
     private val aiSettingsViewModel by viewModels<AiSettingsViewModel>()
     private val libraryViewModel by viewModels<LibraryViewModel>()
     private val settingsViewModel by viewModels<SettingsViewModel>()
+    private val searchViewModel by viewModels<BookSearchViewModel> {
+        BookSearchViewModelFactory((application as ReaderApplication).container.bookSearchGateway)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { ReaderApp(viewModel, libraryViewModel, downloadViewModel, aiSettingsViewModel, settingsViewModel) }
+        setContent { ReaderApp(viewModel, libraryViewModel, downloadViewModel, aiSettingsViewModel, settingsViewModel, searchViewModel) }
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
@@ -34,6 +39,14 @@ class MainActivity : ComponentActivity() {
             KeyEvent.KEYCODE_VOLUME_UP -> if (viewModel.onVolumeKey(false)) return true
         }
         return super.onKeyDown(keyCode, event)
+    }
+}
+
+private class BookSearchViewModelFactory(private val gateway: BookSearchGateway) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        check(modelClass.isAssignableFrom(BookSearchViewModel::class.java))
+        return BookSearchViewModel("", gateway) as T
     }
 }
 

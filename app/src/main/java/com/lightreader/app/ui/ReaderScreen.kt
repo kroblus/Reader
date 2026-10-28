@@ -57,17 +57,23 @@ import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
@@ -76,7 +82,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -109,6 +114,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleStartEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.lightreader.app.R
 import com.lightreader.app.feature.download.DownloadViewModel
 import com.lightreader.app.core.model.BookFormat
@@ -136,8 +146,10 @@ fun ReaderScreen(
     downloadViewModel: DownloadViewModel,
     settingsViewModel: SettingsViewModel,
 ) {
-    val state by viewModel.readerState.collectAsState()
+    val state by viewModel.readerState.collectAsStateWithLifecycle()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
     var tocAscending by remember { mutableStateOf(true) }
+    var moreActionsVisible by remember { mutableStateOf(false) }
     var currentTime by remember { mutableStateOf(currentTime()) }
     val palette = preferences.palette()
     val background = Color(palette.background)
@@ -146,21 +158,28 @@ fun ReaderScreen(
 
     ApplyWindowPreferences(preferences)
     ApplyReaderSystemBars(preferences, state.toolbarVisible)
-    DisposableEffect(viewModel) { onDispose(viewModel::onReaderStopped) }
+    LifecycleStartEffect(viewModel) {
+        onStopOrDispose { viewModel.onReaderStopped() }
+    }
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            currentTime = currentTime()
-            delay(30_000)
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                currentTime = currentTime()
+                delay(30_000)
+            }
         }
     }
-    LaunchedEffect(state.toolbarVisible, state.overlay, state.settingsVisible) {
-        if (state.toolbarVisible && !overlayVisible && !state.settingsVisible) {
-            delay(5_000)
-            viewModel.hideToolbar()
+    LaunchedEffect(lifecycle, state.toolbarVisible, state.overlay, state.settingsVisible, moreActionsVisible) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            if (state.toolbarVisible && !overlayVisible && !state.settingsVisible && !moreActionsVisible) {
+                delay(5_000)
+                viewModel.hideToolbar()
+            }
         }
     }
     LaunchedEffect(
+        lifecycle,
         state.autoReading,
         state.pageIndex,
         state.chapterIndex,
@@ -169,9 +188,11 @@ fun ReaderScreen(
         state.settingsVisible,
         preferences.autoReadIntervalSeconds,
     ) {
-        if (state.autoReading && !state.toolbarVisible && !overlayVisible && !state.settingsVisible) {
-            delay(preferences.autoReadIntervalSeconds.coerceIn(3, 60) * 1_000L)
-            viewModel.nextPage()
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            if (state.autoReading && !state.toolbarVisible && !overlayVisible && !state.settingsVisible) {
+                delay(preferences.autoReadIntervalSeconds.coerceIn(3, 60) * 1_000L)
+                viewModel.nextPage()
+            }
         }
     }
 
@@ -438,7 +459,7 @@ fun ReaderScreen(
                     .padding(horizontal = 8.dp, vertical = 0.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = viewModel::goBack, modifier = Modifier.size(40.dp)) {
+                IconButton(onClick = viewModel::goBack, modifier = Modifier.size(ReaderUiTokens.iconTouchTarget)) {
                     Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.action_back), tint = foreground)
                 }
                 Text(
@@ -470,7 +491,7 @@ fun ReaderScreen(
                     onClick = viewModel::toggleCurrentPageBookmark,
                     enabled = currentPage != null && !state.loading,
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(ReaderUiTokens.iconTouchTarget)
                         .semantics {
                             stateDescription = bookmarkStateDescription
                         },
@@ -486,7 +507,7 @@ fun ReaderScreen(
                     IconButton(
                         onClick = { downloadViewModel.refreshWebBook(book) },
                         enabled = !state.loading,
-                        modifier = Modifier.size(40.dp),
+                        modifier = Modifier.size(ReaderUiTokens.iconTouchTarget),
                     ) {
                         Icon(Icons.Outlined.Refresh, stringResource(R.string.reader_refresh), tint = foreground)
                     }
@@ -503,9 +524,7 @@ fun ReaderScreen(
                 ReaderSettingsDock(
                     preferences = preferences,
                     settingsHeight = settingsDockHeight,
-                    autoReading = state.autoReading,
                     onChange = settingsViewModel::savePreferences,
-                    onToggleAutoReading = viewModel::toggleAutoReading,
                     onOpenMoreSettings = viewModel::openReaderSettingsDetail,
                 )
             }
@@ -521,6 +540,8 @@ fun ReaderScreen(
                     viewModel = viewModel,
                     settingsViewModel = settingsViewModel,
                     attachedToSettings = state.settingsVisible,
+                    moreExpanded = moreActionsVisible,
+                    onMoreExpandedChange = { moreActionsVisible = it },
                     onShowToc = viewModel::showTableOfContents,
                     onShowBookmarks = viewModel::showBookmarksOverlay,
                 )
@@ -538,7 +559,7 @@ fun ReaderScreen(
         ) {
             Surface(
                 color = Color(palette.overlay).copy(alpha = .96f),
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(LightReaderShapeTokens.small),
                 shadowElevation = 2.dp,
             ) {
                 TextButton(onClick = viewModel::toggleAutoReading) {
@@ -576,9 +597,7 @@ fun ReaderScreen(
 private fun ReaderSettingsDock(
     preferences: ReaderPreferences,
     settingsHeight: Dp,
-    autoReading: Boolean,
     onChange: (ReaderPreferences) -> Unit,
-    onToggleAutoReading: () -> Unit,
     onOpenMoreSettings: () -> Unit,
 ) {
     val palette = preferences.palette()
@@ -595,8 +614,6 @@ private fun ReaderSettingsDock(
             ReaderSettingsPanel(
                 value = preferences,
                 onChange = onChange,
-                autoReading = autoReading,
-                onToggleAutoReading = onToggleAutoReading,
                 onOpenMoreSettings = onOpenMoreSettings,
                 bottomPadding = 0.dp,
             )
@@ -668,6 +685,8 @@ private fun ReaderBottomControls(
     viewModel: ReaderViewModel,
     settingsViewModel: SettingsViewModel,
     attachedToSettings: Boolean,
+    moreExpanded: Boolean,
+    onMoreExpandedChange: (Boolean) -> Unit,
     onShowToc: () -> Unit,
     onShowBookmarks: () -> Unit,
 ) {
@@ -683,12 +702,24 @@ private fun ReaderBottomControls(
     val progressLabel = progressPreview(state, sliderValue)
     val progressPercent = (sliderValue * 100).coerceIn(0f, 100f).toInt()
     val progressStateDescription = stringResource(R.string.reader_progress_state, progressPercent, progressLabel)
-    val isBookmarked = state.currentPageBookmarked()
+    val nightModeEnabled = preferences.theme == ReaderTheme.NIGHT
+    val nightModeDescription = stringResource(
+        if (nightModeEnabled) R.string.reader_night_on_description else R.string.reader_night_off_description,
+    )
+    val selectedState = stringResource(R.string.state_selected)
+    val notSelectedState = stringResource(R.string.state_not_selected)
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = Color(palette.overlay).copy(alpha = 1f),
-        shape = if (attachedToSettings) RoundedCornerShape(0.dp) else RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp),
+        shape = if (attachedToSettings) {
+            RoundedCornerShape(0.dp)
+        } else {
+            RoundedCornerShape(
+                topStart = LightReaderShapeTokens.large,
+                topEnd = LightReaderShapeTokens.large,
+            )
+        },
         shadowElevation = 8.dp,
     ) {
         Column(
@@ -696,7 +727,7 @@ private fun ReaderBottomControls(
                 .padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 3.dp),
         ) {
             Row(
-                Modifier.fillMaxWidth().height(34.dp),
+                Modifier.fillMaxWidth().heightIn(min = ReaderUiTokens.iconTouchTarget),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TextButton(
@@ -760,21 +791,10 @@ private fun ReaderBottomControls(
             Spacer(Modifier.height(5.dp))
             Row(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceAround,
+                horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ReaderAction(Icons.AutoMirrored.Outlined.FormatListBulleted, stringResource(R.string.reader_toc), foreground, onShowToc)
-                ReaderAction(
-                    Icons.Outlined.DarkMode,
-                    stringResource(R.string.reader_night),
-                    foreground,
-                    settingsViewModel::toggleNightMode,
-                    contentDescription = stringResource(
-                        if (preferences.theme == ReaderTheme.NIGHT) R.string.reader_night_on_description
-                        else R.string.reader_night_off_description,
-                    ),
-                    selected = preferences.theme == ReaderTheme.NIGHT,
-                )
                 ReaderAction(
                     Icons.Outlined.TextFields,
                     stringResource(R.string.reader_settings),
@@ -782,21 +802,92 @@ private fun ReaderBottomControls(
                     viewModel::toggleSettings,
                     stringResource(R.string.reader_settings_content_description),
                     selected = attachedToSettings,
+                    testTag = ReaderTestTags.READER_SETTINGS_TOGGLE,
                 )
-                ReaderAction(
-                    if (state.autoReading) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                    if (state.autoReading) stringResource(R.string.reader_pause) else stringResource(R.string.reader_auto),
-                    foreground,
-                    viewModel::toggleAutoReading,
-                    selected = state.autoReading,
-                )
-                ReaderAction(
-                    if (isBookmarked) Icons.Outlined.Bookmark else Icons.Outlined.Bookmarks,
-                    stringResource(R.string.reader_bookmarks),
-                    foreground,
-                    onShowBookmarks,
-                    selected = isBookmarked,
-                )
+                Box {
+                    ReaderAction(
+                        Icons.Outlined.MoreHoriz,
+                        stringResource(R.string.action_more),
+                        foreground,
+                        onClick = { onMoreExpandedChange(true) },
+                        contentDescription = stringResource(R.string.reader_more_actions),
+                    )
+                    DropdownMenu(
+                        expanded = moreExpanded,
+                        onDismissRequest = { onMoreExpandedChange(false) },
+                        containerColor = Color(palette.overlay),
+                    ) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    stringResource(if (nightModeEnabled) R.string.reader_day else R.string.reader_night),
+                                    color = foreground,
+                                )
+                            },
+                            onClick = {
+                                onMoreExpandedChange(false)
+                                settingsViewModel.toggleNightMode()
+                            },
+                            modifier = Modifier
+                                .testTag(ReaderTestTags.READER_NIGHT_TOGGLE)
+                                .semantics {
+                                    contentDescription = nightModeDescription
+                                    stateDescription = if (nightModeEnabled) selectedState else notSelectedState
+                                },
+                            leadingIcon = {
+                                Icon(
+                                    if (nightModeEnabled) Icons.Outlined.LightMode else Icons.Outlined.DarkMode,
+                                    contentDescription = null,
+                                    tint = foreground,
+                                )
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    stringResource(if (state.autoReading) R.string.reader_auto_stop else R.string.reader_auto_start),
+                                    color = foreground,
+                                )
+                            },
+                            onClick = {
+                                onMoreExpandedChange(false)
+                                viewModel.toggleAutoReading()
+                            },
+                            modifier = Modifier
+                                .testTag(ReaderTestTags.READER_AUTO_TOGGLE)
+                                .semantics {
+                                    stateDescription = if (state.autoReading) selectedState else notSelectedState
+                                },
+                            leadingIcon = {
+                                Icon(
+                                    if (state.autoReading) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                                    contentDescription = null,
+                                    tint = foreground,
+                                )
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.reader_bookmark_list), color = foreground) },
+                            onClick = {
+                                onMoreExpandedChange(false)
+                                onShowBookmarks()
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Outlined.Bookmarks, contentDescription = null, tint = foreground)
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.reader_more_settings), color = foreground) },
+                            onClick = {
+                                onMoreExpandedChange(false)
+                                viewModel.openReaderSettingsDetail()
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Outlined.TextFields, contentDescription = null, tint = foreground)
+                            },
+                        )
+                    }
+                }
             }
         }
     }
@@ -810,17 +901,19 @@ private fun ReaderAction(
     onClick: () -> Unit,
     contentDescription: String = label,
     selected: Boolean = false,
+    testTag: String? = null,
 ) {
     val stateText = stringResource(if (selected) R.string.state_selected else R.string.state_not_selected)
     val itemColor = if (selected) tint else tint.copy(alpha = .86f)
     Column(
-        modifier = Modifier.width(56.dp),
+        modifier = Modifier.width(76.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         IconButton(
             onClick = onClick,
             modifier = Modifier
                 .size(ReaderUiTokens.iconTouchTarget)
+                .then(if (testTag == null) Modifier else Modifier.testTag(testTag))
                 .clip(CircleShape)
                 .background(if (selected) tint.copy(alpha = .18f) else Color.Transparent)
                 .semantics {
@@ -970,13 +1063,7 @@ private fun progressPreview(state: ReaderUiState, progress: Float): String {
             false
         }
     }.takeIf { it >= 0 } ?: state.chapters.lastIndex
-    val chapter = state.chapters[index]
-    val chapterPercent = if (chapter.charCount > 0) {
-        ((target.toFloat() / chapter.charCount) * 100).toInt().coerceIn(0, 100)
-    } else {
-        0
-    }
-    return stringResource(R.string.reader_progress_chapter, index + 1, chapterPercent)
+    return stringResource(R.string.reader_progress_chapter, index + 1)
 }
 
 private fun currentTime(): String = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
@@ -1063,15 +1150,27 @@ private fun ChapterListOverlay(
     onDismiss: () -> Unit,
     onSelectChapter: (Chapter) -> Unit,
 ) {
-    val chapters = remember(state.chapters, ascending) {
+    var tocQuery by remember { mutableStateOf("") }
+    val orderedChapters = remember(state.chapters, ascending) {
         if (ascending) state.chapters else state.chapters.asReversed()
+    }
+    val normalizedQuery = tocQuery.trim()
+    val chapters = remember(orderedChapters, normalizedQuery) {
+        if (normalizedQuery.isBlank()) {
+            orderedChapters
+        } else {
+            orderedChapters.filter { it.title.contains(normalizedQuery, ignoreCase = true) }
+        }
     }
     val currentIndex = chapters.indexOfFirst { it.orderIndex == state.chapterIndex }.coerceAtLeast(0)
     val centeredFirstVisible = (currentIndex - 7).coerceIn(0, (chapters.size - 1).coerceAtLeast(0))
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = centeredFirstVisible)
-    LaunchedEffect(visible, currentIndex, chapters.size) {
+    LaunchedEffect(visible) {
+        if (!visible) tocQuery = ""
+    }
+    LaunchedEffect(visible, currentIndex, chapters.size, normalizedQuery) {
         if (visible && chapters.isNotEmpty()) {
-            listState.scrollToItem(centeredFirstVisible)
+            listState.scrollToItem(if (normalizedQuery.isBlank()) centeredFirstVisible else 0)
         }
     }
     val palette = preferences.palette()
@@ -1094,7 +1193,7 @@ private fun ChapterListOverlay(
         title = stringResource(R.string.reader_toc),
         tag = ReaderTestTags.READER_TOC,
         preferences = preferences,
-        heightFraction = if (chapters.size <= 6) .36f else .92f,
+        heightFraction = if (orderedChapters.size <= 6) .52f else .92f,
         onDismiss = onDismiss,
         action = {
             TextButton(
@@ -1112,22 +1211,64 @@ private fun ChapterListOverlay(
             }
         },
     ) {
-        LazyColumn(Modifier.fillMaxSize(), state = listState) {
-            items(chapters, key = { it.id }) { chapter ->
-                val selected = chapter.orderIndex == state.chapterIndex
-                ChapterOverlayRow(
-                    chapter = chapter,
-                    selected = selected,
-                    foreground = foreground,
-                    secondary = secondary,
-                    selectedBackground = selectedBackground,
-                    readPercentText = stringResource(R.string.reader_read_percent, readPercent),
-                    onClick = { onSelectChapter(chapter) },
-                )
-                HorizontalDivider(
-                    modifier = Modifier.padding(start = 58.dp, end = 24.dp),
-                    color = secondary.copy(alpha = .14f),
-                )
+        Column(Modifier.fillMaxSize()) {
+            OutlinedTextField(
+                value = tocQuery,
+                onValueChange = { tocQuery = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                    .testTag(ReaderTestTags.READER_TOC_SEARCH),
+                label = { Text(stringResource(R.string.reader_toc_search)) },
+                placeholder = { Text(stringResource(R.string.reader_toc_search_hint)) },
+                leadingIcon = { Icon(Icons.Outlined.Search, null) },
+                trailingIcon = {
+                    if (tocQuery.isNotBlank()) {
+                        IconButton(onClick = { tocQuery = "" }) {
+                            Icon(Icons.Outlined.Close, stringResource(R.string.action_clear_search))
+                        }
+                    }
+                },
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = foreground,
+                    unfocusedTextColor = foreground,
+                    cursorColor = foreground,
+                    focusedBorderColor = foreground.copy(alpha = .72f),
+                    unfocusedBorderColor = secondary.copy(alpha = .42f),
+                    focusedLabelColor = foreground,
+                    unfocusedLabelColor = secondary,
+                    focusedLeadingIconColor = foreground,
+                    unfocusedLeadingIconColor = secondary,
+                    focusedTrailingIconColor = foreground,
+                    unfocusedTrailingIconColor = secondary,
+                    focusedPlaceholderColor = secondary.copy(alpha = .78f),
+                    unfocusedPlaceholderColor = secondary.copy(alpha = .78f),
+                ),
+            )
+            if (chapters.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(stringResource(R.string.reader_toc_no_results), color = secondary)
+                }
+            } else {
+                LazyColumn(Modifier.fillMaxSize(), state = listState) {
+                    items(chapters, key = { it.id }) { chapter ->
+                        val selected = chapter.orderIndex == state.chapterIndex
+                        ChapterOverlayRow(
+                            chapter = chapter,
+                            selected = selected,
+                            foreground = foreground,
+                            secondary = secondary,
+                            selectedBackground = selectedBackground,
+                            readPercentText = stringResource(R.string.reader_read_percent, readPercent),
+                            onClick = { onSelectChapter(chapter) },
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 58.dp, end = 24.dp),
+                            color = secondary.copy(alpha = .14f),
+                        )
+                    }
+                }
             }
         }
     }
@@ -1147,7 +1288,7 @@ private fun ChapterOverlayRow(
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 3.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(LightReaderShapeTokens.medium))
             .background(if (selected) selectedBackground else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 12.dp),
@@ -1303,7 +1444,7 @@ private fun BookmarkOverlayRow(
                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.SansSerif, fontSize = 11.sp),
             )
         }
-        IconButton(onClick = onDelete, modifier = Modifier.size(38.dp)) {
+        IconButton(onClick = onDelete, modifier = Modifier.size(ReaderUiTokens.iconTouchTarget)) {
             Icon(
                 Icons.Outlined.DeleteOutline,
                 stringResource(R.string.reader_delete_bookmark),
@@ -1392,7 +1533,7 @@ private fun ReaderListOverlay(
                             ),
                         )
                         action()
-                        IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
+                        IconButton(onClick = onDismiss, modifier = Modifier.size(ReaderUiTokens.iconTouchTarget)) {
                             Icon(Icons.Outlined.Close, closeOverlay, tint = foreground)
                         }
                     }

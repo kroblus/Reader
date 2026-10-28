@@ -21,6 +21,7 @@ import com.lightreader.app.core.web.WebImportFailure
 import com.lightreader.app.feature.download.DownloadFeatureGateway
 import com.lightreader.app.feature.download.DownloadImportFailure
 import com.lightreader.app.feature.download.DownloadPreviewResult
+import com.lightreader.app.ui.BookSearchGateway
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
@@ -40,6 +41,11 @@ class AppContainer(context: Context) {
     val paginationEngine: ReaderLayoutEngine = PaintReaderLayoutEngine()
     val engineMetrics = ReaderEngineMetrics(context)
     val bookRepository = BookRepository(context, database.readerDao())
+    val bookSearchGateway = BookSearchGateway { bookId, query ->
+        engineMetrics.measure("search_book", mapOf("query_chars" to query.length)) {
+            bookRepository.search(bookId, query)
+        }
+    }
     val aiProvider = DeepSeekAiExtractionProvider(keyStore, client, aiConfigurationStore)
     private val genericWebSource = JsoupWebSourceParser(client, aiProvider)
     val sourceRegistry = NovelSourceRegistry(listOf(GenericHtmlNovelSourceAdapter(genericWebSource)))

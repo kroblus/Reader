@@ -9,6 +9,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,17 +39,29 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.CleaningServices
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.ScreenLockPortrait
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -70,12 +85,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
@@ -85,12 +105,15 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lightreader.app.BuildConfig
 import com.lightreader.app.R
 import com.lightreader.app.core.model.AppLanguage
 import com.lightreader.app.core.model.AppSkin
@@ -105,12 +128,24 @@ fun LibraryScreen(
     state: LibraryUiState,
     viewModel: LibraryViewModel,
     onOpenAppSettings: () -> Unit,
+    onOpenWebImport: () -> Unit,
     onSavePreferences: (ReaderPreferences) -> Unit,
 ) {
     var pendingDelete by remember { mutableStateOf<Book?>(null) }
     var pendingEdit by remember { mutableStateOf<Book?>(null) }
     var showMoreActions by remember { mutableStateOf(false) }
     var showSkinPicker by remember { mutableStateOf(false) }
+    var showImportPicker by remember { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var sortOrder by rememberSaveable { mutableStateOf(LibrarySortOrder.RECENT) }
+    var showSortMenu by remember { mutableStateOf(false) }
+    val locale = LocalConfiguration.current.locales[0]
+    val shelf = remember(state.shelfBooks, searchQuery, sortOrder, locale) {
+        projectLibraryShelf(state.shelfBooks, searchQuery, sortOrder, locale)
+    }
+    val focusManager = LocalFocusManager.current
+    val fontScale = LocalDensity.current.fontScale
+    val sortLabel = stringResource(sortOrder.labelResource())
     val taglines = stringArrayResource(R.array.brand_taglines)
     val importNovelLabel = stringResource(R.string.library_import_novel)
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -124,40 +159,47 @@ fun LibraryScreen(
                 TopAppBar(
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
                     title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                Modifier
-                                    .size(42.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primaryContainer),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Image(
-                                    painter = painterResource(R.drawable.ic_logo_lined),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(30.dp),
-                                )
+                        if (state.shelfBooks.isEmpty()) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    Modifier
+                                        .size(42.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primaryContainer),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Image(
+                                        painter = painterResource(R.drawable.ic_logo_lined),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(30.dp),
+                                    )
+                                }
+                                Column(Modifier.padding(start = LightReaderSpacing.sm)) {
+                                    Text(
+                                        stringResource(R.string.brand_name),
+                                        style = MaterialTheme.typography.headlineMedium.copy(
+                                            fontFamily = FontFamily.SansSerif,
+                                            fontWeight = FontWeight.Bold,
+                                        ),
+                                    )
+                                    Text(
+                                        taglines.taglineAt(state.libraryTaglineIndex),
+                                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.SansSerif),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
-                            Column(Modifier.padding(start = 12.dp)) {
-                                Text(
-                                    stringResource(R.string.brand_name),
-                                    style = MaterialTheme.typography.headlineMedium.copy(
-                                        fontFamily = FontFamily.SansSerif,
-                                        fontWeight = FontWeight.Bold,
-                                    ),
-                                )
-                                Text(
-                                    taglines.taglineAt(state.libraryTaglineIndex),
-                                    style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.SansSerif),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                        } else {
+                            Text(
+                                stringResource(R.string.library_my_shelf),
+                                style = MaterialTheme.typography.headlineMedium.copy(
+                                    fontFamily = FontFamily.SansSerif,
+                                    fontWeight = FontWeight.Bold,
+                                ),
+                            )
                         }
                     },
                     actions = {
-                        IconButton(onClick = { showSkinPicker = true }) {
-                            Icon(Icons.Outlined.Palette, stringResource(R.string.library_change_skin))
-                        }
                         Box {
                             IconButton(onClick = { showMoreActions = true }) {
                                 Icon(Icons.Outlined.MoreVert, stringResource(R.string.action_more))
@@ -166,6 +208,14 @@ fun LibraryScreen(
                                 expanded = showMoreActions,
                                 onDismissRequest = { showMoreActions = false },
                             ) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.library_change_skin)) },
+                                    leadingIcon = { Icon(Icons.Outlined.Palette, null) },
+                                    onClick = {
+                                        showMoreActions = false
+                                        showSkinPicker = true
+                                    },
+                                )
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.library_app_settings)) },
                                     leadingIcon = { Icon(Icons.Outlined.Settings, null) },
@@ -180,67 +230,137 @@ fun LibraryScreen(
                 )
             },
             floatingActionButton = {
-                ExtendedFloatingActionButton(
-                    modifier = Modifier
-                        .testTag(ReaderTestTags.LIBRARY_IMPORT)
-                        .semantics(mergeDescendants = true) {
-                            contentDescription = importNovelLabel
-                            role = Role.Button
+                if (state.shelfBooks.isNotEmpty()) {
+                    ExtendedFloatingActionButton(
+                        modifier = Modifier
+                            .testTag(ReaderTestTags.LIBRARY_IMPORT)
+                            .semantics(mergeDescendants = true) {
+                                contentDescription = importNovelLabel
+                                role = Role.Button
+                            },
+                        onClick = { showImportPicker = true },
+                        icon = { Icon(Icons.Outlined.Add, null) },
+                        text = {
+                            Text(
+                                stringResource(R.string.library_import_action),
+                                style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.SansSerif),
+                            )
                         },
-                    onClick = { importer.launch(arrayOf("text/plain", "application/epub+zip")) },
-                    icon = { Icon(Icons.Outlined.Add, null) },
-                    text = {
-                        Text(
-                            stringResource(R.string.library_import_novel),
-                            style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.SansSerif),
-                        )
-                    },
-                    shape = RoundedCornerShape(18.dp),
-                )
+                        shape = RoundedCornerShape(LightReaderShapeTokens.large),
+                    )
+                }
             },
         ) { padding ->
             if (state.shelfBooks.isEmpty()) {
                 EmptyLibrary(
-                    modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
-                    onImport = { importer.launch(arrayOf("text/plain", "application/epub+zip")) },
+                    modifier = Modifier.fillMaxSize().padding(padding).padding(LightReaderSpacing.lg),
+                    onImportLocal = { importer.launch(arrayOf("text/plain", "application/epub+zip")) },
+                    onImportWeb = onOpenWebImport,
                 )
             } else {
                 Column(Modifier.fillMaxSize().padding(padding)) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier.fillMaxWidth()
+                            .padding(horizontal = ReaderUiTokens.pagePadding, vertical = LightReaderSpacing.xs)
+                            .testTag(ReaderTestTags.LIBRARY_SEARCH),
+                        placeholder = { Text(stringResource(R.string.library_search_hint)) },
+                        leadingIcon = { Icon(Icons.Outlined.Search, null) },
+                        trailingIcon = if (searchQuery.isNotEmpty()) {
+                            {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(Icons.Outlined.Close, stringResource(R.string.action_clear_search))
+                                }
+                            }
+                        } else null,
+                        singleLine = true,
+                        shape = RoundedCornerShape(LightReaderShapeTokens.large),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                    )
                     Row(
-                        Modifier.fillMaxWidth().padding(horizontal = ReaderUiTokens.pagePadding, vertical = 10.dp),
+                        Modifier.fillMaxWidth().padding(horizontal = ReaderUiTokens.pagePadding),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Bottom,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            stringResource(R.string.library_my_shelf),
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontFamily = FontFamily.SansSerif,
-                                fontWeight = FontWeight.Bold,
-                            ),
-                        )
-                        Text(
-                            pluralStringResource(R.plurals.library_book_count, state.shelfBooks.size, state.shelfBooks.size),
+                            pluralStringResource(R.plurals.library_book_count, shelf.books.size, shelf.books.size),
+                            modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.SansSerif),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        Box {
+                            IconButton(
+                                onClick = { showSortMenu = true },
+                                modifier = Modifier.testTag(ReaderTestTags.LIBRARY_SORT)
+                                    .semantics { stateDescription = sortLabel },
+                            ) {
+                                Icon(Icons.AutoMirrored.Outlined.Sort, stringResource(R.string.library_sort))
+                            }
+                            DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                                LibrarySortOrder.entries.forEach { order ->
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(order.labelResource())) },
+                                        leadingIcon = {
+                                            if (order == sortOrder) {
+                                                Icon(Icons.Outlined.CheckCircle, stringResource(R.string.action_selected))
+                                            }
+                                        },
+                                        onClick = {
+                                            sortOrder = order
+                                            showSortMenu = false
+                                        },
+                                    )
+                                }
+                            }
+                        }
                     }
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(if (state.shelfBooks.size == 1) 280.dp else 112.dp),
+                        columns = GridCells.Adaptive((144f * fontScale.coerceIn(1f, 1.5f)).dp),
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(start = ReaderUiTokens.pagePadding, end = ReaderUiTokens.pagePadding, bottom = 104.dp),
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            RecentReadingCard(
-                                shelfBook = state.shelfBooks.first(),
-                                onOpen = { viewModel.openBook(state.shelfBooks.first().book.id) },
-                                onEdit = { pendingEdit = state.shelfBooks.first().book },
-                                onDelete = { pendingDelete = state.shelfBooks.first().book },
-                            )
+                        shelf.recentBook?.let { recent ->
+                            item(key = "recent-heading", span = { GridItemSpan(maxLineSpan) }) {
+                                Text(
+                                    stringResource(R.string.library_recent_reading),
+                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                )
+                            }
+                            item(key = "recent-book", span = { GridItemSpan(maxLineSpan) }) {
+                                RecentReadingCard(
+                                    shelfBook = recent,
+                                    onOpen = { viewModel.openBook(recent.book.id) },
+                                    onEdit = { pendingEdit = recent.book },
+                                    onDelete = { pendingDelete = recent.book },
+                                )
+                            }
                         }
-                        if (state.shelfBooks.size > 1) {
-                            item(span = { GridItemSpan(maxLineSpan) }) {
+                        if (shelf.books.isEmpty()) {
+                            item(key = "no-results", span = { GridItemSpan(maxLineSpan) }) {
+                                Column(
+                                    Modifier.fillMaxWidth().padding(vertical = LightReaderSpacing.xl)
+                                        .testTag(ReaderTestTags.LIBRARY_NO_RESULTS),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(LightReaderSpacing.xs),
+                                ) {
+                                    Text(stringResource(R.string.library_no_results), style = MaterialTheme.typography.titleMedium)
+                                    Text(
+                                        stringResource(R.string.library_no_results_hint),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center,
+                                    )
+                                    TextButton(onClick = { searchQuery = ""; focusManager.clearFocus() }) {
+                                        Text(stringResource(R.string.action_clear_search))
+                                    }
+                                }
+                            }
+                        } else if (shelf.books.size > 1 || shelf.recentBook == null) {
+                            item(key = "all-books-heading", span = { GridItemSpan(maxLineSpan) }) {
                                 Text(
                                     stringResource(R.string.library_all_books),
                                     modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
@@ -250,7 +370,7 @@ fun LibraryScreen(
                                     ),
                                 )
                             }
-                            items(state.shelfBooks, key = { it.book.id }) { shelfBook ->
+                            items(shelf.books, key = { "book-${it.book.id}" }) { shelfBook ->
                                 BookCard(
                                     shelfBook = shelfBook,
                                     onOpen = { viewModel.openBook(shelfBook.book.id) },
@@ -318,6 +438,24 @@ fun LibraryScreen(
             )
         }
     }
+
+    if (showImportPicker) {
+        ModalBottomSheet(
+            onDismissRequest = { showImportPicker = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            ImportSourcePicker(
+                onImportLocal = {
+                    showImportPicker = false
+                    importer.launch(arrayOf("text/plain", "application/epub+zip"))
+                },
+                onImportWeb = {
+                    showImportPicker = false
+                    onOpenWebImport()
+                },
+            )
+        }
+    }
 }
 
 @Composable
@@ -375,20 +513,16 @@ fun AppSettingsScreen(
     readerViewModel: ReaderViewModel,
     settingsViewModel: SettingsViewModel,
 ) {
+    var showLanguagePicker by remember { mutableStateOf(false) }
+    var showSkinPicker by remember { mutableStateOf(false) }
+    var showLicenses by remember { mutableStateOf(false) }
+    var versionTapCount by remember { mutableStateOf(0) }
     Scaffold(
         modifier = Modifier.testTag(ReaderTestTags.APP_SETTINGS),
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
-                title = {
-                    Text(
-                        stringResource(R.string.app_settings_title),
-                        modifier = Modifier.combinedClickable(
-                            onClick = {},
-                            onLongClick = settingsViewModel::toggleDeveloperTools,
-                        ),
-                    )
-                },
+                title = { Text(stringResource(R.string.app_settings_title)) },
                 navigationIcon = {
                     IconButton(onClick = readerViewModel::goBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.action_back))
@@ -408,45 +542,135 @@ fun AppSettingsScreen(
             if (wide) {
                 Row(contentModifier, horizontalArrangement = Arrangement.spacedBy(30.dp)) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(22.dp)) {
-                        AppReadingSettings(preferences, settingsViewModel)
-                        AppAppearanceSettings(preferences, settingsViewModel)
+                        AppReadingSettings(preferences, settingsViewModel) { showLanguagePicker = true }
+                        AppAppearanceSettings(preferences) { showSkinPicker = true }
                     }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(22.dp)) {
                         AppImportSettings(preferences, readerViewModel, settingsViewModel)
+                        AppAiSettings(readerViewModel)
+                        AppAboutSettings(
+                            onOpenLicenses = { showLicenses = true },
+                            onVersionTap = {
+                                if (!preferences.developerToolsEnabled) {
+                                    versionTapCount += 1
+                                    if (versionTapCount >= 7) {
+                                        versionTapCount = 0
+                                        settingsViewModel.toggleDeveloperTools()
+                                    }
+                                }
+                            },
+                        )
                         AppDeveloperSettings(preferences, readerViewModel)
                     }
                 }
             } else {
                 Column(contentModifier, verticalArrangement = Arrangement.spacedBy(22.dp)) {
-                    AppReadingSettings(preferences, settingsViewModel)
+                    AppReadingSettings(preferences, settingsViewModel) { showLanguagePicker = true }
                     AppImportSettings(preferences, readerViewModel, settingsViewModel)
-                    AppAppearanceSettings(preferences, settingsViewModel)
+                    AppAppearanceSettings(preferences) { showSkinPicker = true }
+                    AppAiSettings(readerViewModel)
+                    AppAboutSettings(
+                        onOpenLicenses = { showLicenses = true },
+                        onVersionTap = {
+                            if (!preferences.developerToolsEnabled) {
+                                versionTapCount += 1
+                                if (versionTapCount >= 7) {
+                                    versionTapCount = 0
+                                    settingsViewModel.toggleDeveloperTools()
+                                }
+                            }
+                        },
+                    )
                     AppDeveloperSettings(preferences, readerViewModel)
                 }
             }
         }
     }
+
+    if (showLanguagePicker) {
+        ModalBottomSheet(
+            onDismissRequest = { showLanguagePicker = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            Column(
+                Modifier.fillMaxWidth().padding(
+                    start = LightReaderSpacing.lg,
+                    end = LightReaderSpacing.lg,
+                    bottom = LightReaderSpacing.xl,
+                ),
+                verticalArrangement = Arrangement.spacedBy(LightReaderSpacing.xs),
+            ) {
+                Text(stringResource(R.string.app_settings_language), style = MaterialTheme.typography.headlineSmall)
+                AppLanguage.entries.forEach { language ->
+                    AppLanguageRow(language, preferences.appLanguage == language) {
+                        settingsViewModel.saveAppLanguage(language)
+                        showLanguagePicker = false
+                    }
+                }
+            }
+        }
+    }
+
+    if (showSkinPicker) {
+        ModalBottomSheet(
+            onDismissRequest = { showSkinPicker = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            SkinPickerPanel(
+                selected = preferences.appSkin,
+                onSelect = { skin -> settingsViewModel.savePreferences(preferences.copy(appSkin = skin)) },
+            )
+        }
+    }
+
+    if (showLicenses) {
+        AlertDialog(
+            onDismissRequest = { showLicenses = false },
+            title = { Text(stringResource(R.string.app_settings_licenses)) },
+            text = { Text(stringResource(R.string.app_settings_licenses_body)) },
+            confirmButton = {
+                TextButton(onClick = { showLicenses = false }) { Text(stringResource(R.string.action_done)) }
+            },
+        )
+    }
 }
 
 @Composable
-private fun AppReadingSettings(preferences: ReaderPreferences, settingsViewModel: SettingsViewModel) {
+private fun AppReadingSettings(
+    preferences: ReaderPreferences,
+    settingsViewModel: SettingsViewModel,
+    onChooseLanguage: () -> Unit,
+) {
     AppSettingsSection(stringResource(R.string.app_settings_reading)) {
-        Text(
-            stringResource(R.string.app_settings_language),
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        SettingsNavigationRow(
+            title = stringResource(R.string.app_settings_language),
+            description = stringResource(R.string.app_settings_language_description),
+            icon = Icons.Outlined.Language,
+            trailingText = preferences.appLanguage.label(),
+            onClick = onChooseLanguage,
         )
-        AppLanguage.entries.forEach { language ->
-            AppLanguageRow(language, preferences.appLanguage == language) { settingsViewModel.saveAppLanguage(language) }
-        }
-        SettingsSwitchRow(stringResource(R.string.settings_volume_keys), preferences.volumeKeys) {
+        SettingsSwitchRow(
+            icon = Icons.AutoMirrored.Outlined.VolumeUp,
+            title = stringResource(R.string.settings_volume_keys),
+            description = stringResource(R.string.app_settings_volume_description),
+            checked = preferences.volumeKeys,
+        ) {
             settingsViewModel.savePreferences(preferences.copy(volumeKeys = it))
         }
-        SettingsSwitchRow(stringResource(R.string.settings_keep_screen_on), preferences.keepScreenOn) {
+        SettingsSwitchRow(
+            icon = Icons.Outlined.LightMode,
+            title = stringResource(R.string.settings_keep_screen_on),
+            description = stringResource(R.string.app_settings_keep_screen_description),
+            checked = preferences.keepScreenOn,
+        ) {
             settingsViewModel.savePreferences(preferences.copy(keepScreenOn = it))
         }
-        SettingsSwitchRow(stringResource(R.string.settings_lock_portrait), preferences.lockPortrait) {
+        SettingsSwitchRow(
+            icon = Icons.Outlined.ScreenLockPortrait,
+            title = stringResource(R.string.settings_lock_portrait),
+            description = stringResource(R.string.app_settings_lock_description),
+            checked = preferences.lockPortrait,
+        ) {
             settingsViewModel.savePreferences(preferences.copy(lockPortrait = it))
         }
     }
@@ -459,30 +683,64 @@ private fun AppImportSettings(
     settingsViewModel: SettingsViewModel,
 ) {
     AppSettingsSection(stringResource(R.string.app_settings_import_download)) {
-        SettingsSwitchRow(stringResource(R.string.settings_clean_txt_noise), preferences.cleanTxtNoise) {
+        SettingsSwitchRow(
+            icon = Icons.Outlined.CleaningServices,
+            title = stringResource(R.string.settings_clean_txt_noise),
+            description = stringResource(R.string.app_settings_clean_description),
+            checked = preferences.cleanTxtNoise,
+        ) {
             settingsViewModel.savePreferences(preferences.copy(cleanTxtNoise = it))
         }
         SettingsNavigationRow(
-            stringResource(R.string.library_web_import),
-            Modifier.testTag(ReaderTestTags.APP_SETTINGS_WEB_IMPORT),
-            { Icon(Icons.Outlined.CloudDownload, null) },
+            title = stringResource(R.string.library_web_import),
+            description = stringResource(R.string.app_settings_web_description),
+            icon = Icons.Outlined.CloudDownload,
+            modifier = Modifier.testTag(ReaderTestTags.APP_SETTINGS_WEB_IMPORT),
         ) { readerViewModel.navigate(AppScreen.WebImport) }
+    }
+}
+
+@Composable
+private fun AppAppearanceSettings(preferences: ReaderPreferences, onChooseSkin: () -> Unit) {
+    AppSettingsSection(stringResource(R.string.app_settings_appearance)) {
         SettingsNavigationRow(
-            stringResource(R.string.library_deepseek_settings),
-            Modifier.testTag(ReaderTestTags.APP_SETTINGS_API),
-            { Icon(Icons.Outlined.Key, null) },
+            title = stringResource(R.string.library_change_skin),
+            description = stringResource(R.string.app_settings_skin_description),
+            icon = Icons.Outlined.Palette,
+            trailingText = preferences.appSkin.label(),
+            modifier = Modifier.testTag(ReaderTestTags.APP_SETTINGS_SKIN),
+            onClick = onChooseSkin,
+        )
+    }
+}
+
+@Composable
+private fun AppAiSettings(readerViewModel: ReaderViewModel) {
+    AppSettingsSection(stringResource(R.string.app_settings_ai)) {
+        SettingsNavigationRow(
+            title = stringResource(R.string.library_deepseek_settings),
+            description = stringResource(R.string.app_settings_ai_description),
+            icon = Icons.Outlined.Key,
+            modifier = Modifier.testTag(ReaderTestTags.APP_SETTINGS_API),
         ) { readerViewModel.navigate(AppScreen.ApiSettings) }
     }
 }
 
 @Composable
-private fun AppAppearanceSettings(preferences: ReaderPreferences, settingsViewModel: SettingsViewModel) {
-    AppSettingsSection(stringResource(R.string.app_settings_appearance)) {
+private fun AppAboutSettings(onOpenLicenses: () -> Unit, onVersionTap: () -> Unit) {
+    AppSettingsSection(stringResource(R.string.app_settings_about)) {
+        SettingRow(
+            icon = Icons.Outlined.Info,
+            title = stringResource(R.string.app_settings_version),
+            modifier = Modifier.testTag(ReaderTestTags.APP_SETTINGS_VERSION),
+            trailing = { Text(BuildConfig.VERSION_NAME, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+            onClick = onVersionTap,
+        )
         SettingsNavigationRow(
-            stringResource(R.string.library_change_skin),
-            Modifier.testTag(ReaderTestTags.APP_SETTINGS_SKIN),
-            { Icon(Icons.Outlined.Palette, null) },
-        ) { settingsViewModel.savePreferences(preferences.copy(appSkin = preferences.appSkin.next())) }
+            title = stringResource(R.string.app_settings_licenses),
+            icon = Icons.Outlined.Description,
+            onClick = onOpenLicenses,
+        )
     }
 }
 
@@ -491,9 +749,9 @@ private fun AppDeveloperSettings(preferences: ReaderPreferences, readerViewModel
     if (!preferences.developerToolsEnabled) return
     AppSettingsSection(stringResource(R.string.app_settings_advanced_tools)) {
         SettingsNavigationRow(
-            stringResource(R.string.library_dom_bridge),
-            Modifier.testTag(ReaderTestTags.APP_SETTINGS_DOM),
-            { Icon(Icons.Outlined.Code, null) },
+            title = stringResource(R.string.library_dom_bridge),
+            icon = Icons.Outlined.Code,
+            modifier = Modifier.testTag(ReaderTestTags.APP_SETTINGS_DOM),
         ) { readerViewModel.navigate(AppScreen.WebDomBridge) }
     }
 }
@@ -521,7 +779,7 @@ private fun AppLanguageRow(language: AppLanguage, selected: Boolean, onClick: ()
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(LightReaderShapeTokens.medium))
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -535,17 +793,71 @@ private fun AppLanguageRow(language: AppLanguage, selected: Boolean, onClick: ()
 }
 
 @Composable
-private fun SettingsSwitchRow(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun SettingsSwitchRow(
+    icon: ImageVector,
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    SettingRow(
+        icon = icon,
+        title = title,
+        description = description,
+        modifier = Modifier.toggleable(value = checked, role = Role.Switch) { onCheckedChange(it) },
+        trailing = { Switch(checked = checked, onCheckedChange = null) },
+    )
+}
+
+@Composable
+private fun SettingRow(
+    icon: ImageVector,
+    title: String,
+    modifier: Modifier = Modifier,
+    description: String? = null,
+    trailing: @Composable () -> Unit = {},
+    stackTrailing: Boolean = false,
+    onClick: (() -> Unit)? = null,
+) {
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .toggleable(value = checked, role = Role.Switch) { onCheckedChange(it) }
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .clip(RoundedCornerShape(LightReaderShapeTokens.medium))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .46f))
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = LightReaderSpacing.sm, vertical = LightReaderSpacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(LightReaderSpacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-        Switch(checked = checked, onCheckedChange = null)
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
+            description?.let {
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            if (stackTrailing) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = LightReaderSpacing.xs),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    trailing()
+                }
+            }
+        }
+        if (!stackTrailing) trailing()
     }
 }
 
@@ -553,13 +865,30 @@ private fun SettingsSwitchRow(title: String, checked: Boolean, onCheckedChange: 
 private fun SettingsNavigationRow(
     title: String,
     modifier: Modifier = Modifier,
-    icon: @Composable () -> Unit,
+    description: String? = null,
+    icon: ImageVector,
+    trailingText: String? = null,
     onClick: () -> Unit,
 ) {
-    OutlinedButton(onClick = onClick, modifier = modifier.fillMaxWidth()) {
-        icon()
-        Text(title, Modifier.padding(start = 10.dp))
-    }
+    val stackTrailing = trailingText != null && LocalDensity.current.fontScale >= 1.2f
+    SettingRow(
+        icon = icon,
+        title = title,
+        description = description,
+        modifier = modifier,
+        stackTrailing = stackTrailing,
+        trailing = {
+            trailingText?.let {
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+        onClick = onClick,
+    )
 }
 
 @Composable
@@ -579,7 +908,8 @@ private fun AppLanguage.caption(): String = when (this) {
 @Composable
 private fun EmptyLibrary(
     modifier: Modifier = Modifier,
-    onImport: () -> Unit,
+    onImportLocal: () -> Unit,
+    onImportWeb: () -> Unit,
 ) {
     BoxWithConstraints(modifier.testTag(ReaderTestTags.LIBRARY_EMPTY)) {
         val compact = maxHeight < 520.dp
@@ -631,12 +961,98 @@ private fun EmptyLibrary(
                     style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.SansSerif),
                 )
                 Spacer(Modifier.height(if (compact) 8.dp else 18.dp))
-                TextButton(
-                    onClick = onImport,
-                    modifier = Modifier.heightIn(min = ReaderUiTokens.iconTouchTarget),
+                Button(
+                    onClick = onImportLocal,
+                    modifier = Modifier
+                        .testTag(ReaderTestTags.LIBRARY_IMPORT)
+                        .heightIn(min = ReaderUiTokens.iconTouchTarget),
                 ) { Text(stringResource(R.string.library_import_file)) }
+                TextButton(
+                    onClick = onImportWeb,
+                    modifier = Modifier
+                        .testTag(ReaderTestTags.LIBRARY_IMPORT_WEB)
+                        .heightIn(min = ReaderUiTokens.iconTouchTarget),
+                ) { Text(stringResource(R.string.library_web_import)) }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ImportSourcePicker(
+    onImportLocal: () -> Unit,
+    onImportWeb: () -> Unit,
+) {
+    Column(
+        Modifier.fillMaxWidth().padding(
+            start = LightReaderSpacing.lg,
+            end = LightReaderSpacing.lg,
+            bottom = LightReaderSpacing.xl,
+        ),
+        verticalArrangement = Arrangement.spacedBy(LightReaderSpacing.xs),
+    ) {
+        Text(
+            stringResource(R.string.library_import_choose),
+            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+        )
+        Text(
+            stringResource(R.string.library_import_choose_hint),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Spacer(Modifier.height(LightReaderSpacing.xs))
+        ImportSourceRow(
+            title = stringResource(R.string.library_import_local),
+            description = stringResource(R.string.library_import_local_hint),
+            icon = { Icon(Icons.Outlined.Add, null) },
+            modifier = Modifier.testTag(ReaderTestTags.LIBRARY_IMPORT_LOCAL),
+            onClick = onImportLocal,
+        )
+        ImportSourceRow(
+            title = stringResource(R.string.library_web_import),
+            description = stringResource(R.string.library_import_web_hint),
+            icon = { Icon(Icons.Outlined.CloudDownload, null) },
+            modifier = Modifier.testTag(ReaderTestTags.LIBRARY_IMPORT_WEB),
+            onClick = onImportWeb,
+        )
+    }
+}
+
+@Composable
+private fun ImportSourceRow(
+    title: String,
+    description: String,
+    icon: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(LightReaderShapeTokens.medium))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClick = onClick)
+            .padding(horizontal = LightReaderSpacing.md, vertical = LightReaderSpacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(LightReaderSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(ReaderUiTokens.iconTouchTarget)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            icon()
+        }
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                description,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
     }
 }
@@ -651,7 +1067,12 @@ private fun BookCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit: () -> U
             .fillMaxWidth()
             .clip(RoundedCornerShape(ReaderUiTokens.cardRadius))
             .background(MaterialTheme.colorScheme.surface.copy(alpha = .58f))
-            .combinedClickable(onClick = onOpen, onLongClick = onDelete)
+            .combinedClickable(
+                role = Role.Button,
+                onClick = onOpen,
+                onLongClickLabel = stringResource(R.string.action_delete),
+                onLongClick = onDelete,
+            )
             .padding(8.dp),
     ) {
         Box {
@@ -704,19 +1125,21 @@ private fun BookCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit: () -> U
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        Spacer(Modifier.height(3.dp))
-        Text(
-            book.author?.takeIf { it.isNotBlank() } ?: stringResource(R.string.library_unknown_author),
-            modifier = Modifier.fillMaxWidth(),
-            style = MaterialTheme.typography.labelMedium.copy(
-                fontFamily = FontFamily.SansSerif,
-                fontSize = 12.sp,
-                lineHeight = 15.sp,
-            ),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        book.author?.takeIf { it.isNotBlank() }?.let { author ->
+            Spacer(Modifier.height(3.dp))
+            Text(
+                author,
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontFamily = FontFamily.SansSerif,
+                    fontSize = 12.sp,
+                    lineHeight = 15.sp,
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         Spacer(Modifier.height(6.dp))
         Text(
             shelfBook.currentChapterTitle?.let {
@@ -763,7 +1186,7 @@ private fun RecentReadingCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit
             .fillMaxWidth()
             .clip(cardShape)
             .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .10f), cardShape)
-            .clickable(onClick = onOpen),
+            .clickable(role = Role.Button, onClick = onOpen),
         shape = cardShape,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .72f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -779,15 +1202,8 @@ private fun RecentReadingCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text(
-                        stringResource(R.string.library_recent_reading),
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontFamily = FontFamily.SansSerif,
-                            fontWeight = FontWeight.Bold,
-                        ),
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
                         book.title,
+                        modifier = Modifier.padding(end = 36.dp),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.titleLarge.copy(
@@ -797,13 +1213,15 @@ private fun RecentReadingCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit
                             lineHeight = 25.sp,
                         ),
                     )
-                    Text(
-                        book.author?.takeIf { it.isNotBlank() } ?: stringResource(R.string.library_unknown_author),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.SansSerif),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    book.author?.takeIf { it.isNotBlank() }?.let { author ->
+                        Text(
+                            author,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.SansSerif),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Text(
                         shelfBook.currentChapterTitle?.let { stringResource(R.string.library_current_chapter, it) }
                             ?: stringResource(R.string.library_not_started, book.chapterCount, book.format.name),
@@ -813,13 +1231,14 @@ private fun RecentReadingCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .9f),
                     )
                     ShelfProgressBar(progressPercent = shelfBook.progressPercent, modifier = Modifier.fillMaxWidth())
-                    Row(
+                    FlowRow(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Top,
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(
                             stringResource(R.string.library_progress_percent, shelfBook.progressPercent),
+                            modifier = Modifier.padding(end = 12.dp),
                             color = MaterialTheme.colorScheme.primary,
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontFamily = FontFamily.SansSerif,
@@ -830,7 +1249,7 @@ private fun RecentReadingCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit
                             Text(
                                 stringResource(R.string.library_continue_button),
                                 color = MaterialTheme.colorScheme.primary,
-                                maxLines = 1,
+                                maxLines = 2,
                                 style = MaterialTheme.typography.labelLarge.copy(
                                     fontFamily = FontFamily.SansSerif,
                                     fontWeight = FontWeight.Bold,
@@ -924,7 +1343,9 @@ private fun PastelBookCover(book: Book, compact: Boolean = false) {
     val coverTitle = remember(book.title) { book.title.coverDisplayTitle() }
     Card(
         modifier = Modifier.fillMaxWidth().aspectRatio(.72f),
-        shape = RoundedCornerShape(if (compact) 14.dp else 16.dp),
+        shape = RoundedCornerShape(
+            if (compact) LightReaderShapeTokens.medium else LightReaderShapeTokens.large,
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = if (compact) 1.dp else 2.dp),
     ) {
         Box(
@@ -938,26 +1359,48 @@ private fun PastelBookCover(book: Book, compact: Boolean = false) {
                 Modifier.fillMaxSize().padding(if (compact) 10.dp else 12.dp),
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text(
-                    book.format.name,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.SansSerif,
-                        fontSize = if (compact) 9.sp else 10.sp,
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (compact) .76f else 1f),
-                )
-                Text(
-                    coverTitle,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontFamily = FontFamily.SansSerif,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = if (compact) 13.sp else 15.sp,
-                        lineHeight = if (compact) 17.sp else 20.sp,
-                    ),
-                    maxLines = if (compact) 2 else 3,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(LightReaderShapeTokens.small))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = .52f))
+                        .padding(horizontal = 6.dp, vertical = 3.dp),
+                ) {
+                    Text(
+                        book.format.name,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.SansSerif,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = if (compact) 8.sp else 9.sp,
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 4.dp)) {
+                    Text(
+                        coverTitle,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontFamily = FontFamily.SansSerif,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = if (compact) 13.sp else 15.sp,
+                            lineHeight = if (compact) 17.sp else 20.sp,
+                        ),
+                        maxLines = if (compact) 2 else 3,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    book.author?.takeIf { it.isNotBlank() }?.let { author ->
+                        Text(
+                            author,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontFamily = FontFamily.SansSerif,
+                                fontSize = if (compact) 8.sp else 10.sp,
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .82f),
+                        )
+                    }
+                }
                 Text(
                     stringResource(R.string.library_cover_footer, book.chapterCount),
                     maxLines = 1,
@@ -991,6 +1434,11 @@ private fun Array<String>.taglineAt(index: Int): String {
     return this[normalizedIndex]
 }
 
+private fun LibrarySortOrder.labelResource(): Int = when (this) {
+    LibrarySortOrder.RECENT -> R.string.library_sort_recent
+    LibrarySortOrder.TITLE -> R.string.library_sort_title
+}
+
 @Composable
 private fun SkinPickerPanel(selected: AppSkin, onSelect: (AppSkin) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(start = 22.dp, end = 22.dp, bottom = 30.dp)) {
@@ -1014,20 +1462,42 @@ private fun SkinPickerPanel(selected: AppSkin, onSelect: (AppSkin) -> Unit) {
                         color = if (isSelected) palette.primary.copy(alpha = .32f) else Color.Transparent,
                         shape = RoundedCornerShape(ReaderUiTokens.cardRadius),
                     )
-                    .clickable { onSelect(skin) }
+                    .selectable(selected = isSelected, role = Role.RadioButton) { onSelect(skin) }
                     .padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) {
-                    Box(Modifier.size(34.dp).clip(CircleShape).background(palette.soft))
-                    Box(Modifier.size(34.dp).clip(CircleShape).background(palette.primary))
-                }
+                SkinPreview(palette)
                 Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
                     Text(skin.label(), style = MaterialTheme.typography.titleMedium)
                     Text(skin.caption(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (isSelected) Icon(Icons.Outlined.CheckCircle, stringResource(R.string.action_selected), tint = MaterialTheme.colorScheme.primary)
             }
+        }
+    }
+}
+
+@Composable
+private fun SkinPreview(palette: AppSkinPalette) {
+    Box(
+        Modifier
+            .size(width = 58.dp, height = 42.dp)
+            .clip(RoundedCornerShape(LightReaderShapeTokens.small))
+            .background(palette.background)
+            .border(1.dp, palette.mutedInk.copy(alpha = .14f), RoundedCornerShape(LightReaderShapeTokens.small)),
+    ) {
+        Column(
+            Modifier
+                .align(Alignment.Center)
+                .size(width = 42.dp, height = 28.dp)
+                .clip(RoundedCornerShape(LightReaderShapeTokens.small))
+                .background(palette.surface)
+                .padding(horizontal = 6.dp, vertical = 5.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Box(Modifier.fillMaxWidth(.72f).height(3.dp).clip(CircleShape).background(palette.ink.copy(alpha = .82f)))
+            Box(Modifier.fillMaxWidth(.48f).height(3.dp).clip(CircleShape).background(palette.mutedInk.copy(alpha = .55f)))
+            Box(Modifier.fillMaxWidth().height(3.dp).clip(CircleShape).background(palette.accent.copy(alpha = .88f)))
         }
     }
 }

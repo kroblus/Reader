@@ -68,8 +68,8 @@ class ReaderUiInstrumentedTest {
         assertEquals("轻阅", localizedText(Locale.SIMPLIFIED_CHINESE, R.string.app_name))
         assertEquals("My shelf", localizedText(Locale.ENGLISH, R.string.library_my_shelf))
         assertEquals("我的书架", localizedText(Locale.SIMPLIFIED_CHINESE, R.string.library_my_shelf))
-        assertEquals("Settings", localizedText(Locale.ENGLISH, R.string.reader_settings))
-        assertEquals("设置", localizedText(Locale.SIMPLIFIED_CHINESE, R.string.reader_settings))
+        assertEquals("Layout", localizedText(Locale.ENGLISH, R.string.reader_settings))
+        assertEquals("排版", localizedText(Locale.SIMPLIFIED_CHINESE, R.string.reader_settings))
         assertEquals("No bookmarks yet", localizedText(Locale.ENGLISH, R.string.reader_no_bookmarks))
         assertEquals("还没有书签", localizedText(Locale.SIMPLIFIED_CHINESE, R.string.reader_no_bookmarks))
         assertEquals("Failed", localizedText(Locale.ENGLISH, R.string.download_status_failed))
@@ -78,7 +78,8 @@ class ReaderUiInstrumentedTest {
 
     @Test
     fun globalSkinCanBeChangedFromLibrary() {
-        composeRule.onNodeWithContentDescription(text(R.string.library_change_skin)).performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.action_more)).performClick()
+        composeRule.onNodeWithText(text(R.string.library_change_skin)).performClick()
         composeRule.onNodeWithText(text(R.string.library_skin_body)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.skin_ocean)).performClick()
         composeRule.onNodeWithText(text(R.string.skin_ocean)).assertIsDisplayed()
@@ -90,14 +91,13 @@ class ReaderUiInstrumentedTest {
         composeRule.onNodeWithText(text(R.string.brand_name)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.library_empty_title)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.library_import_file)).assertIsDisplayed()
-        composeRule.onNodeWithContentDescription(text(R.string.library_import_novel)).assertIsDisplayed()
-        composeRule.onAllNodesWithText(text(R.string.library_web_import)).assertCountEquals(0)
-        composeRule.onNodeWithContentDescription(text(R.string.action_more)).performClick()
-        composeRule.onNodeWithText(text(R.string.library_app_settings)).performClick()
-        composeRule.onNodeWithText(text(R.string.app_settings_title)).assertIsDisplayed()
-        composeRule.onNodeWithText(text(R.string.library_web_import)).performScrollTo().performClick()
+        composeRule.onAllNodesWithContentDescription(text(R.string.library_import_novel)).assertCountEquals(0)
+        composeRule.onNodeWithText(text(R.string.library_web_import)).performClick()
         composeRule.onNodeWithText(text(R.string.web_import_flow_title)).assertIsDisplayed()
         composeRule.onNodeWithContentDescription(text(R.string.action_back)).performClick()
+        composeRule.onNodeWithText(text(R.string.library_empty_title)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(text(R.string.action_more)).performClick()
+        composeRule.onNodeWithText(text(R.string.library_app_settings)).performClick()
         composeRule.onNodeWithText(text(R.string.app_settings_title)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.library_deepseek_settings)).performScrollTo().performClick()
         composeRule.onNodeWithText(text(R.string.api_settings_title)).assertIsDisplayed()
@@ -185,8 +185,9 @@ class ReaderUiInstrumentedTest {
         composeRule.onNodeWithText(text(R.string.action_save)).performClick()
 
         composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithText(text(R.string.library_unknown_author)).fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithText("Temporary Author").fetchSemanticsNodes().isEmpty()
         }
+        composeRule.onAllNodesWithText(text(R.string.library_unknown_author)).assertCountEquals(0)
         val updatedBook = runBlocking { application.container.database.readerDao().book(bookId)!! }
         assertEquals(null, updatedBook.author)
     }
@@ -197,11 +198,13 @@ class ReaderUiInstrumentedTest {
         composeRule.onNodeWithText(text(R.string.library_app_settings)).performClick()
         composeRule.onNodeWithText(text(R.string.app_settings_title)).assertIsDisplayed()
 
+        composeRule.onNodeWithText(text(R.string.app_settings_language)).performClick()
         composeRule.onNodeWithText(localizedText(Locale.ENGLISH, R.string.language_en)).performClick()
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithText(localizedText(Locale.ENGLISH, R.string.app_settings_title)).fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithText(localizedText(Locale.ENGLISH, R.string.app_settings_language)).assertIsDisplayed()
+        composeRule.onNodeWithText(localizedText(Locale.ENGLISH, R.string.app_settings_language)).performClick()
         composeRule.onNodeWithText(localizedText(Locale.ENGLISH, R.string.language_zh_cn)).performClick()
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithText(localizedText(Locale.SIMPLIFIED_CHINESE, R.string.app_settings_title)).fetchSemanticsNodes().isNotEmpty()
@@ -228,22 +231,30 @@ class ReaderUiInstrumentedTest {
         }
         composeRule.onNodeWithText("夜间切换测试").performClick()
         composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithContentDescription(text(R.string.reader_night_off_description)).fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithContentDescription(text(R.string.reader_more_actions)).fetchSemanticsNodes().isNotEmpty()
         }
         repeat(10) {
+            composeRule.onNodeWithContentDescription(text(R.string.reader_more_actions)).performClick()
+            composeRule.waitUntil(5_000) {
+                composeRule.onAllNodesWithTag(ReaderTestTags.READER_NIGHT_TOGGLE).fetchSemanticsNodes().isNotEmpty()
+            }
             composeRule.onNodeWithContentDescription(text(R.string.reader_night_off_description)).performClick()
             composeRule.waitUntil(5_000) {
-                composeRule.onAllNodesWithContentDescription(text(R.string.reader_night_on_description)).fetchSemanticsNodes().isNotEmpty()
+                composeRule.onAllNodesWithContentDescription(text(R.string.reader_more_actions)).fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithContentDescription(text(R.string.reader_more_actions)).performClick()
+            composeRule.waitUntil(5_000) {
+                composeRule.onAllNodesWithTag(ReaderTestTags.READER_NIGHT_TOGGLE).fetchSemanticsNodes().isNotEmpty()
             }
             composeRule.onNodeWithContentDescription(text(R.string.reader_night_on_description)).performClick()
             composeRule.waitUntil(5_000) {
-                composeRule.onAllNodesWithContentDescription(text(R.string.reader_night_off_description)).fetchSemanticsNodes().isNotEmpty()
+                composeRule.onAllNodesWithContentDescription(text(R.string.reader_more_actions)).fetchSemanticsNodes().isNotEmpty()
             }
         }
         assertEquals(ReaderTheme.SEPIA, application.container.settingsRepository.preferences.first().theme)
         composeRule.activityRule.scenario.recreate()
         composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithContentDescription(text(R.string.reader_night_off_description)).fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithContentDescription(text(R.string.reader_more_actions)).fetchSemanticsNodes().isNotEmpty()
         }
         assertEquals(ReaderTheme.SEPIA, application.container.settingsRepository.preferences.first().theme)
     }
@@ -269,31 +280,31 @@ class ReaderUiInstrumentedTest {
 
         composeRule.onNodeWithContentDescription(text(R.string.reader_settings_content_description)).performClick()
         composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithText(text(R.string.settings_brightness)).fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithText(text(R.string.settings_quick_text)).fetchSemanticsNodes().isNotEmpty()
         }
         val rootHeight = composeRule.onRoot().fetchSemanticsNode().boundsInRoot.height
         val dockHeight = composeRule.onNodeWithTag("reader_settings_dock").fetchSemanticsNode().boundsInRoot.height
         assertTrue("Reader settings panel should be compressed to roughly three tenths of the screen", dockHeight <= rootHeight * 0.32f)
         val settingsPanel = composeRule.onNodeWithTag("reader_settings_panel")
-        val expectedProgressText = text(R.string.reader_progress, 0, text(R.string.reader_progress_chapter, 1, 0))
+        val expectedProgressText = text(R.string.reader_progress, 0, text(R.string.reader_progress_chapter, 1))
         settingsPanel.assert(hasNoScrollAction())
         composeRule.onNodeWithTag("reader_bottom_progress_text").assertIsDisplayed()
         composeRule.onAllNodesWithText(expectedProgressText).assertCountEquals(1)
         settingsPanel.performTouchInput { swipeUp() }
         settingsPanel.assert(hasNoScrollAction())
-        composeRule.onNodeWithText(text(R.string.settings_brightness)).assertIsDisplayed()
-        composeRule.onNodeWithText(text(R.string.settings_layout)).assertIsDisplayed()
+        composeRule.onAllNodesWithText(text(R.string.settings_brightness)).assertCountEquals(0)
+        assertTrue(composeRule.onAllNodesWithText(text(R.string.settings_layout)).fetchSemanticsNodes().isNotEmpty())
         composeRule.onNodeWithText(text(R.string.layout_comfort)).assertIsDisplayed()
-        composeRule.onNodeWithText(text(R.string.settings_font_size)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_quick_text)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.settings_background)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.settings_more)).assertIsDisplayed()
         composeRule.onNodeWithTag("reader_bottom_progress_text").assertIsDisplayed()
         composeRule.onAllNodesWithText(expectedProgressText).assertCountEquals(1)
         settingsPanel.performTouchInput { swipeDown() }
         settingsPanel.assert(hasNoScrollAction())
-        composeRule.onNodeWithText(text(R.string.settings_brightness)).assertIsDisplayed()
-        composeRule.onNodeWithText(text(R.string.settings_layout)).assertIsDisplayed()
-        composeRule.onNodeWithText(text(R.string.settings_font_size)).assertIsDisplayed()
+        composeRule.onAllNodesWithText(text(R.string.settings_brightness)).assertCountEquals(0)
+        assertTrue(composeRule.onAllNodesWithText(text(R.string.settings_layout)).fetchSemanticsNodes().isNotEmpty())
+        composeRule.onNodeWithText(text(R.string.settings_quick_text)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.settings_background)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.settings_more)).assertIsDisplayed()
         composeRule.onNodeWithTag("reader_bottom_progress_text").assertIsDisplayed()
@@ -306,7 +317,7 @@ class ReaderUiInstrumentedTest {
 
         composeRule.onRoot().performTouchInput { click(Offset(center.x * 0.35f, center.y * 0.72f)) }
         composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithText(text(R.string.settings_brightness)).fetchSemanticsNodes().isEmpty()
+            composeRule.onAllNodesWithText(text(R.string.settings_quick_text)).fetchSemanticsNodes().isEmpty()
         }
         composeRule.onAllNodesWithText(text(R.string.settings_brightness)).assertCountEquals(0)
         composeRule.onAllNodesWithContentDescription(text(R.string.reader_toc)).assertCountEquals(0)
@@ -319,7 +330,7 @@ class ReaderUiInstrumentedTest {
 
         composeRule.onNodeWithContentDescription(text(R.string.reader_settings_content_description)).performClick()
         composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithText(text(R.string.settings_brightness)).fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithText(text(R.string.settings_quick_text)).fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithText(text(R.string.settings_more)).performClick()
         composeRule.waitUntil(5_000) {
@@ -328,6 +339,12 @@ class ReaderUiInstrumentedTest {
         composeRule.onNodeWithText(text(R.string.settings_more)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.settings_layout)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.settings_page_turn)).assertIsDisplayed()
+        composeRule.onAllNodesWithText(text(R.string.settings_show_progress)).assertCountEquals(0)
+        composeRule.onAllNodesWithText(text(R.string.settings_top_padding)).assertCountEquals(0)
+        composeRule.onNodeWithTag(ReaderTestTags.READER_ADVANCED_SETTINGS).performScrollTo().performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithTag(ReaderTestTags.READER_ADVANCED_CONTENT).fetchSemanticsNodes().isNotEmpty()
+        }
         composeRule.onNodeWithText(text(R.string.settings_show_progress)).performScrollTo()
         composeRule.onNodeWithText(text(R.string.settings_show_progress)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.settings_show_right_progress)).performScrollTo()
@@ -341,24 +358,31 @@ class ReaderUiInstrumentedTest {
 
         composeRule.onNodeWithContentDescription(text(R.string.reader_settings_content_description)).performClick()
         composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithText(text(R.string.settings_brightness)).fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithText(text(R.string.settings_quick_text)).fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithContentDescription(text(R.string.reader_auto)).performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.reader_more_actions)).performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithTag(ReaderTestTags.READER_AUTO_TOGGLE).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag(ReaderTestTags.READER_AUTO_TOGGLE).performClick()
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithContentDescription(text(R.string.reader_toc)).fetchSemanticsNodes().isEmpty()
         }
         composeRule.onAllNodesWithContentDescription(text(R.string.reader_toc)).assertCountEquals(0)
 
+        composeRule.onNodeWithText(text(R.string.reader_pause_auto)).assertIsDisplayed()
         composeRule.onRoot().performTouchInput { click(Offset(center.x, center.y)) }
         composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithText(text(R.string.reader_pause)).fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithContentDescription(text(R.string.reader_more_actions)).fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithText(text(R.string.reader_pause)).assertIsDisplayed()
-        composeRule.onNodeWithContentDescription(text(R.string.reader_pause)).performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.reader_more_actions)).performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithTag(ReaderTestTags.READER_AUTO_TOGGLE).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag(ReaderTestTags.READER_AUTO_TOGGLE, useUnmergedTree = true).performClick()
 
-        composeRule.waitUntil(7_000) {
-            composeRule.onAllNodesWithContentDescription(text(R.string.reader_toc)).fetchSemanticsNodes().isEmpty()
-        }
+        composeRule.mainClock.advanceTimeBy(5_100)
+        composeRule.waitForIdle()
         composeRule.onAllNodesWithContentDescription(text(R.string.reader_toc)).assertCountEquals(0)
         composeRule.onRoot().performTouchInput { click(Offset(center.x, center.y)) }
         composeRule.waitUntil(5_000) {
@@ -377,7 +401,7 @@ class ReaderUiInstrumentedTest {
         val expectedProgress = text(
             R.string.reader_progress,
             60,
-            text(R.string.reader_progress_chapter, 13, 0),
+            text(R.string.reader_progress_chapter, 13),
         )
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithText(expectedProgress).fetchSemanticsNodes().isNotEmpty()
@@ -437,13 +461,17 @@ class ReaderUiInstrumentedTest {
         composeRule.onNodeWithContentDescription(text(R.string.reader_toc)).assertIsDisplayed()
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithContentDescription(text(R.string.reader_bookmarks)).performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.reader_more_actions)).performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText(text(R.string.reader_bookmark_list)).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText(text(R.string.reader_bookmark_list)).performClick()
         composeRule.onNodeWithText(text(R.string.reader_no_bookmarks)).assertIsDisplayed()
         closeReaderOverlayFromBlankArea()
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithText(text(R.string.reader_no_bookmarks)).fetchSemanticsNodes().isEmpty()
         }
-        composeRule.onNodeWithContentDescription(text(R.string.reader_bookmarks)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(text(R.string.reader_more_actions)).assertIsDisplayed()
     }
 
     @Test
@@ -490,6 +518,10 @@ class ReaderUiInstrumentedTest {
         }
         composeRule.onNodeWithTag(ReaderTestTags.SEARCH_EMPTY).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag(ReaderTestTags.SEARCH_INPUT).performTextInput("不存在")
+        composeRule.waitUntil(5_000) {
+            !composeRule.onNodeWithTag(ReaderTestTags.SEARCH_SUBMIT).fetchSemanticsNode()
+                .config.contains(androidx.compose.ui.semantics.SemanticsProperties.Disabled)
+        }
         composeRule.onNodeWithTag(ReaderTestTags.SEARCH_SUBMIT).performClick()
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithTag(ReaderTestTags.SEARCH_NO_RESULTS).fetchSemanticsNodes().isNotEmpty()
@@ -497,6 +529,10 @@ class ReaderUiInstrumentedTest {
         composeRule.onNodeWithTag(ReaderTestTags.SEARCH_NO_RESULTS).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription(text(R.string.action_clear_search)).performClick()
         composeRule.onNodeWithTag(ReaderTestTags.SEARCH_INPUT).performTextInput("山中")
+        composeRule.waitUntil(5_000) {
+            !composeRule.onNodeWithTag(ReaderTestTags.SEARCH_SUBMIT).fetchSemanticsNode()
+                .config.contains(androidx.compose.ui.semantics.SemanticsProperties.Disabled)
+        }
         composeRule.onNodeWithTag(ReaderTestTags.SEARCH_SUBMIT).performClick()
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithTag(ReaderTestTags.SEARCH_RESULT).fetchSemanticsNodes().isNotEmpty()

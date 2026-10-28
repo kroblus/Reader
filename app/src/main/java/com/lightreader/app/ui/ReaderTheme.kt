@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
@@ -36,24 +37,67 @@ data class AppSkinPalette(
     val mutedInk: Color,
 )
 
+data class LightReaderColorTokens(
+    val background: Color,
+    val surface: Color,
+    val surfaceVariant: Color,
+    val selectedSurface: Color,
+    val primaryText: Color,
+    val secondaryText: Color,
+    val tertiaryText: Color,
+    val disabledContent: Color,
+    val selectedBorder: Color,
+    val divider: Color,
+)
+
+object LightReaderShapeTokens {
+    val small = 8.dp
+    val medium = 12.dp
+    val large = 20.dp
+    val extraLarge = 24.dp
+}
+
+object LightReaderSpacing {
+    val xxs = 4.dp
+    val xs = 8.dp
+    val sm = 12.dp
+    val md = 16.dp
+    val lg = 24.dp
+    val xl = 32.dp
+}
+
 object ReaderUiTokens {
     val appBarHeight = 56.dp
     val iconTouchTarget = 48.dp
-    val pagePadding = 24.dp
+    val pagePadding = LightReaderSpacing.lg
     val compactPagePadding = 20.dp
-    val cardRadius = 18.dp
-    val dialogRadius = 18.dp
-    val bottomSheetRadius = 28.dp
+    val cardRadius = LightReaderShapeTokens.large
+    val dialogRadius = LightReaderShapeTokens.large
+    val bottomSheetRadius = LightReaderShapeTokens.extraLarge
     val listItemMinHeight = 58.dp
     val primaryButtonHeight = 46.dp
     const val overlayScrimAlpha = .20f
     const val weakTextAlpha = .72f
 }
 
-val AppSkinPalette.cardBackground: Color get() = soft.copy(alpha = .74f)
-val AppSkinPalette.dialogBackground: Color get() = surface.copy(alpha = .98f)
-val AppSkinPalette.divider: Color get() = primary.copy(alpha = .18f)
-val AppSkinPalette.weakInk: Color get() = mutedInk.copy(alpha = .82f)
+val AppSkinPalette.uiColors: LightReaderColorTokens
+    get() = LightReaderColorTokens(
+        background = background,
+        surface = surface,
+        surfaceVariant = soft.copy(alpha = .78f).compositeOver(surface),
+        selectedSurface = primary.copy(alpha = .18f).compositeOver(surface),
+        primaryText = ink,
+        secondaryText = mutedInk,
+        tertiaryText = mutedInk.copy(alpha = .76f),
+        disabledContent = mutedInk.copy(alpha = .38f),
+        selectedBorder = primary.copy(alpha = .82f),
+        divider = primary.copy(alpha = .18f),
+    )
+
+val AppSkinPalette.cardBackground: Color get() = uiColors.surfaceVariant
+val AppSkinPalette.dialogBackground: Color get() = uiColors.surface
+val AppSkinPalette.divider: Color get() = uiColors.divider
+val AppSkinPalette.weakInk: Color get() = uiColors.tertiaryText
 
 fun AppSkin.palette(): AppSkinPalette = when (this) {
     AppSkin.MINT -> AppSkinPalette(
@@ -83,12 +127,13 @@ fun AppSkin.palette(): AppSkinPalette = when (this) {
 }
 
 internal fun appColorScheme(skin: AppSkin) = skin.palette().let { palette ->
+    val tokens = palette.uiColors
     lightColorScheme(
         primary = palette.primary,
         onPrimary = palette.onPrimary,
-        primaryContainer = palette.soft,
-        onPrimaryContainer = palette.ink,
-        secondary = palette.mutedInk,
+        primaryContainer = tokens.selectedSurface,
+        onPrimaryContainer = tokens.primaryText,
+        secondary = tokens.secondaryText,
         onSecondary = Color.White,
         secondaryContainer = palette.accent.copy(alpha = .48f),
         onSecondaryContainer = palette.ink,
@@ -96,12 +141,12 @@ internal fun appColorScheme(skin: AppSkin) = skin.palette().let { palette ->
         onTertiary = palette.ink,
         tertiaryContainer = palette.accent.copy(alpha = .35f),
         onTertiaryContainer = palette.ink,
-        background = palette.background,
-        onBackground = palette.ink,
-        surface = palette.surface,
-        onSurface = palette.ink,
-        surfaceVariant = palette.soft,
-        onSurfaceVariant = palette.mutedInk,
+        background = tokens.background,
+        onBackground = tokens.primaryText,
+        surface = tokens.surface,
+        onSurface = tokens.primaryText,
+        surfaceVariant = tokens.surfaceVariant,
+        onSurfaceVariant = tokens.secondaryText,
         surfaceTint = palette.primary,
         inverseSurface = palette.ink,
         inverseOnSurface = palette.surface,
@@ -117,13 +162,13 @@ internal fun appColorScheme(skin: AppSkin) = skin.palette().let { palette ->
         onError = Color.White,
         errorContainer = Color(0xFFF6DEDC),
         onErrorContainer = Color(0xFF521C1C),
-        outline = palette.primary.copy(alpha = .38f),
-        outlineVariant = palette.primary.copy(alpha = .16f),
+        outline = tokens.selectedBorder,
+        outlineVariant = tokens.divider,
         scrim = Color.Black,
     )
 }
 
-private val ReaderTypography = Typography(
+val LightReaderTypography = Typography(
     displaySmall = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = 34.sp, lineHeight = 42.sp),
     headlineLarge = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = 30.sp, lineHeight = 38.sp),
     headlineMedium = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = 26.sp, lineHeight = 34.sp),
@@ -134,20 +179,20 @@ private val ReaderTypography = Typography(
     labelLarge = TextStyle(fontWeight = FontWeight.Medium, fontSize = 14.sp),
 )
 
-private val ReaderShapes = Shapes(
-    extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
-    small = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
-    medium = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
-    large = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
-    extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(34.dp),
+val LightReaderShapes = Shapes(
+    extraSmall = RoundedCornerShape(LightReaderShapeTokens.small),
+    small = RoundedCornerShape(LightReaderShapeTokens.medium),
+    medium = RoundedCornerShape(LightReaderShapeTokens.large),
+    large = RoundedCornerShape(LightReaderShapeTokens.extraLarge),
+    extraLarge = RoundedCornerShape(LightReaderShapeTokens.extraLarge),
 )
 
 @Composable
 fun LightReaderTheme(skin: AppSkin, content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = appColorScheme(skin),
-        typography = ReaderTypography,
-        shapes = ReaderShapes,
+        typography = LightReaderTypography,
+        shapes = LightReaderShapes,
         content = content,
     )
 }

@@ -10,6 +10,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 data class ReaderLayoutCacheKey(
@@ -47,6 +49,7 @@ class ReaderSessionController(
     private var paginationJob: Job? = null
     private var prefetchJob: Job? = null
     private var progressSaveJob: Job? = null
+    private val progressSaveMutex = Mutex()
     private val chapterCache = MemoryBoundedCache<ReaderChapterCacheKey, ReaderChapterContent>(
         chapterCacheBytes,
         ReaderChapterContent::estimatedBytes,
@@ -71,8 +74,19 @@ class ReaderSessionController(
         progressSaveJob?.cancel()
         return scope.launch {
             if (!immediate) delay(PROGRESS_SAVE_DEBOUNCE_MS)
-            block()
+            // A canceled database write can finish its transaction before cancellation is observed.
+            // Keep newer writes behind it so an older position never wins the final write.
+            progressSaveMutex.withLock { block() }
         }.also { progressSaveJob = it }
+    }
+
+    /** Reopening a book must read progress only after the outgoing session has saved it. */
+    suspend fun awaitProgressSave() {
+        while (true) {
+            val pending = progressSaveJob ?: return
+            pending.join()
+            if (pending === progressSaveJob) return
+        }
     }
 
     suspend fun <T> compute(block: () -> T): T = withContext(computationDispatcher) { block() }
@@ -87,12 +101,17 @@ class ReaderSessionController(
         clearCaches()
     }
 
-    fun cancelAll() {
+    /** Leaving the reader cancels speculative work, but lets its final position save finish. */
+    fun cancelReaderWork() {
         paginationJob?.cancel()
         prefetchJob?.cancel()
-        progressSaveJob?.cancel()
         paginationJob = null
         prefetchJob = null
+    }
+
+    fun cancelAll() {
+        cancelReaderWork()
+        progressSaveJob?.cancel()
         progressSaveJob = null
     }
 

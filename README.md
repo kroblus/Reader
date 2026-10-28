@@ -1,12 +1,13 @@
 # 轻阅 LightReader
 
-轻阅是一款本地优先的 Android 小说阅读器，使用 Kotlin 与 Jetpack Compose 构建。当前版本为 `0.3.2`，重点覆盖中文 TXT 阅读体验，同时支持无 DRM EPUB、公开 HTTPS 网页导入、书内搜索、书签、网页追更和本机加密保存 DeepSeek API Key。
+轻阅是一款本地优先的 Android 小说阅读器，使用 Kotlin 与 Jetpack Compose 构建。当前版本为 `0.3.3`，重点覆盖中文 TXT 阅读体验，同时支持无 DRM EPUB、公开 HTTPS 网页导入、书内搜索、书签、网页追更和本机加密保存 DeepSeek API Key。
 
 最新 APK 可在 [GitHub Releases](https://github.com/kroblus/Reader/releases) 下载。
 
 ## 功能概览
 
 - 本地书架：导入 TXT/EPUB，显示阶段与进度并支持安全取消；保存阅读进度、书签、全文搜索索引和阅读设置。
+- 书架查找：按书名或作者搜索，按最近活动或书名排序；返回书架保留筛选，“继续阅读”始终对应真实阅读记录。
 - 中文 TXT/EPUB 优化：自动识别 UTF-8、UTF-16、GB18030/GBK、Big5 等常见编码，保留 EPUB 段落结构，并清洗 BOM、Tab、段首空格和多余空行。
 - 阅读排版：基于 Android `TextPaint` 实测字宽分页，使用 Unicode 安全边界保护 emoji 和组合字符，支持章节标题页、段距、行距、首行缩进、边距、字重、两端对齐和多套排版预设。
 - 阅读操作：点击、滑动、音量键翻页；支持横向、纵向分页、连续滚动、平移、无动画和仿真翻页；支持自动阅读、极简模式、全屏点击下一页。
@@ -94,6 +95,8 @@ TXT/EPUB 文件
 性能基准的构建和实体设备执行规则见 [design/performance-testing.md](design/performance-testing.md)。模拟器只验证基准接线，不能作为性能分数依据。
 
 模块依赖、Feature ViewModel 职责和下载边界见 [design/architecture.md](design/architecture.md)。
+
+0.3.3 的页面拆分、搜索取消、后台自动阅读与进度保存改进见 [页面与架构优化](docs/page-architecture/CHANGES.md)。
 
 发布签名由未提交的 `keystore.properties` 或 CI 环境变量提供：`RELEASE_STORE_FILE`、`RELEASE_STORE_PASSWORD`、`RELEASE_KEY_ALIAS`、`RELEASE_KEY_PASSWORD`。未配置时 `assembleRelease` 只生成未签名 APK，禁止再使用 debug key 伪装发布版本。
 
