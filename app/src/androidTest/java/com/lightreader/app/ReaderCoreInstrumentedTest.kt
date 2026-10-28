@@ -25,6 +25,7 @@ import com.lightreader.app.core.model.WebBookPreview
 import com.lightreader.app.core.model.WebChapter
 import com.lightreader.app.core.reader.BookTextNormalizer
 import com.lightreader.app.core.reader.PaintReaderLayoutEngine
+import com.lightreader.app.core.reader.UnicodeTextBoundary
 import com.lightreader.app.core.reader.toReaderStyle
 import com.lightreader.app.core.security.EncryptedApiKeyStore
 import com.lightreader.app.core.web.WebSourceParser
@@ -418,6 +419,42 @@ class ReaderCoreInstrumentedTest {
         val imported = result.chapters.first().file.readText()
         assertEquals("山中修行\n自此\n开始。", imported)
         assertFalse(imported.startsWith("第一章"))
+    }
+
+    @Test
+    fun punctuationWrappingKeepsTitleAndBodyGraphemeBoundariesAtNarrowWidths() {
+        val body = "甲👩🏽‍💻，🇨🇳。e\u0301，乙".repeat(4)
+        val title = "标题$body"
+        val paragraphs = BookTextNormalizer().normalize(body)
+
+        fun assertWholeClusters(source: String, lines: List<String>, label: String) {
+            assertEquals(label, source, lines.joinToString(""))
+            val boundaries = mutableSetOf(0)
+            var offset = 0
+            while (offset < source.length) {
+                offset = UnicodeTextBoundary.nextBoundary(source, offset)
+                boundaries += offset
+            }
+            offset = 0
+            lines.forEach { line ->
+                offset += line.length
+                assertTrue("$label split a visible cluster at UTF-16 offset $offset", offset in boundaries)
+            }
+        }
+
+        // Sweep widths so this exercises punctuation retreat regardless of system font metrics.
+        for (width in 96..720 step 8) {
+            val lines = PaintReaderLayoutEngine().paginate(
+                0, title, paragraphs, ReaderViewport(width, 1280, 1f, 1f),
+                ReaderPreferences().toReaderStyle(),
+            ).pages.flatMap { it.lines }
+            assertWholeClusters(title, lines.filter { it.isChapterTitle }.map { it.text }, "title width=$width")
+            assertWholeClusters(
+                paragraphs.joinToString("") { it.text },
+                lines.filterNot { it.isChapterTitle }.map { it.text },
+                "body width=$width",
+            )
+        }
     }
 
     @Test

@@ -1,6 +1,6 @@
 # 轻阅 LightReader
 
-轻阅是一款本地优先的 Android 小说阅读器，使用 Kotlin 与 Jetpack Compose 构建。当前版本为 `0.3.3`，重点覆盖中文 TXT 阅读体验，同时支持无 DRM EPUB、公开 HTTPS 网页导入、书内搜索、书签、网页追更和本机加密保存 DeepSeek API Key。
+轻阅是一款本地优先的 Android 小说阅读器，使用 Kotlin 与 Jetpack Compose 构建。当前版本为 `0.3.4`，重点覆盖中文 TXT 阅读体验，同时支持无 DRM EPUB、公开 HTTPS 网页导入、书内搜索、书签、网页追更和本机加密保存 DeepSeek API Key。
 
 最新 APK 可在 [GitHub Releases](https://github.com/kroblus/Reader/releases) 下载。
 
@@ -96,7 +96,7 @@ TXT/EPUB 文件
 
 模块依赖、Feature ViewModel 职责和下载边界见 [design/architecture.md](design/architecture.md)。
 
-0.3.3 的页面拆分、搜索取消、后台自动阅读与进度保存改进见 [页面与架构优化](docs/page-architecture/CHANGES.md)。
+0.3.4 的页面拆分、搜索取消、后台自动阅读与进度保存改进见 [页面与架构优化](docs/page-architecture/CHANGES.md)。
 
 发布签名由未提交的 `keystore.properties` 或 CI 环境变量提供：`RELEASE_STORE_FILE`、`RELEASE_STORE_PASSWORD`、`RELEASE_KEY_ALIAS`、`RELEASE_KEY_PASSWORD`。未配置时 `assembleRelease` 只生成未签名 APK，禁止再使用 debug key 伪装发布版本。
 

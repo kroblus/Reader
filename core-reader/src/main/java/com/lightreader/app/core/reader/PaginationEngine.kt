@@ -217,7 +217,9 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
         if (end < text.length && text[end] in FORBIDDEN_LINE_START && end - start > 1) end--
         while (end - start > 1 && text[end - 1] in FORBIDDEN_LINE_END) end--
         if (end < text.length && end > start + 1 && text[end - 1] == text[end] && text[end] in PAIRED_PUNCTUATION) end--
-        return end
+        // Punctuation retreat can move back into an emoji or combining sequence after the
+        // measured end was made safe. Revalidate the final boundary for both title and body.
+        return UnicodeTextBoundary.safeEnd(text, start, end)
     }
 
     private companion object {

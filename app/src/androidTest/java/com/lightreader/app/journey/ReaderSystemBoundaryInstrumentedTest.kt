@@ -2,6 +2,7 @@ package com.lightreader.app.journey
 
 import android.view.KeyEvent
 import android.content.ContentValues
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -18,6 +19,8 @@ import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.Lifecycle
+import androidx.test.platform.app.InstrumentationRegistry
 import com.lightreader.app.BuildConfig
 import com.lightreader.app.MainActivity
 import com.lightreader.app.ReaderApplication
@@ -50,6 +53,7 @@ class ReaderSystemBoundaryInstrumentedTest {
         assertTrue("System-boundary tests must never target production data", BuildConfig.APPLICATION_ID.endsWith(".qa"))
         application.container.database.clearAllTables()
         application.container.keyStore.clear()
+        awaitAppWindow(UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()))
     }
 
     @After
@@ -62,11 +66,12 @@ class ReaderSystemBoundaryInstrumentedTest {
     fun systemFilePickerCancelReturnsToUntouchedEmptyShelf() {
         evidence.step("Open the system document picker from the empty shelf")
         composeRule.onNodeWithText(composeRule.activity.getString(R.string.library_import_file)).performClick()
-        val uiDevice = UiDevice.getInstance(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation())
-        assertTrue(uiDevice.wait(Until.gone(By.pkg(BuildConfig.APPLICATION_ID)), 5_000))
+        val uiDevice = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        awaitSystemPickerWindow(uiDevice)
 
         evidence.step("Cancel with the Android system back action")
-        uiDevice.pressBack()
+        assertTrue("UI Automator should inject Back", uiDevice.pressBack())
+        awaitAppWindow(uiDevice)
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithTag(ReaderTestTags.LIBRARY_EMPTY).fetchSemanticsNodes().isNotEmpty()
         }
@@ -77,15 +82,17 @@ class ReaderSystemBoundaryInstrumentedTest {
     @Test
     fun systemFilePickerImportsQaFixtureWithoutTouchingProductionPackage() {
         assumeTrue("MediaStore Downloads staging requires Android 10+", Build.VERSION.SDK_INT >= 29)
-        val uiDevice = UiDevice.getInstance(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation())
+        val uiDevice = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         val fileName = "reader_qa_system.txt"
         stageDownloadFixture(uiDevice, fileName)
 
         evidence.step("Open DocumentsUI and select the staged UTF-8 fixture")
         composeRule.onNodeWithText(composeRule.activity.getString(R.string.library_import_file)).performClick()
+        awaitSystemPickerWindow(uiDevice)
         val file = uiDevice.wait(Until.findObject(By.textContains("reader_qa_system")), 10_000)
         assumeTrue("The active system picker did not expose the staged fixture", file != null)
         file.click()
+        awaitAppWindow(uiDevice)
 
         evidence.step("Wait for the imported book to appear in the isolated QA database")
         composeRule.waitUntil(15_000) {
@@ -116,10 +123,14 @@ class ReaderSystemBoundaryInstrumentedTest {
         }
 
         evidence.step("Turn a page with the physical volume-down key")
-        val uiDevice = UiDevice.getInstance(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation())
+        val uiDevice = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        awaitAppWindow(uiDevice)
         repeat(2) {
+            val expectedPage = readerViewModel.readerState.value.pageIndex + 1
             assertTrue("UI Automator should inject volume-down", uiDevice.pressKeyCode(KeyEvent.KEYCODE_VOLUME_DOWN))
-            composeRule.waitForIdle()
+            composeRule.waitUntil(5_000) {
+                readerViewModel.readerState.value.pageIndex >= expectedPage
+            }
         }
         composeRule.waitUntil(5_000) {
             readerViewModel.readerState.value.pageIndex >= 2 && runBlocking {
@@ -133,10 +144,55 @@ class ReaderSystemBoundaryInstrumentedTest {
         )
 
         evidence.step("Send the app Home, then relaunch the QA activity")
+        val pageBeforeHome = readerViewModel.readerState.value.pageIndex
         uiDevice.pressHome()
         assertTrue(uiDevice.wait(Until.gone(By.pkg(BuildConfig.APPLICATION_ID)), 5_000))
-        uiDevice.executeShellCommand("am start -W -n ${BuildConfig.APPLICATION_ID}/com.lightreader.app.MainActivity")
-        assertTrue(uiDevice.wait(Until.hasObject(By.pkg(BuildConfig.APPLICATION_ID)), 8_000))
+        // Use launcher semantics and reuse the existing top Activity, rather than creating a
+        // second MainActivity while ActivityScenario still tracks the original instance.
+        val launcherFlags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
+            Intent.FLAG_ACTIVITY_SINGLE_TOP
+        uiDevice.executeShellCommand(
+            "am start -W -a ${Intent.ACTION_MAIN} -c ${Intent.CATEGORY_LAUNCHER} " +
+                "-f 0x${launcherFlags.toString(16)} -n ${BuildConfig.APPLICATION_ID}/com.lightreader.app.MainActivity",
+        )
+        awaitAppWindow(uiDevice)
+        composeRule.onNodeWithTag(ReaderTestTags.READER).assertIsDisplayed()
+        assertEquals(book.id, readerViewModel.readerState.value.book?.id)
+        assertEquals(pageBeforeHome, readerViewModel.readerState.value.pageIndex)
+    }
+
+    private fun awaitAppWindow(uiDevice: UiDevice) {
+        val activity = composeRule.activity
+        composeRule.waitUntil(5_000) {
+            dismissKnownSystemOverlays(uiDevice)
+            var ready = false
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                ready = activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
+                    activity.hasWindowFocus()
+            }
+            ready && uiDevice.hasObject(By.pkg(BuildConfig.APPLICATION_ID))
+        }
+    }
+
+    private fun awaitSystemPickerWindow(uiDevice: UiDevice) {
+        composeRule.waitUntil(5_000) {
+            dismissKnownSystemOverlays(uiDevice)
+            uiDevice.currentPackageName in setOf("com.android.documentsui", "com.google.android.documentsui")
+        }
+    }
+
+    private fun dismissKnownSystemOverlays(uiDevice: UiDevice) {
+        // A launcher ANR can outlive an orchestrated test. Never dismiss a Reader ANR.
+        val launcherAnr = By.pkg("android").res("android", "alertTitle").text("Quickstep isn't responding")
+        if (uiDevice.hasObject(launcherAnr)) {
+            uiDevice.findObject(By.pkg("android").res("android", "aerr_close"))?.click()
+            assertTrue("The Quickstep system dialog should close", uiDevice.wait(Until.gone(launcherAnr), 5_000))
+        }
+        val immersiveHelp = By.pkg("android").res("android", "immersive_cling_title")
+        if (uiDevice.hasObject(immersiveHelp)) {
+            uiDevice.findObject(By.pkg("android").res("android", "ok"))?.click()
+            assertTrue("The system full-screen introduction should close", uiDevice.wait(Until.gone(immersiveHelp), 5_000))
+        }
     }
 
     private fun stageDownloadFixture(uiDevice: UiDevice, fileName: String) {
