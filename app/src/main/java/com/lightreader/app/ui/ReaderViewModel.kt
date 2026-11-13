@@ -137,6 +137,9 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     private var chapterParagraphs: List<BookParagraph> = emptyList()
     private var loadedChapterId: Long? = null
     private var requestedOffset = 0
+    // A restored UTF-16 anchor can lie inside a page after viewport changes. Keep
+    // it independent of page boundaries until the reader actually changes reading position.
+    private var restoredPositionAnchor: SearchOrigin? = null
     private var currentLayoutFingerprint = 0
     private var boundaryTurnNonce = 0L
     private var boundaryCommitSourceChapterIndex: Int? = null
@@ -191,14 +194,16 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         val state = readerState.value
         val book = state.book ?: return null
         val chapter = state.chapters.getOrNull(state.chapterIndex) ?: return null
-        return SearchOrigin(book.id, chapter.id, currentPageOffset())
+        return SearchOrigin(book.id, chapter.id, currentPageOffset(state))
     }
 
     fun restoreSearchOrigin(origin: SearchOrigin) {
         if (readerState.value.book?.id != origin.bookId) return
         val index = readerState.value.chapters.indexOfFirst { it.id == origin.chapterId }
         if (index < 0) return
-        requestedOffset = origin.charOffset.coerceAtLeast(0)
+        val anchor = origin.copy(charOffset = origin.charOffset.coerceAtLeast(0))
+        restoredPositionAnchor = anchor
+        requestedOffset = anchor.charOffset
         replaceCurrent(AppScreen.Reader(origin.bookId))
         loadChapter(index)
     }
@@ -259,6 +264,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
 
     fun openBook(bookId: String) {
         saveCurrentProgress(immediate = true)
+        restoredPositionAnchor = null
         openBookJob?.cancel()
         navigate(AppScreen.Reader(bookId))
         sessionController.cancelReaderWork()
@@ -293,6 +299,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
                     ?: progress?.chapterIndex?.coerceIn(chapters.indices)
                     ?: 0
                 requestedOffset = progress?.charOffset ?: 0
+                restoredPositionAnchor = progress?.let { SearchOrigin(book.id, chapters[chapterIndex].id, requestedOffset) }
                 readerState.value = ReaderUiState(book = book, chapters = chapters, chapterIndex = chapterIndex, loading = true)
                 observeBookmarks(bookId)
                 loadChapter(chapterIndex)
@@ -329,6 +336,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     fun selectChapter(index: Int) {
         if (index !in readerState.value.chapters.indices) return
         if (index != readerState.value.chapterIndex) saveCurrentProgress(immediate = true)
+        restoredPositionAnchor = null
         requestedOffset = 0
         loadChapter(index)
     }
@@ -533,6 +541,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun releaseReaderResources() {
+        restoredPositionAnchor = null
         openBookJob?.cancel()
         openBookJob = null
         sessionController.cancelReaderWork()
@@ -633,6 +642,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     fun pageSelected(index: Int) {
         val state = readerState.value
         if (index !in state.pages.indices || index == state.pageIndex) return
+        restoredPositionAnchor = null
         readerState.value = state.copy(pageIndex = index)
         saveCurrentProgress()
     }
@@ -684,6 +694,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         if (request != null && request.targetChapterIndex != preview.chapterIndex) return
         if (nonce == null && targetChapterIndex != null && targetChapterIndex != preview.chapterIndex) return
         saveCurrentProgress(immediate = true)
+        restoredPositionAnchor = null
         requestedOffset = preview.page.startOffset
         boundaryCommitSourceChapterIndex = state.chapterIndex
         readerState.value = state.copy(
@@ -745,6 +756,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             state.chapterIndex > 0 -> {
                 if (!requestBoundaryTurn(next = false)) {
                     val previous = state.chapters[state.chapterIndex - 1]
+                    restoredPositionAnchor = null
                     requestedOffset = (previous.charCount - 1).coerceAtLeast(0)
                     loadChapter(state.chapterIndex - 1)
                 }
@@ -818,6 +830,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         val state = readerState.value
         if (state.chapterIndex < state.chapters.lastIndex) {
             saveCurrentProgress(immediate = true)
+            restoredPositionAnchor = null
             requestedOffset = 0
             loadChapter(state.chapterIndex + 1)
         }
@@ -827,6 +840,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         val state = readerState.value
         if (state.chapterIndex > 0) {
             saveCurrentProgress(immediate = true)
+            restoredPositionAnchor = null
             requestedOffset = 0
             loadChapter(state.chapterIndex - 1)
         }
@@ -898,6 +912,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         val state = readerState.value
         val target = ReaderNavigationPolicy.progressTarget(state.chapters, progress) ?: return
         saveCurrentProgress(immediate = true)
+        restoredPositionAnchor = null
         requestedOffset = target.charOffset
         loadChapter(target.chapterIndex)
     }
@@ -906,11 +921,12 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         val state = readerState.value
         val book = state.book ?: return
         val chapter = state.chapters.getOrNull(state.chapterIndex) ?: return
-        val page = state.pages.getOrNull(state.pageIndex) ?: return
+        state.pages.getOrNull(state.pageIndex) ?: return
+        val charOffset = currentPageOffset(state)
         val layoutFingerprint = currentLayoutFingerprint
         sessionController.launchProgressSave(immediate) {
             container.bookRepository.saveProgress(
-                book.id, chapter.id, page.startOffset, state.chapterIndex,
+                book.id, chapter.id, charOffset, state.chapterIndex,
                 state.pageIndex, chapter.title, layoutFingerprint,
             )
         }
@@ -924,8 +940,12 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         return if (requestedChapter != null && requestedChapter != displayedChapter) requestedOffset else currentPageOffset()
     }
 
-    private fun currentPageOffset(): Int = readerState.value.let { state ->
-        state.pages.getOrNull(state.pageIndex)?.startOffset ?: requestedOffset
+    private fun currentPageOffset(state: ReaderUiState = readerState.value): Int {
+        val anchor = restoredPositionAnchor
+        if (anchor != null && anchor.bookId == state.book?.id &&
+            anchor.chapterId == state.chapters.getOrNull(state.chapterIndex)?.id
+        ) return anchor.charOffset
+        return state.pages.getOrNull(state.pageIndex)?.startOffset ?: requestedOffset
     }
 
     fun addBookmark() {
@@ -979,6 +999,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     fun jumpToBookmark(bookmark: Bookmark) {
         val index = readerState.value.chapters.indexOfFirst { it.id == bookmark.chapterId }
         if (index >= 0) {
+            restoredPositionAnchor = null
             requestedOffset = bookmark.charOffset
             loadChapter(index)
         }
@@ -1003,6 +1024,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         )
         val index = readerState.value.chapters.indexOfFirst { it.id == result.chapterId }
         if (index >= 0) {
+            restoredPositionAnchor = null
             requestedOffset = result.charOffset
             loadChapter(index)
             message.value = text(R.string.message_jumped_to_search_result)

@@ -5,6 +5,7 @@ import android.os.SystemClock
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.lightreader.app.core.model.PageTurnMode
 import com.lightreader.app.core.model.ReaderPreferences
@@ -172,6 +173,99 @@ class ReaderLifecycleInstrumentedTest {
         composeRule.activityRule.scenario.recreate()
         composeRule.waitUntil(20_000) { !vm.readerState.value.loading && vm.readerState.value.chapterIndex == 2 }
         assertEquals(latest, vm.readerState.value.pages[vm.readerState.value.pageIndex].startOffset)
+    }
+
+    @Test
+    fun restoredSearchAnchorSurvivesViewportReflowFinalSaveAndReopen() {
+        val book = runBlocking {
+            val id = "restored-anchor-${System.nanoTime()}"
+            val root = File(application.filesDir, "books/$id").apply { mkdirs() }
+            val rows = (0..1).map { index ->
+                val raw = "Chapter $index 中文正文😀 and unchanged UTF-16 positions.\n".repeat(600)
+                val file = File(root, "$index.txt").apply { writeText(raw) }
+                ChapterEntity(bookId = id, orderIndex = index, title = "Separate heading $index", contentPath = file.absolutePath, charCount = raw.length, sourceUrl = null)
+            }
+            application.container.database.readerDao().insertBookWithChapters(
+                BookEntity(id, "Restored anchor", null, "TXT", root.absolutePath, 1, null, rows.sumOf { it.charCount.toLong() }, rows.size, null), rows,
+            )
+            application.container.bookRepository.book(id)!!
+        }
+        // A separate real ViewModel still uses the real pagination engine and Room,
+        // while explicit viewports avoid depending on transient emulator insets.
+        val store = ViewModelStore()
+        lateinit var vm: ReaderViewModel
+        lateinit var uiObserver: Job
+        composeRule.runOnIdle {
+            vm = ViewModelProvider(store, ViewModelProvider.AndroidViewModelFactory.getInstance(application))[ReaderViewModel::class.java]
+            uiObserver = CoroutineScope(Dispatchers.Main.immediate).launch(start = CoroutineStart.UNDISPATCHED) {
+                vm.uiState.collect { }
+            }
+        }
+        try {
+            composeRule.waitUntil(10_000) { vm.uiState.value.preferences.pageTurnMode == PageTurnMode.NONE }
+            val metrics = application.resources.displayMetrics
+            fun viewport(height: Int) = vm.setViewport(1080, height, metrics.density, metrics.scaledDensity, 0, 0)
+            composeRule.runOnIdle { viewport(2400); vm.openBook(book.id) }
+            composeRule.waitUntil(20_000) { !vm.readerState.value.loading && vm.readerState.value.pages.size >= 4 }
+            composeRule.runOnIdle { vm.pageSelected(2) }
+            val origin = vm.currentSearchOrigin()!!
+            assertTrue("Exercise a nonzero UTF-16 anchor", origin.charOffset > 0)
+            composeRule.runOnIdle { vm.selectChapter(1) }
+            composeRule.waitUntil(20_000) { !vm.readerState.value.loading && vm.readerState.value.chapterIndex == 1 }
+            composeRule.runOnIdle { viewport(2146); vm.restoreSearchOrigin(origin) }
+            composeRule.waitUntil(20_000) {
+                val state = vm.readerState.value
+                !state.loading && state.chapters.getOrNull(state.chapterIndex)?.id == origin.chapterId
+            }
+            fun assertExactAnchor() {
+                val state = vm.readerState.value
+                val page = state.pages[state.pageIndex]
+                assertEquals(origin, vm.currentSearchOrigin())
+                assertTrue("The restored character remains on the displayed page", origin.charOffset >= page.startOffset && origin.charOffset < page.endOffset)
+            }
+            fun awaitSavedOffset(offset: Int) {
+                composeRule.waitUntil(10_000) {
+                    val saved = runBlocking { application.container.bookRepository.progress(book.id) }
+                    saved != null && saved.chapterId == origin.chapterId && saved.charOffset == offset
+                }
+            }
+            assertExactAnchor()
+            val shorter = vm.readerState.value
+            assertTrue("Changed pagination puts the original anchor inside a page", shorter.pages[shorter.pageIndex].startOffset != origin.charOffset)
+            composeRule.runOnIdle { vm.onReaderStopped() }
+            awaitSavedOffset(origin.charOffset)
+
+            val version = shorter.layoutVersion
+            composeRule.runOnIdle { viewport(2272) }
+            composeRule.waitUntil(20_000) { !vm.readerState.value.loading && vm.readerState.value.layoutVersion > version }
+            assertExactAnchor()
+            composeRule.runOnIdle {
+                // Preserve the final serialized save/barrier when reopening immediately.
+                vm.onReaderStopped()
+                vm.goBack()
+                vm.openBook(book.id)
+            }
+            composeRule.waitUntil(20_000) { !vm.readerState.value.loading && vm.readerState.value.book?.id == book.id && vm.readerState.value.pages.isNotEmpty() }
+            assertExactAnchor()
+            awaitSavedOffset(origin.charOffset)
+
+            composeRule.runOnIdle { vm.nextPage(); vm.onReaderStopped() }
+            val turned = vm.readerState.value
+            val turnedOffset = turned.pages[turned.pageIndex].startOffset
+            assertTrue("A real page turn replaces the retained anchor", turnedOffset != origin.charOffset)
+            assertEquals(turnedOffset, vm.currentSearchOrigin()?.charOffset)
+            awaitSavedOffset(turnedOffset)
+
+            composeRule.runOnIdle { vm.restoreSearchOrigin(origin) }
+            composeRule.waitUntil(20_000) { !vm.readerState.value.loading && vm.currentSearchOrigin() == origin }
+            composeRule.runOnIdle { vm.selectChapter(0); vm.onReaderStopped() }
+            composeRule.waitUntil(20_000) { !vm.readerState.value.loading && vm.readerState.value.pageIndex == 0 }
+            val chapterStart = vm.readerState.value.pages[0].startOffset
+            assertEquals("An explicit same-chapter jump releases the old anchor", chapterStart, vm.currentSearchOrigin()?.charOffset)
+            awaitSavedOffset(chapterStart)
+        } finally {
+            composeRule.runOnIdle { uiObserver.cancel(); store.clear() }
+        }
     }
 
     @Test

@@ -165,7 +165,20 @@ class SearchLifecycleInstrumentedTest {
             val current = reader.readerState.value
             !current.loading && current.chapters.getOrNull(current.chapterIndex)?.id == origin.chapterId
         }
-        composeRule.waitUntil(10_000) { runBlocking { application.container.bookRepository.progress(BOOK_ID)?.charOffset == origin.charOffset } }
+        try {
+            composeRule.waitUntil(10_000) { runBlocking { application.container.bookRepository.progress(BOOK_ID)?.charOffset == origin.charOffset } }
+        } catch (timeout: Throwable) {
+            val current = reader.readerState.value
+            val page = current.pages.getOrNull(current.pageIndex)
+            val saved = runBlocking { application.container.bookRepository.progress(BOOK_ID) }
+            throw AssertionError(
+                "Restored origin=$origin, currentOrigin=${reader.currentSearchOrigin()}, " +
+                    "chapter=${current.chapters.getOrNull(current.chapterIndex)?.id}, loading=${current.loading}, " +
+                    "page=${current.pageIndex}/${current.pages.size}, range=${page?.startOffset}..${page?.endOffset}, " +
+                    "layoutVersion=${current.layoutVersion}, savedChapter=${saved?.chapterId}, savedOffset=${saved?.charOffset}",
+                timeout,
+            )
+        }
         assertEquals(origin, reader.currentSearchOrigin())
     }
 
