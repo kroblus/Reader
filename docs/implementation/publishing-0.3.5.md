@@ -23,3 +23,16 @@
 发布流程使用仓库既有签名配置，并下载已发布的0.3.4 APK，先校验GitHub记录的SHA-256，再校验两版公开签名证书一致。发布正文使用已提交的`docs/releases/v0.3.5.md`，保留UI性能15%门槛未通过的限制。
 
 最终远端运行、tag SHA、Release URL及资产信息保存于`build/reports/github-release-v0.3.5/`的发布收据；本文中的首次失败属于保留的历史证据。
+
+## 第二轮远端门禁与修复
+
+运行[43444999006](https://github.com/kroblus/Reader/actions/runs/43444999006)，源码`7fb1e70ed3c2d9e0af09e5521aab1cb0cc3bf151`。模拟器未再退出，108项全部结束，105通过、3失败、0跳过；宿主阶段与发布job没有执行。
+
+- 搜索返回原位置失败是产品缺陷：Activity重建后视口从1080×2400变为1080×2146，再随工具隐藏变为1080×2272。原实现每次将精确字符锚点取整为新页首并保存，会漂移。ReaderViewModel现在独立保留带书籍/章节身份的恢复锚点，重排、读取当前位置和串行最终保存沿用它；真正翻页或显式跳转才释放。立即重开也从保存偏移重建锚点。
+- 新增实际分页与Room回归，明确证明非零原锚点落在新页内部，再验证第二次重排、最终保存、退出重开及真实翻页/显式跳转释放。原搜索精确偏移断言和10秒时限保留，并增加失败分量。
+- 两个UI观察失败分别为初始Activity焦点等待与DocumentsUI包名观察；后者日志已显示DocumentsUI成功打开。窗口探针改为观察新鲜的、可见且拥有输入焦点的TYPE_APPLICATION窗口，同时仍检查Activity生命周期、hasWindowFocus及真实返回页面。原5秒时限保留，失败附焦点归属；没有将后台窗口或任意包名当作成功。
+- 本地安装了与CI相同的API35 default/x86_64镜像，新增隔离AVD `ReaderReleaseApi35` / `emulator-5556`，1080×2400、420dpi、Emulator36.6.11、SwiftShader。SDK下载使用现有本机代理，未关闭证书校验，也未更改设备安全设置。
+- `build/reader-v035-anchor-build.log`：72项应用单元测试0失败/错误/跳过，app lint及QA/test构建通过。
+- `scripts/run-reader-user-tests.ps1 -Serial emulator-5556 -TestClass 'com.lightreader.app.BackupUiInstrumentedTest,com.lightreader.app.ReaderUiInstrumentedTest#appSettingsSwitchesLanguageImmediately,com.lightreader.app.SearchLifecycleInstrumentedTest,com.lightreader.app.ReaderLifecycleInstrumentedTest'`：**11/11通过**，0失败/跳过，3m12s。报告`build/reports/reader-user-tests/20261113T153307Z-b237b468-7fb1e70ed3c2-5bfb552d790a`。本地结果不能替代最终tag的完整CI。
+
+第二轮原始日志和JUnit位于`failed-ci-second/`，继续保留。发布前须在修复后的同一tag SHA上重新通过完整门禁。

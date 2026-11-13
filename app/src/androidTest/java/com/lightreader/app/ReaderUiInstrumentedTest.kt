@@ -27,8 +27,6 @@ import androidx.compose.ui.test.click
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.uiautomator.UiDevice
 import com.lightreader.app.core.data.BookEntity
 import com.lightreader.app.core.data.ChapterEntity
 import com.lightreader.app.core.data.DownloadTaskEntity
@@ -215,13 +213,15 @@ class ReaderUiInstrumentedTest {
         composeRule.onNodeWithContentDescription(localizedText(Locale.SIMPLIFIED_CHINESE, R.string.action_back)).performClick()
         composeRule.onNodeWithTag(ReaderTestTags.LIBRARY).assertIsDisplayed()
         // Returning to a launcher-owning screen must retain the Activity owner after localization.
+        val windows = SystemPickerWindowProbe { composeRule.activity }
+        windows.awaitAppWindow()
         composeRule.onNodeWithTag(ReaderTestTags.LIBRARY_IMPORT).performClick()
-        val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
-        composeRule.waitUntil(5_000) {
-            device.currentPackageName in setOf("com.android.documentsui", "com.google.android.documentsui")
-        }
-        assertTrue(device.pressBack())
-        composeRule.waitUntil(5_000) { device.currentPackageName == BuildConfig.APPLICATION_ID }
+        windows.awaitDocumentsUi()
+        val reportedSuccess = windows.device.pressBack()
+        composeRule.waitForIdle()
+        windows.awaitAppWindow()
+        assertTrue("Back must report success or restore Reader's actual input window",
+            reportedSuccess || windows.appHasFocus())
         composeRule.onNodeWithTag(ReaderTestTags.LIBRARY).assertIsDisplayed()
     }
 

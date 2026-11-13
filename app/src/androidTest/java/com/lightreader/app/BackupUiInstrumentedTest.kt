@@ -4,13 +4,10 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.platform.io.PlatformTestStorageRegistry
-import androidx.test.uiautomator.By
-import androidx.test.uiautomator.UiDevice
 import com.lightreader.app.core.data.BookEntity
 import com.lightreader.app.core.data.ChapterEntity
 import com.lightreader.app.core.data.ReadingProgressEntity
@@ -32,7 +29,8 @@ import java.io.File
 class BackupUiInstrumentedTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     private val app get() = compose.activity.application as ReaderApplication
-    private val device get() = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+    private val windows by lazy { SystemPickerWindowProbe { compose.activity } }
+    private val device get() = windows.device
     private fun text(id: Int) = compose.activity.getString(id)
 
     @Test fun libraryBackupEntryPickerCancellationAndDuplicatePreviewKeepExistingProgress() {
@@ -121,21 +119,20 @@ class BackupUiInstrumentedTest {
     }
 
     private fun awaitDocumentsUi() {
-        compose.waitUntil(5_000) { device.currentPackageName in DOCUMENT_PACKAGES }
-        assertTrue("The actual Android DocumentsUI must own the window", device.currentPackageName in DOCUMENT_PACKAGES)
+        windows.awaitDocumentsUi()
     }
 
     private fun cancelSystemPicker() {
         // CreateDocument may first dismiss its filename IME; a second Back closes DocumentsUI.
         repeat(3) {
-            if (device.currentPackageName in DOCUMENT_PACKAGES) {
+            if (windows.documentsUiHasFocus()) {
                 // The event wait can report false after DocumentsUI already closed.
                 // Accept that only when Reader actually owns the window; the resumed
                 // activity, backup screen and original data are still asserted below.
                 val reportedSuccess = device.pressBack()
                 device.waitForIdle(1_000)
                 assertTrue("Back must report success or return to Reader",
-                    reportedSuccess || device.currentPackageName == BuildConfig.APPLICATION_ID)
+                    reportedSuccess || windows.appHasFocus())
             }
         }
         awaitAppWindow()
@@ -143,14 +140,9 @@ class BackupUiInstrumentedTest {
     }
 
     private fun awaitAppWindow() {
-        val activity = compose.activity
-        compose.waitUntil(5_000) {
-            var resumed = false
-            InstrumentationRegistry.getInstrumentation().runOnMainSync {
-                resumed = activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && activity.hasWindowFocus()
-            }
-            resumed && device.hasObject(By.pkg(BuildConfig.APPLICATION_ID))
-        }
+        // Finish Compose's initial traversal before observing Android's independent window focus.
+        compose.waitForIdle()
+        windows.awaitAppWindow()
     }
 
     private fun capture(name: String) {
@@ -165,7 +157,4 @@ class BackupUiInstrumentedTest {
         } finally { screenshot.recycle() }
     }
 
-    private companion object {
-        val DOCUMENT_PACKAGES = setOf("com.android.documentsui", "com.google.android.documentsui")
-    }
 }
