@@ -8,6 +8,9 @@ import com.lightreader.app.core.web.DeepSeekAiExtractionProvider
 import com.lightreader.app.core.web.WebImportException
 import com.lightreader.app.core.web.WebImportFailure
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -49,10 +52,46 @@ class QaHttpsWebInstrumentedTest {
     }
 
     @Test
+    fun disabledAndUnconfiguredAiNeverSendsARequest() = runBlocking {
+        val store = application.container.aiConfigurationStore
+        store.save(AiConfiguration(baseUrl = server.url("/v1"), enabled = false))
+        val provider = application.container.aiProvider
+        val disabled = runCatching { provider.extract(server.url("/catalog"), "<html/>") }.exceptionOrNull() as WebImportException
+        assertEquals(WebImportFailure.AI_CONFIGURATION, disabled.failure)
+        assertTrue(disabled.message.orEmpty().contains("disabled"))
+        store.save(store.get().copy(enabled = true))
+        val missing = runCatching { provider.extract(server.url("/catalog"), "<html/>") }.exceptionOrNull() as WebImportException
+        assertEquals(WebImportFailure.AI_CONFIGURATION, missing.failure)
+        assertTrue(missing.message.orEmpty().contains("no API key"))
+        assertEquals(0, server.requests.size)
+        assertTrue(com.lightreader.app.core.settings.AiConfigurationStore(application).get().enabled)
+    }
+
+    @Test
+    fun aiFailureIsTypedAndConnectionCancellationIsPropagated() = runBlocking {
+        application.container.keyStore.save("qa-invalid-key")
+        application.container.aiConfigurationStore.save(AiConfiguration(baseUrl = server.url("/v1"), enabled = true))
+        val error = runCatching { application.container.aiProvider.extract(server.url("/catalog"), "<html/>") }.exceptionOrNull() as WebImportException
+        assertEquals(WebImportFailure.AI_FAILURE, error.failure)
+        assertEquals(401, error.httpStatus)
+        server.close()
+        server = QaHttpsFixtureServer(aiResponseDelayMs = 1_500)
+        application.container.keyStore.save("qa-fake-key")
+        application.container.aiConfigurationStore.save(AiConfiguration(baseUrl = server.url("/v1"), enabled = true))
+        var returned = false
+        val job = launch { application.container.aiProvider.testConnection(); returned = true }
+        withTimeout(10_000) { while (server.requests.isEmpty()) delay(10) }
+        job.cancel()
+        withTimeout(5_000) { job.join() }
+        assertTrue(job.isCancelled)
+        assertFalse("Cancellation must not become a failed connection result", returned)
+    }
+
+    @Test
     fun deepSeekMockUsesEncryptedFakeKeyAndNeverSendsTrimmedSecrets() = runBlocking {
         application.container.keyStore.save("qa-fake-key")
         application.container.aiConfigurationStore.save(
-            AiConfiguration(baseUrl = server.url("/v1").trimEnd('/'), model = "qa-model", timeoutSeconds = 10),
+            AiConfiguration(baseUrl = server.url("/v1").trimEnd('/'), model = "qa-model", timeoutSeconds = 10, enabled = true),
         )
         val provider: DeepSeekAiExtractionProvider = application.container.aiProvider
         assertTrue(provider.testConnection())

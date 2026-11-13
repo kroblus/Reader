@@ -28,6 +28,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -51,6 +53,8 @@ import com.lightreader.app.core.settings.AiConfiguration
 @Composable
 fun ApiSettingsScreen(viewModel: AiSettingsViewModel, onBack: () -> Unit) {
     val api by viewModel.state.collectAsStateWithLifecycle()
+    val busy by viewModel.busy.collectAsStateWithLifecycle()
+    DisposableEffect(viewModel) { onDispose { viewModel.cancelConnectionTest() } }
     var confirmDeleteKey by remember { mutableStateOf(false) }
     var securityExpanded by remember { mutableStateOf(false) }
     Scaffold(
@@ -81,6 +85,14 @@ fun ApiSettingsScreen(viewModel: AiSettingsViewModel, onBack: () -> Unit) {
                     style = MaterialTheme.typography.titleMedium,
                 )
             }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.web_ai_enable), Modifier.weight(1f))
+                Switch(checked = api.configuration.enabled, onCheckedChange = viewModel::setAiEnabled)
+            }
+            Text(stringResource(R.string.web_ai_disclosure, api.configuration.baseUrl, api.configuration.model),
+                style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(if (api.connectionSucceeded) R.string.web_ai_test_succeeded else R.string.web_ai_not_tested),
+                style = MaterialTheme.typography.bodyMedium)
             OutlinedTextField(
                 value = api.keyDraft,
                 onValueChange = viewModel::updateApiKeyDraft,
@@ -112,7 +124,7 @@ fun ApiSettingsScreen(viewModel: AiSettingsViewModel, onBack: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedButton(
                     onClick = viewModel::testApiKey,
-                    enabled = api.hasApiKey,
+                    enabled = api.hasApiKey && !busy.active,
                     modifier = Modifier.weight(1f),
                 ) {
                     Text(stringResource(R.string.api_settings_test_connection))

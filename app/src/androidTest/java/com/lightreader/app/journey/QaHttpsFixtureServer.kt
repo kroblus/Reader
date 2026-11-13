@@ -23,6 +23,8 @@ class QaHttpsFixtureServer(
     private val largeChapterCount: Int = 200,
     private val responseDelayMs: Long = 0,
     private val failOnceChapter: Int? = null,
+    private val aiResponseDelayMs: Long = 0,
+    private val chapterResponseGate: java.util.concurrent.CountDownLatch? = null,
 ) : Closeable {
     private val server = MockWebServer()
     val requests = CopyOnWriteArrayList<RecordedRequest>()
@@ -69,6 +71,7 @@ class QaHttpsFixtureServer(
             },
         )
         largeChapter != null && largeChapter in 1..largeChapterCount -> {
+            chapterResponseGate?.await(10, TimeUnit.SECONDS)
             if (largeChapter == failOnceChapter && failuresServed.add(largeChapter)) {
                 html(500, "transient failure")
             } else {
@@ -82,7 +85,7 @@ class QaHttpsFixtureServer(
             }
         }
         else -> when (path) {
-        "/robots.txt" -> html(200, "<html><body>User-agent: *<br/>Disallow:</body></html>")
+        "/robots.txt" -> MockResponse().setResponseCode(200).addHeader("Content-Type", "text/plain; charset=utf-8").setBody("User-agent: *\nAllow: /\n")
         "/catalog" -> html(
             200,
             """
@@ -116,7 +119,7 @@ class QaHttpsFixtureServer(
 
     private fun deepSeekResponse(request: RecordedRequest): MockResponse {
         if (request.getHeader("Authorization") != "Bearer qa-fake-key") return html(401, "unauthorized")
-        val requestBody = request.body.readUtf8()
+        val requestBody = request.body.clone().readUtf8()
         val content = if (requestBody.contains("response_format")) {
             """{"titleSelector":"h1","chapterLinkSelector":".chapters a","contentSelector":".content","removeSelectors":[]}"""
         } else {
@@ -127,6 +130,7 @@ class QaHttpsFixtureServer(
             JSONArray().put(JSONObject().put("message", JSONObject().put("content", content))),
         )
         return MockResponse().setResponseCode(200).addHeader("Content-Type", "application/json").setBody(body.toString())
+            .also { if (aiResponseDelayMs > 0) it.setBodyDelay(aiResponseDelayMs, TimeUnit.MILLISECONDS) }
     }
 
     private fun html(code: Int, body: String) = MockResponse()

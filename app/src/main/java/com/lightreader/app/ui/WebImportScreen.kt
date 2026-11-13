@@ -39,6 +39,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -76,6 +79,9 @@ fun WebImportScreen(
     var pendingTaskAction by remember { mutableStateOf<DownloadTaskAction?>(null) }
     val clipboard = LocalClipboardManager.current
     val uriHandler = LocalUriHandler.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(state.preview) { if (state.preview != null) keyboard?.hide() }
+    DisposableEffect(viewModel) { onDispose { viewModel.dismissWebPreview() } }
     val trimmedUrl = state.url.trim()
     val urlError = trimmedUrl.isNotBlank() && !trimmedUrl.startsWith("https://", ignoreCase = true)
     Scaffold(
@@ -107,6 +113,7 @@ fun WebImportScreen(
             item {
                 OutlinedTextField(
                     value = state.url,
+                    enabled = !state.submitting,
                     onValueChange = {
                         showPreviewChapters = false
                         viewModel.updateWebUrl(it)
@@ -139,7 +146,7 @@ fun WebImportScreen(
             item {
                 Button(
                     onClick = viewModel::previewWebBook,
-                    enabled = trimmedUrl.isNotBlank() && !urlError && !state.loading,
+                    enabled = trimmedUrl.isNotBlank() && !urlError && !state.loading && !state.submitting,
                     modifier = Modifier.fillMaxWidth().testTag(ReaderTestTags.WEB_IMPORT_PARSE),
                 ) {
                     Text(stringResource(R.string.web_import_parse))
@@ -151,7 +158,9 @@ fun WebImportScreen(
             state.error?.let { error ->
                 item {
                     WebImportErrorCard(
-                        message = error.toUiText().asString(),
+                        message = error.toUiText().asString() + (state.retryAfterMillis?.let {
+                            "\n" + stringResource(R.string.web_retry_after, (it + 999) / 1000)
+                        } ?: ""),
                         canOpenBrowser = !urlError && trimmedUrl.isNotBlank(),
                         onRetry = viewModel::previewWebBook,
                         onOpenBrowser = { runCatching { uriHandler.openUri(trimmedUrl) } },
@@ -182,7 +191,7 @@ fun WebImportScreen(
                             Text(preview.sample, maxLines = 8, overflow = TextOverflow.Ellipsis)
                             Button(
                                 onClick = viewModel::startWebDownload,
-                                enabled = preview.chapters.isNotEmpty(),
+                                enabled = preview.chapters.isNotEmpty() && !state.submitting,
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
                                 Text(stringResource(R.string.web_import_download_book))

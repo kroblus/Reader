@@ -4,6 +4,7 @@ import com.lightreader.app.core.model.ExtractionPlan
 import com.lightreader.app.core.model.WebBookPreview
 import com.lightreader.app.core.reader.ReaderTextLimits
 import com.lightreader.app.core.data.WebBookPreviewSource
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -84,12 +85,10 @@ class JsoupWebSourceParser(
         aiProvider = aiProvider,
     )
 
+    private val robots = RobotsPolicy(fetcher, validator)
+
     override suspend fun preview(url: String): WebBookPreview = withContext(Dispatchers.IO) {
-        val inputUri = validator.validate(url)
-        checkRobots(inputUri)
-        val catalogFetch = fetcher.fetch(url, MAX_CATALOG_BYTES)
-        val finalUri = validator.validate(catalogFetch.finalUrl)
-        if (!sameOrigin(inputUri, finalUri)) checkRobots(finalUri)
+        val catalogFetch = fetcher.fetch(url, MAX_CATALOG_BYTES, robots::check)
 
         val catalogDocument = Jsoup.parse(catalogFetch.html, catalogFetch.finalUrl)
         val parsed = parseCatalog(catalogDocument, url, catalogFetch)
@@ -102,7 +101,7 @@ class JsoupWebSourceParser(
         var lastFailure: Throwable? = null
         parsed.chapters.take(SAMPLE_CHAPTER_ATTEMPTS).forEach { chapter ->
             val attempt = runCatching {
-                val fetch = fetcher.fetch(chapter.url, MAX_CHAPTER_BYTES)
+                val fetch = fetcher.fetch(chapter.url, MAX_CHAPTER_BYTES, robots::check)
                 val document = Jsoup.parse(fetch.html, fetch.finalUrl)
                 require(!AccessRestrictionDetector.isBrowserVerification(document.outerHtml())) { AccessRestrictionDetector.MESSAGE }
                 val contentSelector = parsed.extractionPlan.contentSelector.ifBlank {
@@ -116,6 +115,8 @@ class JsoupWebSourceParser(
             }
             attempt.onSuccess { return it }
             lastFailure = attempt.exceptionOrNull()
+            if (lastFailure is CancellationException) throw lastFailure
+            if (lastFailure is WebImportException) throw lastFailure
             if (lastFailure?.message == AccessRestrictionDetector.MESSAGE) throw lastFailure
         }
         val message = lastFailure?.message.orEmpty()
@@ -150,53 +151,16 @@ class JsoupWebSourceParser(
 
     override suspend fun chapterText(url: String, plan: ExtractionPlan, chapterTitle: String): String = withContext(Dispatchers.IO) {
         validator.validate(url)
-        val fetch = fetcher.fetch(url, MAX_CHAPTER_BYTES)
+        val fetch = fetcher.fetch(url, MAX_CHAPTER_BYTES, robots::check)
         val document = Jsoup.parse(fetch.html, fetch.finalUrl)
         contentExtractor.extract(document, plan, chapterTitle).also {
             require(it.length <= ReaderTextLimits.MAX_CHAPTER_CHARS * 4) { "Chapter body is unexpectedly large." }
         }
     }
 
-    private suspend fun checkRobots(uri: URI) {
-        val robotsUrl = "${uri.scheme}://${uri.authority}/robots.txt"
-        val rules = runCatching { fetcher.fetch(robotsUrl, MAX_ROBOTS_BYTES).html }.getOrNull() ?: return
-        var applies = false
-        val path = uri.rawPath.ifBlank { "/" }
-        rules.lineSequence()
-            .map { it.substringBefore('#').trim() }
-            .filter(String::isNotBlank)
-            .forEach { line ->
-                when {
-                    line.startsWith("user-agent:", ignoreCase = true) -> {
-                        val agent = line.substringAfter(':').trim()
-                        applies = agent == "*" || agent.contains("LightReader", ignoreCase = true)
-                    }
-                    applies && line.startsWith("disallow:", ignoreCase = true) -> {
-                        val blocked = line.substringAfter(':').trim()
-                        if (blocked.isNotEmpty() && path.startsWith(blocked)) {
-                            error("The site's robots.txt does not allow fetching this path.")
-                        }
-                    }
-                }
-            }
-    }
-
-    private fun sameOrigin(left: URI, right: URI): Boolean =
-        left.scheme.equals(right.scheme, ignoreCase = true) &&
-            left.host.equals(right.host, ignoreCase = true) &&
-            effectivePort(left) == effectivePort(right)
-
-    private fun effectivePort(uri: URI): Int = when {
-        uri.port >= 0 -> uri.port
-        uri.scheme.equals("https", ignoreCase = true) -> 443
-        uri.scheme.equals("http", ignoreCase = true) -> 80
-        else -> -1
-    }
-
     private companion object {
         const val SAMPLE_CHAPTER_ATTEMPTS = 5
         const val MAX_CATALOG_BYTES = 2 * 1024 * 1024
         const val MAX_CHAPTER_BYTES = 1 * 1024 * 1024
-        const val MAX_ROBOTS_BYTES = 256 * 1024
     }
 }

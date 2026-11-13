@@ -31,6 +31,15 @@ interface ReaderDao {
     @Query("UPDATE books SET title = :title, author = :author WHERE id = :id")
     suspend fun updateBookMetadata(id: String, title: String, author: String?)
 
+    @Query("UPDATE books SET lastReadAt = :lastReadAt WHERE id = :id")
+    suspend fun updateLastReadAt(id: String, lastReadAt: Long)
+
+    @Query("UPDATE books SET chapterCount = (SELECT COUNT(*) FROM chapters WHERE bookId = :id), totalChars = (SELECT COALESCE(SUM(charCount), 0) FROM chapters WHERE bookId = :id) WHERE id = :id")
+    suspend fun updateBookStatistics(id: String)
+
+    @Query("SELECT contentPath FROM chapters")
+    suspend fun referencedChapterPaths(): List<String>
+
     @Query("DELETE FROM books WHERE id = :id")
     suspend fun deleteBookRow(id: String)
 
@@ -71,6 +80,19 @@ interface ReaderDao {
     @Query("DELETE FROM bookmarks WHERE id = :id")
     suspend fun deleteBookmark(id: String)
 
+    @Query("SELECT * FROM bookmarks WHERE id = :id")
+    suspend fun bookmark(id: String): BookmarkEntity?
+
+    @Transaction
+    suspend fun restoreBookmarkIfValid(mark: BookmarkEntity): Boolean {
+        val chapter = chapter(mark.chapterId) ?: return false
+        if (book(mark.bookId) == null || chapter.bookId != mark.bookId || mark.charOffset !in 0..chapter.charCount) return false
+        val existing = bookmark(mark.id)
+        if (existing != null && existing != mark) return false
+        insertBookmark(mark)
+        return true
+    }
+
     @Query("SELECT * FROM bookmarks WHERE bookId = :bookId ORDER BY createdAt DESC")
     fun observeBookmarks(bookId: String): Flow<List<BookmarkEntity>>
 
@@ -93,7 +115,7 @@ interface ReaderDao {
     suspend fun indexedCharacterCount(bookId: String): Long
 
     @Query("""
-        SELECT search_chunks.chapterId AS chapterId,
+        SELECT search_chunks.rowid AS rowId, search_chunks.chapterId AS chapterId,
                chapters.title AS chapterTitle,
                search_chunks.chunkStart AS chunkStart,
                search_chunks.content AS content
@@ -104,6 +126,16 @@ interface ReaderDao {
         LIMIT 100
     """)
     suspend fun search(bookId: String, ftsQuery: String): List<SearchRow>
+
+    @Query("""
+        SELECT search_chunks.rowid AS rowId, search_chunks.chapterId AS chapterId,
+               chapters.title AS chapterTitle, search_chunks.chunkStart AS chunkStart,
+               search_chunks.content AS content
+        FROM search_chunks JOIN chapters ON chapters.id = CAST(search_chunks.chapterId AS INTEGER)
+        WHERE search_chunks MATCH :ftsQuery AND search_chunks.bookId = :bookId AND search_chunks.rowid > :afterRowId
+        ORDER BY search_chunks.rowid LIMIT :limit
+    """)
+    suspend fun searchCandidates(bookId: String, ftsQuery: String, afterRowId: Int, limit: Int): List<SearchRow>
 
     @Transaction
     suspend fun replaceSearchIndex(
@@ -134,6 +166,95 @@ interface ReaderDao {
 
     @Query("SELECT * FROM download_tasks WHERE id = :id")
     suspend fun downloadTask(id: String): DownloadTaskEntity?
+
+    @Query("SELECT * FROM download_tasks ORDER BY createdAt DESC")
+    suspend fun downloadTasks(): List<DownloadTaskEntity>
+
+    @Query("SELECT * FROM download_tasks WHERE id = :bookId OR importedBookId = :bookId")
+    suspend fun tasksForBook(bookId: String): List<DownloadTaskEntity>
+
+    @Transaction
+    suspend fun createDownloadTask(task: DownloadTaskEntity, pending: List<DownloadChapterEntity>): DownloadTaskEntity {
+        require(task.importedBookId == null || book(task.importedBookId) != null) { "Book no longer exists" }
+        val existing = downloadTasks().firstOrNull {
+            if (task.importedBookId != null) {
+                it.importedBookId == task.importedBookId && it.status !in listOf("COMPLETED", "CANCELED")
+            } else {
+                (it.importedBookId == null || it.importedBookId == it.id) && it.status != "CANCELED" &&
+                    WebChapterIdentity.url(it.sourceUrl) == WebChapterIdentity.url(task.sourceUrl)
+            }
+        }
+        if (existing != null) return existing
+        insertDownloadTask(task)
+        insertDownloadChapters(pending)
+        return task
+    }
+
+    @Query("UPDATE download_tasks SET status = :status, executionGeneration = executionGeneration + 1, executionOwner = NULL, updatedAt = :now, error = NULL WHERE id = :id AND status IN (:allowed)")
+    suspend fun transitionDownloadTask(id: String, status: String, allowed: List<String>, now: Long): Int
+
+    @Transaction
+    suspend fun resumeDownloadTask(id: String, now: Long): DownloadTaskEntity? {
+        if (transitionDownloadTask(id, "QUEUED", listOf("PAUSED", "FAILED", "CANCELED"), now) == 0) return downloadTask(id)
+        resetFailedDownloadChapters(id)
+        val task = downloadTask(id) ?: return null
+        updateDownloadTask(task.copy(failedChapters = 0, automaticRetryCount = 0))
+        return downloadTask(id)
+    }
+
+    @Query("UPDATE download_tasks SET status = 'DOWNLOADING', executionOwner = :owner, updatedAt = :now, error = NULL WHERE id = :id AND executionGeneration = :generation AND status = 'QUEUED' AND notBeforeMillis <= :now")
+    suspend fun claimDownloadTask(id: String, generation: Long, now: Long, owner: String = ""): Int
+
+    @Query("UPDATE download_tasks SET executionGeneration = executionGeneration + 1, updatedAt = :now WHERE id = :id AND executionOwner = :owner AND status = 'DOWNLOADING'")
+    suspend fun recoverInterruptedDownload(id: String, owner: String, now: Long): Int
+
+    @Query("UPDATE download_tasks SET status = 'QUEUED', executionGeneration = executionGeneration + 1, executionOwner = NULL, completedChapters = :completed, failedChapters = :failed, error = :error, updatedAt = :now, notBeforeMillis = :notBeforeMillis, automaticRetryCount = :retryCount WHERE id = :id AND executionGeneration = :generation AND status = 'DOWNLOADING'")
+    suspend fun yieldDownloadTask(id: String, generation: Long, completed: Int, failed: Int, error: String?, now: Long, notBeforeMillis: Long = 0, retryCount: Int = 0): Int
+
+    @Query("UPDATE download_tasks SET status = :status, completedChapters = :completed, failedChapters = :failed, error = :error, updatedAt = :now WHERE id = :id AND executionGeneration = :generation AND status = 'DOWNLOADING'")
+    suspend fun updateDownloadExecution(id: String, generation: Long, status: String, completed: Int, failed: Int, error: String?, now: Long): Int
+
+    @Query("UPDATE download_chapters SET status = :status, contentPath = :path, error = :error WHERE id = :id AND taskId = :taskId AND EXISTS (SELECT 1 FROM download_tasks WHERE id = :taskId AND executionGeneration = :generation AND status = 'DOWNLOADING')")
+    suspend fun updateDownloadChapterExecution(id: String, taskId: String, generation: Long, status: String, path: String?, error: String?): Int
+
+    /** Files are already durably prepared. The task guard, append identity, ordering, statistics,
+     * search invalidation and completion are committed together, never around network calls. */
+    @Transaction
+    suspend fun commitDownloadedTask(taskId: String, generation: Long, newBook: BookEntity, prepared: List<ChapterEntity>): Boolean {
+        val task = downloadTask(taskId) ?: return false
+        if (task.executionGeneration != generation || task.status != "DOWNLOADING") return false
+        val append = task.importedBookId?.takeIf { it != task.id }
+        val target = append ?: task.id
+        if (append != null && book(target) == null) return false
+        if (book(target) == null) insertBook(newBook)
+        appendChaptersAtomically(target, prepared)
+        updateDownloadTask(task.copy(status = "COMPLETED", completedChapters = task.totalChapters,
+            failedChapters = 0, importedBookId = target, error = null, updatedAt = System.currentTimeMillis()))
+        return true
+    }
+
+    @Transaction
+    suspend fun appendChaptersAtomically(bookId: String, prepared: List<ChapterEntity>): Int {
+        requireNotNull(book(bookId)) { "Book was not found." }
+        val existing = chapters(bookId)
+        val identities = existing.mapTo(mutableSetOf()) { WebChapterIdentity.key(it.sourceUrl, it.title) }
+        val start = (existing.maxOfOrNull { it.orderIndex } ?: -1) + 1
+        val rows = prepared.filter { identities.add(WebChapterIdentity.key(it.sourceUrl, it.title)) }
+            .mapIndexed { index, row -> row.copy(id = 0, bookId = bookId, orderIndex = start + index) }
+        if (rows.isNotEmpty()) {
+            insertChapters(rows)
+            updateBookStatistics(bookId)
+            clearSearchIndex(bookId)
+        }
+        return rows.size
+    }
+
+    @Transaction
+    suspend fun deleteBookAndTasks(id: String) {
+        tasksForBook(id).forEach { deleteDownloadTask(it.id) }
+        clearSearchIndex(id)
+        deleteBookRow(id)
+    }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDownloadChapters(chapters: List<DownloadChapterEntity>)

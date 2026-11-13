@@ -75,13 +75,13 @@ class WebUserJourneyInstrumentedTest {
     @Test
     fun webReaderReceivesActionableHttpAndAccessRestrictionErrors() {
         openWebImport()
-        evidence.step("Map HTTP failure to the localized user message")
+        evidence.step("Map HTTP 403 to access-restricted guidance and the original page action")
         composeRule.onNode(hasSetTextAction()).performTextReplacement(server.url("/status/403"))
         composeRule.onNodeWithText(text(R.string.web_import_parse)).performClick()
         composeRule.waitUntil(10_000) {
-            composeRule.onAllNodesWithText(text(R.string.message_web_http)).fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithText(text(R.string.message_web_access_restricted)).fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithText(text(R.string.message_web_http)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.message_web_access_restricted)).assertIsDisplayed()
 
         evidence.step("Map browser verification pages to access-restricted guidance")
         composeRule.onNode(hasSetTextAction()).performTextReplacement(server.url("/verification"))

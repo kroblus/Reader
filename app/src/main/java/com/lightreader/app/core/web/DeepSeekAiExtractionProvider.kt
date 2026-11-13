@@ -3,6 +3,7 @@ package com.lightreader.app.core.web
 import com.lightreader.app.core.model.ExtractionPlan
 import com.lightreader.app.core.security.EncryptedApiKeyStore
 import com.lightreader.app.core.settings.AiConfigurationStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -32,7 +33,11 @@ class DeepSeekAiExtractionProvider(
     private val configurationStore: AiConfigurationStore,
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) : AiExtractionProvider {
-    override suspend fun extract(sourceUrl: String, htmlSample: String): ExtractionPlan {
+    override suspend fun extract(sourceUrl: String, htmlSample: String): ExtractionPlan = try {
+        if (!configurationStore.get().enabled) throw WebImportException(WebImportFailure.AI_CONFIGURATION,
+            "AI fallback is disabled. Enable it in API settings to use DeepSeek.")
+        if (!keyStore.hasKey()) throw WebImportException(WebImportFailure.AI_CONFIGURATION,
+            "AI fallback has no API key. Save a key in API settings first.")
         val cleaned = Jsoup.parse(htmlSample).apply { select("script,style,svg,iframe,noscript").remove() }.html().take(50_000)
         val prompt = """
             分析以下用户有权访问的小说网页 HTML。只返回 JSON，不要下载网页，不要返回正文。
@@ -58,9 +63,20 @@ class DeepSeekAiExtractionProvider(
         require(plan.chapterLinkSelector.isNotBlank() && plan.contentSelector.isNotBlank()) {
             "DeepSeek 未返回可用的网页选择器"
         }
-        runCatching { Jsoup.parse(htmlSample).select(plan.chapterLinkSelector) }
+        runCatching {
+            val document = Jsoup.parse(htmlSample)
+            document.select(plan.chapterLinkSelector)
+            document.select(plan.contentSelector)
+            plan.removeSelectors.filter(String::isNotBlank).forEach { document.select(it) }
+        }
             .getOrElse { error("DeepSeek 返回了无效选择器") }
-        return plan
+        plan
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: WebImportException) {
+        throw error
+    } catch (error: Exception) {
+        throw WebImportException(WebImportFailure.AI_FAILURE, "AI could not return a usable extraction plan.", error)
     }
 
     override suspend fun testConnection(): Boolean = runCatching {
@@ -72,10 +88,13 @@ class DeepSeekAiExtractionProvider(
                 put("content", JsonPrimitive("只回答 OK"))
             })))
         })
-    }.isSuccess
+    }.getOrElse { error ->
+        if (error is CancellationException) throw error
+        return false
+    }.let { true }
 
     private suspend fun execute(body: JsonObject): String = withContext(Dispatchers.IO) {
-        val key = keyStore.get() ?: error("请先配置 DeepSeek API Key")
+        val key = keyStore.get() ?: throw WebImportException(WebImportFailure.AI_CONFIGURATION, "AI fallback has no API key.")
         val configuration = configurationStore.get()
         val request = Request.Builder()
             .url(configuration.baseUrl.trimEnd('/') + "/chat/completions")
@@ -83,9 +102,12 @@ class DeepSeekAiExtractionProvider(
             .header("Content-Type", "application/json")
             .post(body.toString().toRequestBody(JSON_MEDIA))
             .build()
-        client.newBuilder().callTimeout(configuration.timeoutSeconds.toLong(), TimeUnit.SECONDS).build().newCall(request).execute().use { response ->
-            val responseBody = response.body?.string().orEmpty()
-            if (!response.isSuccessful) error("DeepSeek 请求失败：HTTP ${response.code}")
+        client.newBuilder().callTimeout(configuration.timeoutSeconds.toLong(), TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false).build().newCall(request).readCancellable { response ->
+            if (!response.isSuccessful) throw WebImportException(WebImportFailure.AI_FAILURE, "DeepSeek request failed: HTTP ${response.code}", httpStatus = response.code)
+            val bodySource = response.body?.source() ?: error("DeepSeek response was empty")
+            bodySource.request(1024 * 1024L + 1)
+            require(bodySource.buffer.size <= 1024 * 1024L) { "DeepSeek response was too large" }
+            val responseBody = bodySource.readUtf8()
             val root = json.parseToJsonElement(responseBody).jsonObject
             root["choices"]!!.jsonArray.first().jsonObject["message"]!!.jsonObject["content"]!!.jsonPrimitive.content
         }

@@ -46,53 +46,118 @@ class HtmlFetcher(
     private val client: OkHttpClient,
     private val validator: NovelUrlValidator = NovelUrlValidator(),
 ) {
-    suspend fun fetch(url: String, maxBytes: Int = DEFAULT_MAX_RESPONSE_BYTES): FetchResult = withContext(Dispatchers.IO) {
-        val validated = validator.validate(url)
-        val request = Request.Builder()
-            .url(validated.toString())
-            .header("User-Agent", USER_AGENT)
-            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-            .build()
-        try {
-            client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw WebImportException(
-                WebImportFailure.HTTP,
-                "Page request failed: HTTP ${response.code}",
-            )
-            val body = response.body ?: error("Page response was empty.")
-            if (body.contentLength() > maxBytes) throw WebImportException(
-                WebImportFailure.RESPONSE_TOO_LARGE,
-                "Page response exceeds the ${maxBytes / 1024}KB safety limit.",
-            )
-            val bytes = body.byteStream().use { input -> input.readAtMost(maxBytes) }
-            if (bytes.isEmpty()) error("Page response was empty.")
-            val contentType = response.header("Content-Type")
-            if (!isHtmlLikeContentType(contentType)) throw WebImportException(
-                WebImportFailure.NON_HTML_RESPONSE,
-                "Page response was not HTML (${contentType?.substringBefore(';') ?: "unknown type"}).",
-            )
-            val decoded = decodeHtml(bytes, contentType)
-            if (AccessRestrictionDetector.isBrowserVerification(decoded.html)) throw WebImportException(
-                WebImportFailure.ACCESS_RESTRICTED,
-                AccessRestrictionDetector.MESSAGE,
-            )
-            FetchResult(
-                originalUrl = url,
-                finalUrl = response.request.url.toString(),
-                statusCode = response.code,
-                contentType = contentType,
-                bytes = bytes,
-                charset = decoded.charsetName,
-                html = decoded.html,
-            )
+    // Redirects are followed here so every target is validated before a connection is made.
+    private class AttemptMetadata(var retryAfter: String? = null)
+    private val safeClient = client.newBuilder()
+        .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
+        .addNetworkInterceptor { chain ->
+            val response = chain.proceed(chain.request())
+            if (response.code == 503) {
+                // OkHttp 4.12 retries 503 + Retry-After: 0 even with retryOnConnectionFailure=false.
+                // Keep the original value in this call's private tag and let our single retry loop own it.
+                chain.request().tag(AttemptMetadata::class.java)?.retryAfter = response.header("Retry-After")
+                response.newBuilder().removeHeader("Retry-After").build()
+            } else response
+        }.build()
+
+    suspend fun fetch(
+        url: String,
+        maxBytes: Int = DEFAULT_MAX_RESPONSE_BYTES,
+        beforeRequest: suspend (String) -> Unit = {},
+    ): FetchResult = fetchWithRetry(url, maxBytes, html = true, beforeRequest)
+
+    suspend fun fetchText(url: String, maxBytes: Int): FetchResult =
+        fetchWithRetry(url, maxBytes, html = false) {}
+
+    private suspend fun fetchWithRetry(
+        url: String,
+        maxBytes: Int,
+        html: Boolean,
+        beforeRequest: suspend (String) -> Unit,
+    ): FetchResult {
+        require(maxBytes > 0)
+        repeat(3) { attempt ->
+            try {
+                return fetchOnce(url, maxBytes, html, beforeRequest)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: WebImportException) {
+                val wait = error.retryAfterMillis ?: (250L shl attempt)
+                if (!error.retryable || attempt == 2 || wait > 30_000L) throw error
+                kotlinx.coroutines.delay(wait)
             }
+        }
+        error("Unreachable retry state")
+    }
+
+    private suspend fun fetchOnce(
+        url: String,
+        maxBytes: Int,
+        html: Boolean,
+        beforeRequest: suspend (String) -> Unit,
+    ): FetchResult = withContext(Dispatchers.IO) {
+        var current = validator.validate(url).toString()
+        try {
+            repeat(6) { redirect ->
+                beforeRequest(current)
+                val metadata = AttemptMetadata()
+                val request = Request.Builder().url(current).tag(AttemptMetadata::class.java, metadata)
+                    .header("User-Agent", USER_AGENT)
+                    .header("Accept", if (html) "text/html,application/xhtml+xml" else "text/plain")
+                    .build()
+                var next: String? = null
+                val result = safeClient.newCall(request).readCancellable { response ->
+                    if (response.code in listOf(301, 302, 303, 307, 308)) {
+                        if (redirect == 5) throw WebImportException(WebImportFailure.HTTP, "Too many redirects.", sourceUrl = current)
+                        val location = response.header("Location") ?: throw WebImportException(WebImportFailure.HTTP, "Redirect has no destination.", sourceUrl = current)
+                        next = validator.validate(java.net.URI(current).resolve(location).toString()).toString()
+                        null
+                    } else {
+                        if (!response.isSuccessful) {
+                            val description = when (response.code) {
+                                401, 403 -> "Access is restricted. Open the original webpage to check its requirements."
+                                404 -> "This content or address is no longer available."
+                                429 -> "The site is limiting requests. Wait before trying again."
+                                else -> "Page request failed."
+                            }
+                            throw WebImportException(WebImportFailure.HTTP, "$description HTTP ${response.code}",
+                                httpStatus = response.code, retryable = response.code == 429 || response.code in 500..599,
+                                retryAfterMillis = retryAfterMillis(metadata.retryAfter ?: response.header("Retry-After")), sourceUrl = current)
+                        }
+                        val body = response.body ?: throw WebImportException(WebImportFailure.HTTP, "Page response was empty.", sourceUrl = current)
+                        if (body.contentLength() > maxBytes) throw WebImportException(WebImportFailure.RESPONSE_TOO_LARGE, "Page response exceeds the ${maxBytes / 1024}KB safety limit.")
+                        val bytes = body.byteStream().use { it.readAtMost(maxBytes) }
+                        if (html && bytes.isEmpty()) throw WebImportException(WebImportFailure.HTTP, "Page response was empty.", sourceUrl = current)
+                        val contentType = response.header("Content-Type")
+                        if (html && !isHtmlLikeContentType(contentType)) throw WebImportException(WebImportFailure.NON_HTML_RESPONSE,
+                            "Page response was not HTML (${contentType?.substringBefore(';') ?: "unknown type"}).", sourceUrl = current)
+                        if (!html && contentType != null && contentType.substringBefore(';').trim().lowercase() != "text/plain") {
+                            throw WebImportException(WebImportFailure.NON_HTML_RESPONSE, "Expected a text response.", sourceUrl = current)
+                        }
+                        val decoded = decodeHtml(bytes, contentType)
+                        if (html && AccessRestrictionDetector.isBrowserVerification(decoded.html)) throw WebImportException(WebImportFailure.ACCESS_RESTRICTED, AccessRestrictionDetector.MESSAGE, sourceUrl = current)
+                        FetchResult(url, current, response.code, contentType, bytes, decoded.charsetName, decoded.html)
+                    }
+                }
+                if (result != null) return@withContext result
+                current = requireNotNull(next)
+            }
+            error("Unreachable redirect state")
         } catch (error: CancellationException) {
             throw error
         } catch (error: WebImportException) {
             throw error
         } catch (error: IOException) {
-            throw WebImportException(WebImportFailure.NETWORK, "Page request could not reach the network.", error)
+            throw WebImportException(WebImportFailure.NETWORK, "Page request could not reach the network.", error, retryable = true, sourceUrl = current)
         }
+    }
+
+    internal fun retryAfterMillis(value: String?): Long? {
+        if (value == null) return null
+        value.trim().toLongOrNull()?.let { return it.coerceIn(0, Long.MAX_VALUE / 1000) * 1000 }
+        return runCatching {
+            (java.time.ZonedDateTime.parse(value, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() - System.currentTimeMillis()).coerceAtLeast(0)
+        }.getOrNull()
     }
 
     private fun decodeHtml(bytes: ByteArray, contentType: String?): DecodedHtml {

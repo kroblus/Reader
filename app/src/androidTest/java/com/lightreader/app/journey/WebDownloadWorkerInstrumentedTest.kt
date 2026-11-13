@@ -3,21 +3,34 @@ package com.lightreader.app.journey
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.work.Configuration
+import androidx.work.WorkManager
+import androidx.work.testing.WorkManagerTestInitHelper
+import androidx.work.testing.SynchronousExecutor
 import androidx.work.ListenableWorker
 import androidx.work.workDataOf
 import androidx.work.testing.TestListenableWorkerBuilder
 import com.lightreader.app.ReaderApplication
 import com.lightreader.app.core.data.DownloadRepository
 import com.lightreader.app.core.model.WebChapter
+import com.lightreader.app.core.model.WebBookPreview
+import com.lightreader.app.core.model.ExtractionPlan
 import com.lightreader.app.core.web.WebDownloadWorker
+import com.lightreader.app.feature.download.DownloadActionReceiver
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.CountDownLatch
 
 @RunWith(AndroidJUnit4::class)
 class WebDownloadWorkerInstrumentedTest {
@@ -27,6 +40,9 @@ class WebDownloadWorkerInstrumentedTest {
 
     @Before
     fun setUp() = runBlocking {
+        check(context.packageName.endsWith(".qa")) { "Worker tests require the isolated QA package." }
+        WorkManagerTestInitHelper.initializeTestWorkManager(context,
+            Configuration.Builder().setExecutor(SynchronousExecutor()).build())
         application.container.database.clearAllTables()
         server = QaHttpsFixtureServer()
     }
@@ -34,6 +50,7 @@ class WebDownloadWorkerInstrumentedTest {
     @After
     fun tearDown() {
         server.close()
+        WorkManager.getInstance(context).cancelAllWork().result.get()
     }
 
     @Test
@@ -65,8 +82,8 @@ class WebDownloadWorkerInstrumentedTest {
         val repository = unscheduledRepository()
         val taskId = repository.start(preview)
 
-        val result = worker(taskId).doWork()
-        assertTrue(result is ListenableWorker.Result.Retry)
+        val result = worker(taskId, retryAttempt = 3).doWork()
+        assertTrue(result is ListenableWorker.Result.Success)
         val failed = application.container.database.readerDao().downloadTask(taskId)
         assertEquals("FAILED", failed?.status)
         assertEquals(1, failed?.completedChapters)
@@ -90,9 +107,19 @@ class WebDownloadWorkerInstrumentedTest {
         val repository = unscheduledRepository()
         val taskId = repository.start(preview)
 
-        val result = worker(taskId, runToCompletion = true).doWork()
-
-        assertTrue(result is ListenableWorker.Result.Success)
+        // Execute the actual production batch limit. Scheduled continuations remain constrained
+        // in TestWorkManager; each explicit invocation represents a fresh process/worker batch.
+        var batches = 0
+        do {
+            val before = application.container.database.readerDao().downloadTask(taskId)!!.completedChapters
+            val result = worker(taskId).doWork()
+            assertTrue(result is ListenableWorker.Result.Success)
+            val current = application.container.database.readerDao().downloadTask(taskId)!!
+            assertTrue(current.completedChapters - before <= WebDownloadWorker.MAX_CHAPTERS_PER_BATCH)
+            batches++
+            assertTrue("Batch count is bounded", batches <= 25)
+        } while (application.container.database.readerDao().downloadTask(taskId)?.status == "QUEUED")
+        assertEquals(25, batches)
         val task = application.container.database.readerDao().downloadTask(taskId)
         val chapters = application.container.database.readerDao().chapters(taskId)
         assertEquals("COMPLETED", task?.status)
@@ -106,6 +133,75 @@ class WebDownloadWorkerInstrumentedTest {
         )
     }
 
+    @Test
+    fun notificationPauseRejectsInflightResultAndResumeKeepsSameTask() = runBlocking {
+        server.close()
+        val gate = CountDownLatch(1)
+        server = QaHttpsFixtureServer(chapterResponseGate = gate)
+        val repository = unscheduledRepository()
+        val taskId = repository.start(singleDelayedPreview("pause"))
+        val execution = worker(taskId)
+        val running = async(Dispatchers.IO) { execution.doWork() }
+        awaitChapterRequest()
+        DownloadActionReceiver.pauseIntent(context, taskId).send()
+        withTimeout(5_000) {
+            while (application.container.database.readerDao().downloadTask(taskId)?.status != "PAUSED") delay(10)
+        }
+        gate.countDown()
+        running.await()
+        val dao = application.container.database.readerDao()
+        assertEquals(0, dao.downloadTask(taskId)?.completedChapters)
+        assertNull(dao.book(taskId))
+        repository.resume(taskId)
+        worker(taskId).doWork()
+        assertEquals("COMPLETED", dao.downloadTask(taskId)?.status)
+        assertEquals(1, dao.chapters(taskId).size)
+    }
+
+    @Test
+    fun workManagerRestartFencesInterruptedDownloadingExecution() = runBlocking {
+        val taskId = unscheduledRepository().start(singleDelayedPreview("restart"))
+        val dao = application.container.database.readerDao()
+        val restarted = worker(taskId, workerAttempt = 1)
+        assertEquals(1, dao.claimDownloadTask(taskId, 0, System.currentTimeMillis(), restarted.id.toString()))
+        // Two process interruptions with the same WorkRequest UUID retain an attributable owner.
+        assertEquals(1, dao.recoverInterruptedDownload(taskId, restarted.id.toString(), System.currentTimeMillis()))
+        restarted.doWork()
+        assertEquals("COMPLETED", dao.downloadTask(taskId)?.status)
+        assertEquals(2L, dao.downloadTask(taskId)?.executionGeneration)
+        assertEquals(0, dao.updateDownloadExecution(taskId, 0, "DOWNLOADING", 0, 0, null, 1))
+    }
+
+    @Test
+    fun cancelAndDeleteDuringHttpCannotPublishChapterOrBook() = runBlocking {
+        server.close()
+        val repository = unscheduledRepository()
+        val dao = application.container.database.readerDao()
+        for (delete in listOf(false, true)) {
+            val gate = CountDownLatch(1)
+            server = QaHttpsFixtureServer(chapterResponseGate = gate)
+            val taskId = repository.start(singleDelayedPreview(if (delete) "delete" else "cancel"))
+            val execution = worker(taskId)
+            val running = async(Dispatchers.IO) { execution.doWork() }
+            awaitChapterRequest()
+            if (delete) repository.delete(taskId) else repository.cancel(taskId)
+            gate.countDown()
+            running.await()
+            assertNull(dao.book(taskId))
+            assertTrue(dao.chapters(taskId).isEmpty())
+            if (delete) assertNull(dao.downloadTask(taskId)) else assertEquals("CANCELED", dao.downloadTask(taskId)?.status)
+            if (!delete) server.close()
+        }
+    }
+
+    private fun singleDelayedPreview(scenario: String) = WebBookPreview("Delayed", null, null,
+        server.url("/catalog?case=$scenario"), server.url("/catalog?case=$scenario"),
+        listOf(WebChapter("第1章", server.url("/large-chapter/1"))), "Sample", ExtractionPlan(contentSelector = ".content"))
+
+    private suspend fun awaitChapterRequest() = withTimeout(5_000) {
+        while (server.requests.none { it.path?.startsWith("/large-chapter/") == true }) delay(10)
+    }
+
     private fun unscheduledRepository() = DownloadRepository(
         context = context,
         dao = application.container.database.readerDao(),
@@ -114,12 +210,14 @@ class WebDownloadWorkerInstrumentedTest {
         enqueueWork = false,
     )
 
-    private fun worker(taskId: String, runToCompletion: Boolean = false): WebDownloadWorker =
+    private suspend fun worker(taskId: String, retryAttempt: Int = 0, workerAttempt: Int = 0): WebDownloadWorker =
         TestListenableWorkerBuilder<WebDownloadWorker>(context)
+        .setRunAttemptCount(workerAttempt)
         .setInputData(
             workDataOf(
                 WebDownloadWorker.TASK_ID to taskId,
-                WebDownloadWorker.RUN_TO_COMPLETION_FOR_TEST to runToCompletion,
+                WebDownloadWorker.GENERATION to application.container.database.readerDao().downloadTask(taskId)!!.executionGeneration,
+                WebDownloadWorker.RETRY_ATTEMPT to retryAttempt,
             ),
         )
         .build()

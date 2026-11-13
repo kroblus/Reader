@@ -198,46 +198,77 @@ class BookRepository(
         if (chapters.isEmpty()) return@withContext 0
         val book = dao.book(bookId) ?: error("Book was not found.")
         require(BookFormat.valueOf(book.format) == BookFormat.WEB) { "Only web books can be refreshed." }
-        val existing = dao.chapters(bookId)
-        val existingSourceUrls = existing.mapNotNull { it.sourceUrl?.normalizeSourceUrl() }.toSet()
-        val existingTitleKeys = existing.map { it.title.normalizeChapterTitle() }.toSet()
-        // A worker can be retried after its files were committed but before its task row was marked
-        // complete. Filtering here makes the final append idempotent instead of duplicating chapters.
-        val newChapters = chapters.filter { chapter ->
-            chapter.sourceUrl?.normalizeSourceUrl()?.let { it !in existingSourceUrls }
-                ?: (chapter.title.normalizeChapterTitle() !in existingTitleKeys)
+        // Each prepared file has content-derived identity; concurrent append never writes an old chapter.
+        val prepared = chapters.map { chapter ->
+            val identity = digest("${WebChapterIdentity.key(chapter.sourceUrl, chapter.title)}:${chapter.file.readText()}")
+            val file = prepareChapterFile(chapter.file, File(book.rootPath, "chapters/append-$identity.txt"))
+            ChapterEntity(bookId = bookId, orderIndex = 0, title = chapter.title,
+                contentPath = file.absolutePath, charCount = chapter.charCount, sourceUrl = chapter.sourceUrl)
         }
-        if (newChapters.isEmpty()) return@withContext 0
-        val startIndex = existing.size
-        val rows = newChapters.mapIndexed { index, chapter ->
-            ChapterEntity(
-                bookId = bookId,
-                orderIndex = startIndex + index,
-                title = chapter.title.ifBlank { "Chapter ${startIndex + index + 1}" },
-                contentPath = chapter.file.absolutePath,
-                charCount = chapter.charCount,
-                sourceUrl = chapter.sourceUrl,
-            )
-        }
-        dao.insertChapters(rows)
-        dao.updateBook(
-            book.copy(
-                chapterCount = book.chapterCount + rows.size,
-                totalChars = book.totalChars + newChapters.sumOf { it.charCount.toLong() },
-            ),
-        )
-        dao.clearSearchIndex(bookId)
-        rows.size
+        dao.appendChaptersAtomically(bookId, prepared)
     }
+
+    /** Prepare immutable task-owned files, then atomically publish metadata and finish the task.
+     * A process death before Room commit leaves retryable files; after commit the task is complete.
+     * Neither cancellation nor a failed DB transaction can overwrite a book's existing body. */
+    suspend fun commitDownloadedTask(taskId: String, generation: Long): Boolean = withContext(Dispatchers.IO) {
+        val task = dao.downloadTask(taskId) ?: return@withContext false
+        if (task.executionGeneration != generation || task.status != "DOWNLOADING") return@withContext false
+        val targetId = task.importedBookId?.takeIf { it != taskId } ?: taskId
+        val existingBook = dao.book(targetId)
+        if (targetId != taskId && existingBook == null) return@withContext false
+        val directory = existingBook?.rootPath?.let(::File) ?: File(context.filesDir, "books/$targetId")
+        val finished = dao.downloadChapters(taskId)
+        require(finished.isNotEmpty() && finished.all { it.status == "COMPLETED" && it.contentPath != null })
+        val prepared = finished.map { chapter ->
+            currentCoroutineContext().ensureActive()
+            val source = File(requireNotNull(chapter.contentPath))
+            val file = prepareChapterFile(source, File(directory, "chapters/web-$taskId-${digest(chapter.id + ":" + digest(source.readText()))}.txt"))
+            ChapterEntity(bookId = targetId, orderIndex = chapter.orderIndex, title = chapter.title,
+                contentPath = file.absolutePath, charCount = file.readText().length, sourceUrl = chapter.url)
+        }
+        val newBook = BookEntity(targetId, task.title, task.author, BookFormat.WEB.name, directory.absolutePath,
+            System.currentTimeMillis(), null, 0, 0, task.sourceUrl)
+        val committed = dao.commitDownloadedTask(taskId, generation, newBook, prepared)
+        val remainingTask = dao.downloadTask(taskId)
+        // A paused or superseding generation may already be preparing these same immutable files.
+        // Cleanup is safe only when the task can no longer publish any additional references.
+        if (committed || remainingTask == null || remainingTask.status == "COMPLETED") {
+            val referenced = dao.referencedChapterPaths().mapTo(hashSetOf()) { File(it).canonicalPath }
+            File(directory, "chapters").listFiles()?.filter { it.name.startsWith("web-$taskId-") }?.forEach { file ->
+                if (file.canonicalPath !in referenced) file.delete()
+            }
+            val stage = File(context.filesDir, "downloads/$taskId")
+            if (stage.isDirectory) stage.walkBottomUp().forEach { file ->
+                if (file.isFile && file.canonicalPath !in referenced) file.delete()
+                if (file.isDirectory && file.listFiles()?.isEmpty() == true) file.delete()
+            }
+        }
+        committed
+    }
+
+    private fun prepareChapterFile(source: File, destination: File): File {
+        destination.parentFile?.mkdirs()
+        if (destination.exists()) {
+            require(source.readBytes().contentEquals(destination.readBytes())) { "Prepared chapter differs from its durable source." }
+            return destination
+        }
+        val temporary = File(destination.parentFile, "${destination.name}.${UUID.randomUUID()}.tmp")
+        try {
+            source.inputStream().use { input ->
+                java.io.FileOutputStream(temporary).use { output -> input.copyTo(output); output.fd.sync() }
+            }
+            check(temporary.renameTo(destination)) { "Cannot prepare chapter file." }
+        } finally { temporary.delete() }
+        return destination
+    }
+
+    private fun digest(value: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
 
     suspend fun readChapter(chapter: Chapter): String = withContext(Dispatchers.IO) {
         File(chapter.contentPath).readText()
     }
-
-    private fun String.normalizeSourceUrl(): String =
-        trim().substringBefore('#').removeSuffix("/").lowercase()
-
-    private fun String.normalizeChapterTitle(): String = trim().replace(Regex("""\s+"""), "")
 
     suspend fun progress(bookId: String): ReadingProgress? = dao.progress(bookId)?.let {
         ReadingProgress(
@@ -262,7 +293,7 @@ class BookRepository(
                 chapterTitle, styleHash, now,
             ),
         )
-        dao.book(bookId)?.let { dao.updateBook(it.copy(lastReadAt = now)) }
+        dao.updateLastReadAt(bookId, now)
     }
 
     fun bookmarks(bookId: String): Flow<List<Bookmark>> = dao.observeBookmarks(bookId).map { rows ->
@@ -277,64 +308,30 @@ class BookRepository(
 
     suspend fun deleteBookmark(id: String) = dao.deleteBookmark(id)
 
+    suspend fun restoreBookmark(bookmark: Bookmark): Boolean = dao.restoreBookmarkIfValid(
+        BookmarkEntity(bookmark.id, bookmark.bookId, bookmark.chapterId, bookmark.charOffset, bookmark.excerpt, bookmark.createdAt),
+    )
+
     suspend fun search(bookId: String, query: String): List<SearchResult> {
-        val normalizedQuery = query.trim()
-        val tokens = normalizedQuery.split(Regex("\\s+")).filter { it.isNotBlank() }
-        if (tokens.isEmpty()) return emptyList()
         ensureSearchIndex(bookId)
-        if (normalizedQuery.length > SEARCH_CHUNK_OVERLAP || normalizedQuery.any(::isCjkCharacter)) {
-            return exactSearch(bookId, normalizedQuery)
-        }
-        val fts = tokens.joinToString(" AND ") { "\"${it.replace("\"", "\"\"")}\"*" }
-        val candidateChapterIds = dao.search(bookId, fts).mapTo(linkedSetOf()) { it.chapterId.toLong() }
-        if (candidateChapterIds.isEmpty()) return exactSearch(bookId, normalizedQuery)
-        val indexedResults = exactSearch(bookId, normalizedQuery, candidateChapterIds)
-        return indexedResults.ifEmpty { exactSearch(bookId, normalizedQuery) }
+        return BookSearchRepository(dao).all(bookId, query)
     }
 
-    private suspend fun exactSearch(
-        bookId: String,
-        query: String,
-        candidateChapterIds: Set<Long>? = null,
-    ): List<SearchResult> = withContext(Dispatchers.IO) {
-        if (query.isBlank()) return@withContext emptyList()
-        val results = ArrayList<SearchResult>()
-        dao.chapters(bookId).forEach { chapter ->
-            if (results.size >= 100) return@forEach
-            if (candidateChapterIds != null && chapter.id !in candidateChapterIds) return@forEach
-            currentCoroutineContext().ensureActive()
-            val text = File(chapter.contentPath).readText()
-            var fromIndex = 0
-            while (fromIndex < text.length && results.size < 100) {
-                currentCoroutineContext().ensureActive()
-                val match = text.indexOf(query, fromIndex, ignoreCase = true)
-                if (match < 0) break
-                val excerptStart = UnicodeTextBoundary.previousBoundary(text, (match - 28).coerceAtLeast(0))
-                val excerptEnd = if (match + query.length + 42 >= text.length) {
-                    text.length
-                } else {
-                    UnicodeTextBoundary.safeEnd(text, match + query.length, match + query.length + 42)
-                }
-                val excerpt = buildString {
-                    if (excerptStart > 0) append('…')
-                    append(text.substring(excerptStart, match))
-                    append("<b>").append(text.substring(match, match + query.length)).append("</b>")
-                    append(text.substring(match + query.length, excerptEnd))
-                    if (excerptEnd < text.length) append('…')
-                }
-                results += SearchResult(chapter.id, chapter.title, excerpt, match)
-                fromIndex = (match + query.length).coerceAtLeast(match + 1)
-            }
-        }
-        results
+    suspend fun searchPage(bookId: String, query: String, cursor: SearchCursor? = null): SearchPage {
+        ensureSearchIndex(bookId)
+        return BookSearchRepository(dao).page(bookId, query, cursor)
     }
-
     suspend fun deleteBook(id: String) = withContext(Dispatchers.IO) {
         val root = dao.book(id)?.rootPath
-        dao.clearSearchIndex(id)
-        dao.deleteBookRow(id)
-        dao.deleteDownloadTask(id)
-        root?.let { File(it).deleteRecursively() }
+        val tasks = dao.tasksForBook(id)
+        dao.deleteBookAndTasks(id)
+        val referenced = dao.referencedChapterPaths().mapTo(hashSetOf()) { File(it).canonicalPath }
+        (tasks.map { File(context.filesDir, "downloads/${it.id}") } + listOfNotNull(root?.let(::File))).forEach { directory ->
+            if (directory.isDirectory) directory.walkBottomUp().forEach { file ->
+                if (file.isFile && file.canonicalPath !in referenced) file.delete()
+                if (file.isDirectory && file.listFiles()?.isEmpty() == true) file.delete()
+            }
+        }
     }
 
     private suspend fun ensureSearchIndex(bookId: String) = searchIndexMutex.withLock {

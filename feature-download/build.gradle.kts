@@ -22,6 +22,7 @@ dependencies {
     implementation(project(":core-reader"))
     implementation(project(":core-data"))
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation("androidx.lifecycle:lifecycle-viewmodel-savedstate:${libs.versions.lifecycle.get()}")
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

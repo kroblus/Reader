@@ -126,6 +126,10 @@ data class DownloadTaskEntity(
     val error: String?,
     val sourceId: String = "generic-html",
     val sourceVersion: String = "1",
+    @ColumnInfo(defaultValue = "0") val executionGeneration: Long = 0,
+    val executionOwner: String? = null,
+    @ColumnInfo(defaultValue = "0") val notBeforeMillis: Long = 0,
+    @ColumnInfo(defaultValue = "0") val automaticRetryCount: Int = 0,
 )
 
 @Entity(
@@ -154,4 +158,5 @@ data class SearchRow(
     val chapterTitle: String,
     val chunkStart: Int,
     val content: String,
+    val rowId: Int = 0,
 )

@@ -18,7 +18,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DownloadTaskEntity::class,
         DownloadChapterEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 abstract class ReaderDatabase : RoomDatabase() {
@@ -37,7 +37,17 @@ abstract class ReaderDatabase : RoomDatabase() {
             MIGRATION_5_6,
             MIGRATION_6_7,
             MIGRATION_7_8,
+            MIGRATION_8_9,
         ).build()
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE download_tasks ADD COLUMN executionGeneration INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE download_tasks ADD COLUMN executionOwner TEXT")
+                db.execSQL("ALTER TABLE download_tasks ADD COLUMN notBeforeMillis INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE download_tasks ADD COLUMN automaticRetryCount INTEGER NOT NULL DEFAULT 0")
+            }
+        }
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
