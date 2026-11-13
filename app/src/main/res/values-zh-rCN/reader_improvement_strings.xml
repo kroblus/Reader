@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="reader_reset_scope">恢复阅读排版与操作默认值；保留书籍、进度、书签、语言和应用配色。</string>
+    <string name="reader_return_results">返回搜索结果</string>
+    <string name="reader_return_origin">回到查找前</string>
+    <string name="reader_undo_bookmark">撤销删除书签</string>
+    <string name="reader_bookmark_deleted">书签已删除</string>
+    <string name="reader_font_decrease">减小正文字号</string>
+    <string name="reader_font_increase">增大正文字号</string>
+</resources>

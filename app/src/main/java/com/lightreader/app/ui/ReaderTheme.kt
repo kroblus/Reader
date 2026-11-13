@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -77,7 +78,7 @@ object ReaderUiTokens {
     val listItemMinHeight = 58.dp
     val primaryButtonHeight = 46.dp
     const val overlayScrimAlpha = .20f
-    const val weakTextAlpha = .72f
+    const val weakTextAlpha = 1f
 }
 
 val AppSkinPalette.uiColors: LightReaderColorTokens
@@ -88,7 +89,7 @@ val AppSkinPalette.uiColors: LightReaderColorTokens
         selectedSurface = primary.copy(alpha = .18f).compositeOver(surface),
         primaryText = ink,
         secondaryText = mutedInk,
-        tertiaryText = mutedInk.copy(alpha = .76f),
+        tertiaryText = mutedInk,
         disabledContent = mutedInk.copy(alpha = .38f),
         selectedBorder = primary.copy(alpha = .82f),
         divider = primary.copy(alpha = .18f),
@@ -101,25 +102,25 @@ val AppSkinPalette.weakInk: Color get() = uiColors.tertiaryText
 
 fun AppSkin.palette(): AppSkinPalette = when (this) {
     AppSkin.MINT -> AppSkinPalette(
-        primary = Color(0xFF4F755E), onPrimary = Color.White,
+        primary = Color(0xFF486D57), onPrimary = Color.White,
         background = Color(0xFFF7FBF7), surface = Color(0xFFFCFEFC),
         soft = Color(0xFFE3EFE6), accent = Color(0xFFB9D5C0),
         ink = Color(0xFF26332B), mutedInk = Color(0xFF55655B),
     )
     AppSkin.OCEAN -> AppSkinPalette(
-        primary = Color(0xFF4F7693), onPrimary = Color.White,
+        primary = Color(0xFF476A84), onPrimary = Color.White,
         background = Color(0xFFF7FAFD), surface = Color(0xFFFCFDFE),
         soft = Color(0xFFE1ECF5), accent = Color(0xFFB8D2E4),
         ink = Color(0xFF25333D), mutedInk = Color(0xFF536571),
     )
     AppSkin.APRICOT -> AppSkinPalette(
-        primary = Color(0xFF965F43), onPrimary = Color.White,
+        primary = Color(0xFF8D573D), onPrimary = Color.White,
         background = Color(0xFFFFFAF4), surface = Color(0xFFFFFDF9),
         soft = Color(0xFFF6E6D7), accent = Color(0xFFEBC8AA),
         ink = Color(0xFF3A302A), mutedInk = Color(0xFF68584F),
     )
     AppSkin.SAKURA -> AppSkinPalette(
-        primary = Color(0xFF915D69), onPrimary = Color.White,
+        primary = Color(0xFF885561), onPrimary = Color.White,
         background = Color(0xFFFFF9FA), surface = Color(0xFFFFFDFD),
         soft = Color(0xFFF5E4E8), accent = Color(0xFFE7BEC7),
         ink = Color(0xFF392D30), mutedInk = Color(0xFF67575B),
@@ -244,3 +245,15 @@ private fun Color.toArgb(): Int = android.graphics.Color.argb(
     (green * 255).toInt(),
     (blue * 255).toInt(),
 )
+
+/** Custom reader colors may only just meet 4.5:1 before a selected control tint is
+ * composited. Evaluate the actual opaque surface, keeping the chosen color if readable. */
+internal fun readableTextColor(requested: Color, surface: Color): Color {
+    fun ratio(color: Color): Float {
+        val foreground = color.compositeOver(surface).luminance()
+        val background = surface.luminance()
+        return (maxOf(foreground, background) + .05f) / (minOf(foreground, background) + .05f)
+    }
+    if (ratio(requested) >= 4.5f) return requested
+    return if (ratio(Color.Black) >= ratio(Color.White)) Color.Black else Color.White
+}

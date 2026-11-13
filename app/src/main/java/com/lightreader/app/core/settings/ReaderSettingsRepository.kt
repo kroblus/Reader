@@ -13,6 +13,10 @@ import com.lightreader.app.core.model.FontFamilyOption
 import com.lightreader.app.core.model.AppSkin
 import com.lightreader.app.core.model.PageTurnMode
 import com.lightreader.app.core.model.ReaderLayoutPreset
+import com.lightreader.app.core.model.ReaderLayoutSnapshot
+import com.lightreader.app.core.reader.layoutSnapshot
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
 import com.lightreader.app.core.model.ReaderPreferences
 import com.lightreader.app.core.model.ReaderTheme
 import kotlinx.coroutines.flow.Flow
@@ -27,13 +31,14 @@ class ReaderSettingsRepository(private val context: Context) {
     private val updateMutex = Mutex()
 
     val preferences: Flow<ReaderPreferences> = context.readerDataStore.data.map { values ->
-        val usesModernLayoutDefaults = (values[LAYOUT_DEFAULTS_VERSION] ?: 0) >= CURRENT_LAYOUT_DEFAULTS_VERSION
-        ReaderPreferences(
+        val usesModernLayoutDefaults = values[LAYOUT_PRESET] == ReaderLayoutPreset.CUSTOM.name || (values[LAYOUT_DEFAULTS_VERSION] ?: 0) >= CURRENT_LAYOUT_DEFAULTS_VERSION
+        val result = ReaderPreferences(
             appSkin = enumValue(values[APP_SKIN], AppSkin.MINT),
             appLanguage = enumValue(values[APP_LANGUAGE], AppLanguage.SYSTEM),
             libraryTaglineIndex = values[LIBRARY_TAGLINE_INDEX] ?: 0,
             developerToolsEnabled = values[DEVELOPER_TOOLS_ENABLED] ?: false,
             cleanTxtNoise = values[CLEAN_TXT_NOISE] ?: true,
+            lastCustomLayout = values[CUSTOM_LAYOUT_V1]?.let { runCatching { Json.decodeFromString<ReaderLayoutSnapshot>(it) }.getOrNull() },
             layoutPreset = enumValue(values[LAYOUT_PRESET], ReaderLayoutPreset.COMFORT),
             fontSizeSp = values[FONT_SIZE] ?: DEFAULT_FONT_SIZE_SP,
             fontWeight = values[FONT_WEIGHT] ?: 400,
@@ -87,6 +92,11 @@ class ReaderSettingsRepository(private val context: Context) {
             pageTurnMode = pageTurnMode(values[PAGE_TURN_MODE] ?: values[PAGE_ANIMATION]),
             fullScreenTapNext = values[FULL_SCREEN_TAP_NEXT] ?: false,
         )
+        // Old CUSTOM already contains the only recoverable custom values. For an old
+        // preset, preserve its displayed preset and do not invent a lost custom history.
+        if (result.lastCustomLayout == null && result.layoutPreset == ReaderLayoutPreset.CUSTOM) {
+            result.copy(lastCustomLayout = result.layoutSnapshot())
+        } else result
     }
 
     suspend fun save(value: ReaderPreferences) = updateMutex.withLock {
@@ -108,6 +118,8 @@ class ReaderSettingsRepository(private val context: Context) {
             values[DEVELOPER_TOOLS_ENABLED] = value.developerToolsEnabled
             values[CLEAN_TXT_NOISE] = value.cleanTxtNoise
             values[LAYOUT_PRESET] = value.layoutPreset.name
+            value.lastCustomLayout?.let { values[CUSTOM_LAYOUT_V1] = Json.encodeToString(it) }
+                ?: values.remove(CUSTOM_LAYOUT_V1)
             values[FONT_SIZE] = value.fontSizeSp
             values[FONT_WEIGHT] = value.fontWeight
             values[LINE_SPACING] = value.lineSpacingMultiplier
@@ -151,6 +163,7 @@ class ReaderSettingsRepository(private val context: Context) {
         val LIBRARY_TAGLINE_INDEX = intPreferencesKey("library_tagline_index")
         val DEVELOPER_TOOLS_ENABLED = booleanPreferencesKey("developer_tools_enabled")
         val CLEAN_TXT_NOISE = booleanPreferencesKey("clean_txt_noise")
+        val CUSTOM_LAYOUT_V1 = stringPreferencesKey("reader_custom_layout_v1")
         val LAYOUT_PRESET = stringPreferencesKey("reader_layout_preset")
         val FONT_SIZE = floatPreferencesKey("font_size")
         val FONT_WEIGHT = intPreferencesKey("font_weight")

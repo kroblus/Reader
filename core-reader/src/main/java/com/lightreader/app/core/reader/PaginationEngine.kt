@@ -31,6 +31,7 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
         style: ReaderStyle,
     ): ReaderLayoutResult {
         require(viewport.widthPx > 0 && viewport.heightPx > 0)
+        val actualFonts = viewport.metricsFor(style.fontSizeSp)
         val minimumHorizontalPadding = style.horizontalPaddingDp * viewport.density
         val contentWidthLimit = style.maxContentWidthDp * viewport.density
         val contentWidthAvailable = (viewport.widthPx - minimumHorizontalPadding * 2f).coerceAtLeast(1f)
@@ -48,14 +49,14 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
         val contentBottom = viewport.heightPx - bottomReserved
         val contentWidth = (contentRight - contentLeft).coerceAtLeast(1f)
         val contentHeight = (contentBottom - contentTop).coerceAtLeast(1f)
-        val paint = createPaint(style, viewport)
-        val titlePaint = createPaint(style, viewport).apply {
-            textSize = style.fontSizeSp * viewport.scaledDensity * TITLE_TEXT_SCALE
+        val paint = createPaint(style, actualFonts.bodyPx)
+        val titlePaint = createPaint(style, actualFonts.bodyPx).apply {
+            textSize = actualFonts.titlePx
             typeface = Typeface.create(typeface, Typeface.BOLD)
         }
         val fontMetrics = paint.fontMetrics
         val fontHeight = fontMetrics.descent - fontMetrics.ascent
-        val requestedLineHeight = style.fontSizeSp * viewport.scaledDensity * style.lineHeightMultiplier
+        val requestedLineHeight = actualFonts.bodyPx * style.lineHeightMultiplier
         val lineHeight = max(fontHeight, requestedLineHeight).coerceAtMost(contentHeight)
         val baselineOffset = ((lineHeight - fontHeight) / 2f) - fontMetrics.ascent
         val titleFontMetrics = titlePaint.fontMetrics
@@ -64,7 +65,7 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
         val titleBaselineOffset = ((titleLineHeight - titleFontHeight) / 2f) - titleFontMetrics.ascent
         val titleBottomSpacing = TITLE_BOTTOM_SPACING_DP * viewport.density
         val paragraphSpacing = style.paragraphSpacingDp * viewport.density
-        val indent = style.firstLineIndentEm * style.fontSizeSp * viewport.scaledDensity
+        val indent = style.firstLineIndentEm * actualFonts.bodyPx
 
         val pages = ArrayList<MutableList<ReaderLine>>()
         var pageLines = ArrayList<ReaderLine>()
@@ -152,7 +153,7 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
 
         val totalSourceLength = paragraphs.maxOfOrNull(BookParagraph::sourceEnd)?.coerceAtLeast(1) ?: 1
         val immutablePages = if (pages.isEmpty()) {
-            listOf(ReaderPage(chapterIndex, 0, chapterTitle, emptyList(), 0, 0, 0f))
+            listOf(ReaderPage(chapterIndex, 0, chapterTitle, emptyList(), 0, 0, 0f, actualFonts))
         } else {
             pages.mapIndexed { pageIndex, lines ->
                 val contentLines = lines.filterNot { it.isChapterTitle }
@@ -166,6 +167,7 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
                     startOffset = startOffset,
                     endOffset = endOffset,
                     progressInChapter = (endOffset.toFloat() / totalSourceLength).coerceIn(0f, 1f),
+                    fontMetrics = actualFonts,
                 )
             }
         }
@@ -178,8 +180,8 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
         )
     }
 
-    private fun createPaint(style: ReaderStyle, viewport: ReaderViewport) = TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
-        textSize = style.fontSizeSp * viewport.scaledDensity
+    private fun createPaint(style: ReaderStyle, bodyPx: Float) = TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
+        textSize = bodyPx
         typeface = Typeface.create(
             when (style.fontFamily) {
                 FontFamilyOption.SYSTEM -> Typeface.DEFAULT

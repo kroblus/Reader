@@ -58,6 +58,7 @@ enum class PageTurnMode { NONE, HORIZONTAL, SLIDE, VERTICAL, SCROLL, SIMULATION 
 enum class FontFamilyOption { SYSTEM, SANS, SERIF, MONOSPACE }
 enum class ReaderLayoutPreset { COMFORT, COMPACT, IMMERSIVE, CUSTOM }
 
+@kotlinx.serialization.Serializable
 data class ReaderPreferences(
     val appSkin: AppSkin = AppSkin.MINT,
     val appLanguage: AppLanguage = AppLanguage.SYSTEM,
@@ -65,6 +66,7 @@ data class ReaderPreferences(
     val developerToolsEnabled: Boolean = false,
     val cleanTxtNoise: Boolean = true,
     val layoutPreset: ReaderLayoutPreset = ReaderLayoutPreset.COMFORT,
+    val lastCustomLayout: ReaderLayoutSnapshot? = null,
     val fontSizeSp: Float = 17f,
     val fontWeight: Int = 400,
     val lineSpacingMultiplier: Float = 1.75f,
@@ -92,6 +94,22 @@ data class ReaderPreferences(
     val fontFamily: FontFamilyOption = FontFamilyOption.SERIF,
     val pageTurnMode: PageTurnMode = PageTurnMode.HORIZONTAL,
     val fullScreenTapNext: Boolean = false,
+)
+
+/** Only typography: language, skin, reading colors and library state remain independent. */
+@kotlinx.serialization.Serializable
+data class ReaderLayoutSnapshot(
+    val fontSizeSp: Float,
+    val fontWeight: Int,
+    val lineSpacingMultiplier: Float,
+    val paragraphSpacingDp: Float,
+    val firstLineIndent: Boolean,
+    val firstLineIndentEm: Float,
+    val horizontalPaddingDp: Float,
+    val verticalPaddingTopDp: Float,
+    val verticalPaddingBottomDp: Float,
+    val justified: Boolean,
+    val fontFamily: FontFamilyOption,
 )
 
 enum class ParagraphType { NORMAL, TITLE }
@@ -156,6 +174,15 @@ data class ReaderViewport(
     val scaledDensity: Float,
     val safeTopPx: Int = 0,
     val safeBottomPx: Int = 0,
+    val fontMetrics: ReaderFontMetrics? = null,
+)
+
+/** Actual pixels used for this page, retained through a font-scale/configuration change. */
+data class ReaderFontMetrics(
+    val bodySp: Float,
+    val bodyPx: Float,
+    val titlePx: Float,
+    val auxiliaryPx: Float,
 )
 
 data class ReaderLine(
@@ -181,6 +208,7 @@ data class ReaderPage(
     val startOffset: Int,
     val endOffset: Int,
     val progressInChapter: Float,
+    val fontMetrics: ReaderFontMetrics? = null,
 ) {
     val text: String get() = lines.joinToString("\n", transform = ReaderLine::text)
 }

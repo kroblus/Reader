@@ -27,6 +27,8 @@ import androidx.compose.ui.test.click
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.UiDevice
 import com.lightreader.app.core.data.BookEntity
 import com.lightreader.app.core.data.ChapterEntity
 import com.lightreader.app.core.data.DownloadTaskEntity
@@ -210,6 +212,17 @@ class ReaderUiInstrumentedTest {
             composeRule.onAllNodesWithText(localizedText(Locale.SIMPLIFIED_CHINESE, R.string.app_settings_title)).fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithText(localizedText(Locale.SIMPLIFIED_CHINESE, R.string.app_settings_language)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(localizedText(Locale.SIMPLIFIED_CHINESE, R.string.action_back)).performClick()
+        composeRule.onNodeWithTag(ReaderTestTags.LIBRARY).assertIsDisplayed()
+        // Returning to a launcher-owning screen must retain the Activity owner after localization.
+        composeRule.onNodeWithTag(ReaderTestTags.LIBRARY_IMPORT).performClick()
+        val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        composeRule.waitUntil(5_000) {
+            device.currentPackageName in setOf("com.android.documentsui", "com.google.android.documentsui")
+        }
+        assertTrue(device.pressBack())
+        composeRule.waitUntil(5_000) { device.currentPackageName == BuildConfig.APPLICATION_ID }
+        composeRule.onNodeWithTag(ReaderTestTags.LIBRARY).assertIsDisplayed()
     }
 
     @Test
@@ -287,26 +300,18 @@ class ReaderUiInstrumentedTest {
         assertTrue("Reader settings panel should be compressed to roughly three tenths of the screen", dockHeight <= rootHeight * 0.32f)
         val settingsPanel = composeRule.onNodeWithTag("reader_settings_panel")
         val expectedProgressText = text(R.string.reader_progress, 0, text(R.string.reader_progress_chapter, 1))
-        settingsPanel.assert(hasNoScrollAction())
+        // Quick tools now scroll on short/landscape screens, including brightness.
+        // Their scroll/click gestures must never turn the underlying reader page.
+        val settingsScroll = composeRule.onNodeWithTag("reader_settings_scroll")
+        settingsScroll.assert(hasScrollAction())
         composeRule.onNodeWithTag("reader_bottom_progress_text").assertIsDisplayed()
         composeRule.onAllNodesWithText(expectedProgressText).assertCountEquals(1)
-        settingsPanel.performTouchInput { swipeUp() }
-        settingsPanel.assert(hasNoScrollAction())
-        composeRule.onAllNodesWithText(text(R.string.settings_brightness)).assertCountEquals(0)
-        assertTrue(composeRule.onAllNodesWithText(text(R.string.settings_layout)).fetchSemanticsNodes().isNotEmpty())
-        composeRule.onNodeWithText(text(R.string.layout_comfort)).assertIsDisplayed()
-        composeRule.onNodeWithText(text(R.string.settings_quick_text)).assertIsDisplayed()
-        composeRule.onNodeWithText(text(R.string.settings_background)).assertIsDisplayed()
-        composeRule.onNodeWithText(text(R.string.settings_more)).assertIsDisplayed()
-        composeRule.onNodeWithTag("reader_bottom_progress_text").assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_brightness)).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.layout_comfort)).performScrollTo().assertIsDisplayed()
         composeRule.onAllNodesWithText(expectedProgressText).assertCountEquals(1)
-        settingsPanel.performTouchInput { swipeDown() }
-        settingsPanel.assert(hasNoScrollAction())
-        composeRule.onAllNodesWithText(text(R.string.settings_brightness)).assertCountEquals(0)
-        assertTrue(composeRule.onAllNodesWithText(text(R.string.settings_layout)).fetchSemanticsNodes().isNotEmpty())
-        composeRule.onNodeWithText(text(R.string.settings_quick_text)).assertIsDisplayed()
-        composeRule.onNodeWithText(text(R.string.settings_background)).assertIsDisplayed()
-        composeRule.onNodeWithText(text(R.string.settings_more)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_quick_text)).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_background)).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_more)).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("reader_bottom_progress_text").assertIsDisplayed()
         composeRule.onAllNodesWithText(expectedProgressText).assertCountEquals(1)
         composeRule.onAllNodesWithText(text(R.string.settings_show_progress)).assertCountEquals(0)
@@ -332,7 +337,7 @@ class ReaderUiInstrumentedTest {
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithText(text(R.string.settings_quick_text)).fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithText(text(R.string.settings_more)).performClick()
+        composeRule.onNodeWithText(text(R.string.settings_more)).performScrollTo().performClick()
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithText(text(R.string.settings_page_turn)).fetchSemanticsNodes().isNotEmpty()
         }
@@ -423,7 +428,7 @@ class ReaderUiInstrumentedTest {
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithText(text(R.string.settings_more)).fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithText(text(R.string.settings_more)).performClick()
+        composeRule.onNodeWithText(text(R.string.settings_more)).performScrollTo().performClick()
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithText(text(R.string.settings_page_turn)).fetchSemanticsNodes().isNotEmpty()
         }

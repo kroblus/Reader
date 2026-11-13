@@ -8,6 +8,7 @@ import com.lightreader.app.ReaderApplication
 import com.lightreader.app.core.model.AppLanguage
 import com.lightreader.app.core.model.ReaderPreferences
 import com.lightreader.app.core.model.ReaderTheme
+import com.lightreader.app.core.reader.mergeReaderPreferenceEdit
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
@@ -18,13 +19,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val messagesChannel = Channel<UiText>(Channel.BUFFERED)
 
     val messages = messagesChannel.receiveAsFlow()
-    fun savePreferences(preferences: ReaderPreferences) {
+    fun savePreferences(preferences: ReaderPreferences, base: ReaderPreferences? = null) {
         val normalized = if (preferences.theme != ReaderTheme.NIGHT) {
             preferences.copy(lastNonNightTheme = preferences.theme)
         } else {
             preferences
         }
-        viewModelScope.launch { settingsRepository.save(normalized) }
+        viewModelScope.launch {
+            settingsRepository.update { current -> mergeReaderPreferenceEdit(base ?: current, normalized, current) }
+        }
     }
 
     fun saveAppLanguage(language: AppLanguage) {

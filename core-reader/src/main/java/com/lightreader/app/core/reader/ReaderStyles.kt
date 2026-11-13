@@ -77,17 +77,46 @@ data class ReaderLayoutValues(
 )
 
 fun ReaderPreferences.palette(): ReaderPalette = when (theme) {
-    ReaderTheme.EYE_CARE -> ReaderPalette(0xFFDDEBD2, 0xFF1F2A23, 0xFF5F8068, 0xFAF4FAF0)
-    ReaderTheme.SEPIA -> ReaderPalette(0xFFF5ECD8, 0xFF2B2B2B, 0xFF8A7A5C, 0xFAEDE1C9)
-    ReaderTheme.LIGHT_GRAY -> ReaderPalette(0xFFECEDE7, 0xFF2B2B2B, 0xFF777777, 0xFAE2E4DD)
-    ReaderTheme.WARM_BROWN -> ReaderPalette(0xFFE5BE8D, 0xFF332719, 0xFF7C654A, 0xFAD7AC78)
-    ReaderTheme.FROST_BLUE -> ReaderPalette(0xFFE8F3FA, 0xFF1F2E36, 0xFF6F8794, 0xFAD7E9F2)
-    ReaderTheme.SAKURA_PINK -> ReaderPalette(0xFFF7E8EA, 0xFF342629, 0xFF9A757B, 0xFAF0D8DC)
-    ReaderTheme.NIGHT -> ReaderPalette(0xFF111713, 0xFFB7C2B0, 0xFF7C8979, 0xFA1B251E)
+    ReaderTheme.EYE_CARE -> ReaderPalette(0xFFDDEBD2, 0xFF1F2A23, 0xFF445D4B, 0xFFF4FAF0)
+    ReaderTheme.SEPIA -> ReaderPalette(0xFFF5ECD8, 0xFF2B2B2B, 0xFF65573F, 0xFFEDE1C9)
+    ReaderTheme.LIGHT_GRAY -> ReaderPalette(0xFFECEDE7, 0xFF2B2B2B, 0xFF565656, 0xFFE2E4DD)
+    ReaderTheme.WARM_BROWN -> ReaderPalette(0xFFE5BE8D, 0xFF332719, 0xFF51402C, 0xFFD7AC78)
+    ReaderTheme.FROST_BLUE -> ReaderPalette(0xFFE8F3FA, 0xFF1F2E36, 0xFF465D69, 0xFFD7E9F2)
+    ReaderTheme.SAKURA_PINK -> ReaderPalette(0xFFF7E8EA, 0xFF342629, 0xFF6C4E53, 0xFFF0D8DC)
+    ReaderTheme.NIGHT -> ReaderPalette(0xFF111713, 0xFFB7C2B0, 0xFF879582, 0xFF1B251E)
     ReaderTheme.CUSTOM -> ReaderPalette(
-        customBackground,
-        customForeground,
-        customSecondary,
-        (customBackground and 0x00FFFFFFFF) or 0xFA000000,
+        customBackground or 0xFF000000,
+        readableCustomText(customForeground, customBackground),
+        readableCustomText(customSecondary, customBackground),
+        (customBackground and 0x00FFFFFFFF) or 0xFF000000,
     )
+}
+
+/** Keep a custom hue when possible, increasing its luminance contrast for small text. */
+private fun readableCustomText(requested: Long, background: Long): Long {
+    fun luminance(color: Long): Double {
+        val components = listOf(16, 8, 0).map { shift ->
+            val c = ((color shr shift) and 255).toDouble() / 255
+            if (c <= .04045) c / 12.92 else Math.pow((c + .055) / 1.055, 2.4)
+        }
+        return components[0] * .2126 + components[1] * .7152 + components[2] * .0722
+    }
+    val backgroundLuminance = luminance(background)
+    fun contrast(color: Long): Double {
+        val text = luminance(color)
+        return (maxOf(text, backgroundLuminance) + .05) / (minOf(text, backgroundLuminance) + .05)
+    }
+    val opaque = requested or 0xFF000000
+    if (contrast(opaque) >= 4.5) return opaque
+    val target = if (contrast(0xFFFFFFFF) > contrast(0xFF000000)) 255 else 0
+    for (step in 1..255) {
+        var candidate = 0xFF000000L
+        for (shift in listOf(16, 8, 0)) {
+            val original = ((opaque shr shift) and 255).toInt()
+            val value = original + (target - original) * step / 255
+            candidate = candidate or (value.toLong() shl shift)
+        }
+        if (contrast(candidate) >= 4.5) return candidate
+    }
+    return if (target == 255) 0xFFFFFFFF else 0xFF000000
 }

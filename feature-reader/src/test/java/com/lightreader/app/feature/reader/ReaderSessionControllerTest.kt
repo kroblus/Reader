@@ -135,6 +135,48 @@ class ReaderSessionControllerTest {
     }
 
     @Test
+    fun pageHitWithEvictedBodyReloadsTargetTextAndKeepsUtf16Anchor() = runTest {
+        val controller = ReaderSessionController(this, StandardTestDispatcher(testScheduler), 64, 1024)
+        val target = ReaderChapterCacheKey("book", 2)
+        val layout = ReaderLayoutCacheKey("book", 2, 1, ReaderViewport(100, 100, 1f, 1f))
+        val targetText = "乙😀章正文"
+        controller.putChapter(target, ReaderChapterContent(targetText, emptyList()))
+        controller.putPages(layout, listOf(ReaderPage(1, 0, "乙", emptyList(), 3, 7, 1f)))
+        controller.putChapter(ReaderChapterCacheKey("book", 1), ReaderChapterContent("甲".repeat(32), emptyList()))
+        assertEquals(null, controller.chapter(target))
+        assertTrue(controller.pages(layout) != null)
+        var reads = 0
+        val content = controller.resolveContent(target) {
+            reads++
+            ReaderChapterContent(targetText, listOf(com.lightreader.app.core.model.BookParagraph(targetText)))
+        }
+        assertEquals(1, reads)
+        assertEquals(targetText, content.rawText)
+        assertEquals(targetText, content.paragraphs.single().text)
+        assertEquals(3, controller.pages(layout)!!.single().startOffset)
+        assertEquals(1, controller.pages(layout)!!.single().chapterIndex)
+    }
+
+    @Test
+    fun lateSuccessErrorAndLoadingCannotCommitAfterNewBookOrChapter() = runTest {
+        val controller = ReaderSessionController(this, StandardTestDispatcher(testScheduler))
+        val a = controller.beginRequest("book", 1)
+        val b = controller.beginRequest("book", 2)
+        val c = controller.beginRequest("book", 3)
+        val commits = mutableListOf<String>()
+        for (request in listOf(a, b)) {
+            for (state in listOf("success", "error", "loading")) {
+                try { controller.commit(request) { commits += state } }
+                catch (_: kotlinx.coroutines.CancellationException) { }
+            }
+        }
+        controller.commit(c) { commits += "C" }
+        assertEquals(listOf("C"), commits)
+        controller.beginRequest("other", 3)
+        assertTrue(!controller.isCurrent(c))
+    }
+
+    @Test
     fun memoryPressureClearsBothBoundedCaches() = runTest {
         val controller = ReaderSessionController(this, StandardTestDispatcher(testScheduler), 128, 128)
         controller.putChapter(ReaderChapterCacheKey("book", 1), ReaderChapterContent("chapter", emptyList()))

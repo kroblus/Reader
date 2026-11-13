@@ -16,13 +16,16 @@ import com.lightreader.app.core.model.ReaderViewport
 import com.lightreader.app.core.model.SearchResult
 import com.lightreader.app.core.reader.BookTextNormalizer
 import com.lightreader.app.core.reader.UnicodeTextBoundary
+import com.lightreader.app.core.reader.readerFontMetrics
 import com.lightreader.app.core.reader.toReaderStyle
 import com.lightreader.app.feature.reader.ReaderChapterCacheKey
 import com.lightreader.app.feature.reader.ReaderChapterContent
 import com.lightreader.app.feature.reader.ReaderLayoutCacheKey
 import com.lightreader.app.feature.reader.ReaderNavigationPolicy
 import com.lightreader.app.feature.reader.ReaderPageTurnQueue
+import com.lightreader.app.feature.reader.ReaderRequest
 import com.lightreader.app.feature.reader.ReaderSessionController
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -42,6 +45,7 @@ sealed interface AppScreen {
     data object WebDomBridge : AppScreen
     data object ApiSettings : AppScreen
     data object AppSettings : AppScreen
+    data object Backup : AppScreen
 }
 
 data class AppUiState(
@@ -81,6 +85,7 @@ data class ReaderUiState(
     val loading: Boolean = false,
     val error: UiText? = null,
     val bookmarks: List<Bookmark> = emptyList(),
+    val deletedBookmark: Bookmark? = null,
     val layoutVersion: Int = 0,
     val layoutPreferences: ReaderPreferences? = null,
 )
@@ -153,7 +158,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             container.settingsRepository.preferences.collect { preferences ->
                 val fingerprint = preferences.toReaderStyle().layoutFingerprint()
                 if (readerState.value.book != null && viewport.widthPx > 0 && fingerprint != currentLayoutFingerprint) {
-                    requestedOffset = currentPageOffset()
+                    requestedOffset = repaginationOffset()
                     repaginate(preferences)
                 }
             }
@@ -180,6 +185,22 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             current = target,
             backStack = (state.backStack + state.current).takeLast(8),
         )
+    }
+
+    fun currentSearchOrigin(): SearchOrigin? {
+        val state = readerState.value
+        val book = state.book ?: return null
+        val chapter = state.chapters.getOrNull(state.chapterIndex) ?: return null
+        return SearchOrigin(book.id, chapter.id, currentPageOffset())
+    }
+
+    fun restoreSearchOrigin(origin: SearchOrigin) {
+        if (readerState.value.book?.id != origin.bookId) return
+        val index = readerState.value.chapters.indexOfFirst { it.id == origin.chapterId }
+        if (index < 0) return
+        requestedOffset = origin.charOffset.coerceAtLeast(0)
+        replaceCurrent(AppScreen.Reader(origin.bookId))
+        loadChapter(index)
     }
 
     fun openSearch(bookId: String) {
@@ -250,28 +271,38 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         boundaryCommitSourceChapterIndex = null
         pendingPageTurns.clear()
         setAutoReading(false)
+        val request = sessionController.beginRequest(bookId)
         openBookJob = viewModelScope.launch {
-            readerState.value = ReaderUiState(loading = true)
-            sessionController.awaitProgressSave()
-            val book = container.bookRepository.book(bookId) ?: run {
-                readerState.value = ReaderUiState(error = text(R.string.message_book_missing))
-                return@launch
+            sessionController.commit(request) { readerState.value = ReaderUiState(loading = true) }
+            try {
+                sessionController.awaitProgressSave()
+                val book = container.bookRepository.book(bookId) ?: run {
+                    sessionController.commit(request) { readerState.value = ReaderUiState(error = text(R.string.message_book_missing)) }
+                    return@launch
+                }
+                val chapters = container.bookRepository.chapters(bookId)
+                if (chapters.isEmpty()) {
+                    sessionController.commit(request) { readerState.value = ReaderUiState(book = book, error = text(R.string.message_book_has_no_chapters)) }
+                    return@launch
+                }
+                val progress = container.bookRepository.progress(bookId)
+                coroutineContext.ensureActive()
+                sessionController.ensureCurrent(request)
+                val chapterIndex = progress?.let { saved -> chapters.indexOfFirst { it.id == saved.chapterId } }
+                    ?.takeIf { it >= 0 }
+                    ?: progress?.chapterIndex?.coerceIn(chapters.indices)
+                    ?: 0
+                requestedOffset = progress?.charOffset ?: 0
+                readerState.value = ReaderUiState(book = book, chapters = chapters, chapterIndex = chapterIndex, loading = true)
+                observeBookmarks(bookId)
+                loadChapter(chapterIndex)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                sessionController.commit(request) {
+                    readerState.value = ReaderUiState(error = text(R.string.message_read_chapter_failed))
+                }
             }
-            val chapters = container.bookRepository.chapters(bookId)
-            if (chapters.isEmpty()) {
-                readerState.value = ReaderUiState(book = book, error = text(R.string.message_book_has_no_chapters))
-                return@launch
-            }
-            val progress = container.bookRepository.progress(bookId)
-            coroutineContext.ensureActive()
-            val chapterIndex = progress?.let { saved -> chapters.indexOfFirst { it.id == saved.chapterId } }
-                ?.takeIf { it >= 0 }
-                ?: progress?.chapterIndex?.coerceIn(chapters.indices)
-                ?: 0
-            requestedOffset = progress?.charOffset ?: 0
-            readerState.value = ReaderUiState(book = book, chapters = chapters, chapterIndex = chapterIndex, loading = true)
-            observeBookmarks(bookId)
-            loadChapter(chapterIndex)
         }
     }
 
@@ -286,8 +317,11 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         val next = ReaderViewport(width, height, density, scaledDensity, safeTopPx, safeBottomPx)
         if (next == viewport) return
         viewport = next
-        if (loadedChapterId != null) {
-            requestedOffset = currentPageOffset()
+        // The first measured viewport may arrive while chapter I/O is still suspended.
+        // Restart that request even if no body has committed yet: its captured viewport
+        // can still be 0x0, and no later layout event is guaranteed to rescue it.
+        if (readerState.value.book != null && readerState.value.chapters.isNotEmpty()) {
+            requestedOffset = repaginationOffset()
             repaginate(uiState.value.preferences)
         }
     }
@@ -299,31 +333,46 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         loadChapter(index)
     }
 
-    private fun loadChapter(index: Int) {
+    private fun loadChapter(index: Int, preferences: ReaderPreferences = uiState.value.preferences) {
+        val displayed = readerState.value
+        val chapter = displayed.chapters.getOrNull(index) ?: return
+        val alreadyDisplayingTarget = displayed.book?.id == chapter.bookId &&
+            displayed.chapters.getOrNull(displayed.chapterIndex)?.id == chapter.id && displayed.pages.isNotEmpty()
+        val request = sessionController.beginRequest(chapter.bookId, chapter.id)
+        val targetViewport = viewportFor(preferences)
+        val targetOffset = requestedOffset
         sessionController.launchPagination {
-            val chapter = readerState.value.chapters.getOrNull(index) ?: return@launchPagination
-            val preferences = uiState.value.preferences
-            val key = layoutCacheKey(chapter, preferences, viewport)
-            val cachedPages = sessionController.pages(key)
-            val cachedContent = sessionController.chapter(ReaderChapterCacheKey(chapter.bookId, chapter.id))
-            if (cachedPages != null) {
-                cachedContent?.let(::setLoadedChapterContent)
-                loadedChapterId = chapter.id
-                applyPages(index, chapter, cachedPages, preferences, fromCache = true)
-                prefetchAdjacent(index, preferences)
-                return@launchPagination
-            }
-
-            readerState.value = readerState.value.copy(loading = true, error = null)
-            val content = runCatching { loadChapterContent(chapter) }
-                .getOrElse {
-                    readerState.value = readerState.value.copy(loading = false, error = text(R.string.message_read_chapter_failed))
-                    return@launchPagination
+            sessionController.commit(request) { readerState.value = readerState.value.copy(loading = true, error = null) }
+            try {
+                // The text cache can evict independently of the page cache. Always obtain the
+                // target's reparsable body before accepting any cached pages.
+                val content = loadChapterContent(chapter)
+                coroutineContext.ensureActive()
+                sessionController.commit(request) {
+                    setLoadedChapterContent(content)
+                    loadedChapterId = chapter.id
                 }
-            setLoadedChapterContent(content)
-            loadedChapterId = chapter.id
-            if (requestedOffset == 0) showFirstPagePreview(index, chapter, content.paragraphs, preferences)
-            paginateAndApply(index, chapter, content.paragraphs, preferences)
+                val key = layoutCacheKey(chapter, preferences, targetViewport)
+                val cachedPages = sessionController.pages(key)
+                if (cachedPages != null) {
+                    applyPages(index, chapter, cachedPages, preferences, true, request, targetOffset)
+                    prefetchAdjacent(index, preferences, request)
+                } else {
+                    // Reflow keeps the current pages and their measured fonts until the full
+                    // replacement is ready. Repeating the opening preview would paginate twice
+                    // and briefly collapse a displayed chapter to one page.
+                    if (targetOffset == 0 && !alreadyDisplayingTarget) {
+                        showFirstPagePreview(index, chapter, content.paragraphs, preferences, request, targetViewport)
+                    }
+                    paginateAndApply(index, chapter, content.paragraphs, preferences, request, targetViewport, targetOffset)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                sessionController.commit(request) {
+                    readerState.value = readerState.value.copy(loading = false, error = text(R.string.message_read_chapter_failed))
+                }
+            }
         }
     }
 
@@ -332,11 +381,13 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         chapter: Chapter,
         paragraphs: List<BookParagraph>,
         preferences: ReaderPreferences,
+        request: ReaderRequest,
+        targetViewport: ReaderViewport,
     ) {
-        if (viewport.widthPx <= 0 || viewport.heightPx <= 0) return
+        if (targetViewport.widthPx <= 0 || targetViewport.heightPx <= 0) return
         val previewParagraphs = paragraphPrefix(paragraphs, FIRST_PAGE_PREVIEW_CHARS)
         val firstPage = container.engineMetrics.measure(
-            "first_visible_page",
+            "prepared_text_preview_pagination",
             mapOf("preview_chars" to previewParagraphs.sumOf { it.text.length }),
         ) {
             sessionController.compute {
@@ -344,11 +395,12 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
                     chapterIndex,
                     chapter.title,
                     previewParagraphs,
-                    viewport,
+                    targetViewport,
                     preferences.toReaderStyle(),
                 ).pages.firstOrNull()
             }
         } ?: return
+        sessionController.ensureCurrent(request)
         val state = readerState.value
         if (state.chapters.getOrNull(chapterIndex)?.id != chapter.id) return
         readerState.value = state.copy(
@@ -385,11 +437,9 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     private fun repaginate(preferences: ReaderPreferences) {
         if (viewport.widthPx <= 0 || viewport.heightPx <= 0) return
         val state = readerState.value
-        val chapter = state.chapters.getOrNull(state.chapterIndex) ?: return
-        sessionController.launchPagination {
-            readerState.value = readerState.value.copy(loading = true)
-            paginateAndApply(state.chapterIndex, chapter, chapterParagraphs, preferences)
-        }
+        val requestedChapter = sessionController.activeRequest?.chapterId
+        val index = state.chapters.indexOfFirst { it.id == requestedChapter }.takeIf { it >= 0 } ?: state.chapterIndex
+        loadChapter(index, preferences)
     }
 
     private suspend fun paginateAndApply(
@@ -397,14 +447,17 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         chapter: Chapter,
         paragraphs: List<BookParagraph>,
         preferences: ReaderPreferences,
+        request: ReaderRequest,
+        targetViewport: ReaderViewport,
+        targetOffset: Int,
     ) {
-        if (viewport.widthPx <= 0 || viewport.heightPx <= 0) return
-        val key = layoutCacheKey(chapter, preferences, viewport)
+        if (targetViewport.widthPx <= 0 || targetViewport.heightPx <= 0) return
+        val key = layoutCacheKey(chapter, preferences, targetViewport)
         val cached = sessionController.pages(key)
         val metricMetadata = mapOf(
             "chapter_chars" to paragraphs.sumOf { it.text.length },
-            "viewport_width" to viewport.widthPx,
-            "viewport_height" to viewport.heightPx,
+            "viewport_width" to targetViewport.widthPx,
+            "viewport_height" to targetViewport.heightPx,
         )
         val pages = if (cached != null) {
             container.engineMetrics.record("pagination_cache_hit", 0.0, metricMetadata)
@@ -416,30 +469,34 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
                         chapterIndex,
                         chapter.title,
                         paragraphs,
-                        viewport,
+                        targetViewport,
                         preferences.toReaderStyle(),
                     ).pages
                 }
             }.also { cachePages(key, it) }
         }
-        applyPages(chapterIndex, chapter, pages, preferences, fromCache = cached != null)
-        prefetchAdjacent(chapterIndex, preferences)
+        sessionController.ensureCurrent(request)
+        applyPages(chapterIndex, chapter, pages, preferences, cached != null, request, targetOffset)
+        prefetchAdjacent(chapterIndex, preferences, request)
     }
 
-    private fun prefetchAdjacent(chapterIndex: Int, preferences: ReaderPreferences) {
+    private fun prefetchAdjacent(chapterIndex: Int, preferences: ReaderPreferences, request: ReaderRequest) {
+        if (!sessionController.isCurrent(request)) return
         val chapters = readerState.value.chapters
-        val targetViewport = viewport
+        val targetViewport = viewportFor(preferences)
         sessionController.launchPrefetch {
             listOf(chapterIndex + 1, chapterIndex - 1).filter { it in chapters.indices }.distinct().forEach { index ->
                 val chapter = chapters[index]
                 val key = layoutCacheKey(chapter, preferences, targetViewport)
                 if (sessionController.pages(key) == null) {
-                    val content = runCatching { loadChapterContent(chapter) }.getOrNull() ?: return@forEach
+                    val content = try { loadChapterContent(chapter) } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { return@forEach }
                     val pages = sessionController.compute {
                         container.paginationEngine.paginate(index, chapter.title, content.paragraphs, targetViewport, preferences.toReaderStyle()).pages
                     }
+                    sessionController.ensureCurrent(request)
                     cachePages(key, pages)
                 }
+                sessionController.ensureCurrent(request)
                 refreshAdjacentPreviews(preferences, targetViewport)
             }
         }
@@ -447,16 +504,15 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
 
     private suspend fun loadChapterContent(chapter: Chapter): ReaderChapterContent {
         val key = ReaderChapterCacheKey(chapter.bookId, chapter.id)
-        sessionController.chapter(key)?.let { return it }
-        val rawText = container.engineMetrics.measure(
-            "read_chapter",
-            mapOf("chapter_chars" to chapter.charCount),
-        ) { container.bookRepository.readChapter(chapter) }
-        val paragraphs = container.engineMetrics.measure(
-            "normalize_chapter",
-            mapOf("chapter_chars" to rawText.length),
-        ) { sessionController.compute { normalizer.normalize(rawText) } }
-        return ReaderChapterContent(rawText, paragraphs).also { cacheChapterContent(key, it) }
+        return sessionController.resolveContent(key) {
+            val rawText = container.engineMetrics.measure(
+                "read_chapter", mapOf("chapter_chars" to chapter.charCount),
+            ) { container.bookRepository.readChapter(chapter) }
+            val paragraphs = container.engineMetrics.measure(
+                "normalize_chapter", mapOf("chapter_chars" to rawText.length),
+            ) { sessionController.compute { normalizer.normalize(rawText) } }
+            ReaderChapterContent(rawText, paragraphs)
+        }
     }
 
     private fun setLoadedChapterContent(content: ReaderChapterContent) {
@@ -496,10 +552,13 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         pages: List<ReaderPage>,
         preferences: ReaderPreferences,
         fromCache: Boolean,
+        request: ReaderRequest,
+        targetOffset: Int,
     ) {
+        sessionController.ensureCurrent(request)
         val beforeApply = readerState.value
         if (beforeApply.chapters.getOrNull(chapterIndex)?.id != chapter.id) return
-        val pageIndex = ReaderNavigationPolicy.pageForOffset(pages, requestedOffset)
+        val pageIndex = ReaderNavigationPolicy.pageForOffset(pages, targetOffset)
         val fingerprint = preferences.toReaderStyle().layoutFingerprint()
         val settlingAfterBoundary = beforeApply.boundaryTurnPhase == BoundaryTurnPhase.COMMITTING_CHAPTER ||
             boundaryCommitSourceChapterIndex != null
@@ -529,12 +588,12 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun refreshAdjacentPreviews(
         preferences: ReaderPreferences,
-        targetViewport: ReaderViewport = viewport,
+        targetViewport: ReaderViewport = viewportFor(preferences),
     ) {
         if (targetViewport.widthPx <= 0 || targetViewport.heightPx <= 0) return
         val state = readerState.value
         val currentPreferences = state.layoutPreferences ?: uiState.value.preferences
-        if (targetViewport != viewport || currentPreferences.toReaderStyle().layoutFingerprint() != preferences.toReaderStyle().layoutFingerprint()) return
+        if (targetViewport != viewportFor(preferences) || currentPreferences.toReaderStyle().layoutFingerprint() != preferences.toReaderStyle().layoutFingerprint()) return
         val previous = adjacentPreview(state, state.chapterIndex - 1, preferences, targetViewport, useLastPage = true)
         val next = adjacentPreview(state, state.chapterIndex + 1, preferences, targetViewport, useLastPage = false)
         if (state.previousPreview != previous || state.nextPreview != next) {
@@ -554,6 +613,16 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         val page = if (useLastPage) pages.lastOrNull() else pages.firstOrNull()
         return page?.let { AdjacentChapterPreview(index, it, pages.size) }
     }
+
+    fun previewLayout(preferences: ReaderPreferences) {
+        if (readerState.value.book == null) return
+        requestedOffset = repaginationOffset()
+        repaginate(preferences)
+    }
+
+    private fun viewportFor(preferences: ReaderPreferences): ReaderViewport = viewport.copy(
+        fontMetrics = readerFontMetrics(preferences.toReaderStyle().fontSizeSp, getApplication<Application>().resources.displayMetrics),
+    )
 
     private fun layoutCacheKey(
         chapter: Chapter,
@@ -849,6 +918,12 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
 
     fun onReaderStopped() = saveCurrentProgress(immediate = true)
 
+    private fun repaginationOffset(): Int {
+        val requestedChapter = sessionController.activeRequest?.chapterId
+        val displayedChapter = readerState.value.chapters.getOrNull(readerState.value.chapterIndex)?.id
+        return if (requestedChapter != null && requestedChapter != displayedChapter) requestedOffset else currentPageOffset()
+    }
+
     private fun currentPageOffset(): Int = readerState.value.let { state ->
         state.pages.getOrNull(state.pageIndex)?.startOffset ?: requestedOffset
     }
@@ -873,10 +948,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             it.chapterId == chapter.id && it.charOffset >= page.startOffset && it.charOffset < page.endOffset.coerceAtLeast(page.startOffset + 1)
         }
         if (existing != null) {
-            viewModelScope.launch {
-                container.bookRepository.deleteBookmark(existing.id)
-                message.value = text(R.string.message_bookmark_removed)
-            }
+            deleteBookmark(existing.id)
         } else {
             viewModelScope.launch {
                 container.bookRepository.addBookmark(book.id, chapter.id, page.startOffset, page.text.trim())
@@ -885,7 +957,24 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun deleteBookmark(id: String) { viewModelScope.launch { container.bookRepository.deleteBookmark(id) } }
+    fun deleteBookmark(id: String) {
+        val bookmark = readerState.value.bookmarks.firstOrNull { it.id == id } ?: return
+        viewModelScope.launch {
+            container.bookRepository.deleteBookmark(id)
+            if (readerState.value.book?.id == bookmark.bookId) {
+                readerState.value = readerState.value.copy(deletedBookmark = bookmark)
+            }
+        }
+    }
+
+    fun undoBookmarkDeletion() {
+        val bookmark = readerState.value.deletedBookmark ?: return
+        viewModelScope.launch {
+            if (container.bookRepository.restoreBookmark(bookmark) && readerState.value.deletedBookmark?.id == bookmark.id) {
+                readerState.value = readerState.value.copy(deletedBookmark = null)
+            }
+        }
+    }
 
     fun jumpToBookmark(bookmark: Bookmark) {
         val index = readerState.value.chapters.indexOfFirst { it.id == bookmark.chapterId }
@@ -899,7 +988,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         bookmarkJob?.cancel()
         bookmarkJob = viewModelScope.launch {
             container.bookRepository.bookmarks(bookId).collect { bookmarks ->
-                readerState.value = readerState.value.copy(bookmarks = bookmarks)
+                if (readerState.value.book?.id == bookId) readerState.value = readerState.value.copy(bookmarks = bookmarks)
             }
         }
     }

@@ -618,7 +618,7 @@ fun AppSettingsScreen(
         ) {
             SkinPickerPanel(
                 selected = preferences.appSkin,
-                onSelect = { skin -> settingsViewModel.savePreferences(preferences.copy(appSkin = skin)) },
+                onSelect = { skin -> settingsViewModel.savePreferences(preferences.copy(appSkin = skin), preferences) },
             )
         }
     }
@@ -655,7 +655,7 @@ private fun AppReadingSettings(
             description = stringResource(R.string.app_settings_volume_description),
             checked = preferences.volumeKeys,
         ) {
-            settingsViewModel.savePreferences(preferences.copy(volumeKeys = it))
+            settingsViewModel.savePreferences(preferences.copy(volumeKeys = it), preferences)
         }
         SettingsSwitchRow(
             icon = Icons.Outlined.LightMode,
@@ -663,7 +663,7 @@ private fun AppReadingSettings(
             description = stringResource(R.string.app_settings_keep_screen_description),
             checked = preferences.keepScreenOn,
         ) {
-            settingsViewModel.savePreferences(preferences.copy(keepScreenOn = it))
+            settingsViewModel.savePreferences(preferences.copy(keepScreenOn = it), preferences)
         }
         SettingsSwitchRow(
             icon = Icons.Outlined.ScreenLockPortrait,
@@ -671,7 +671,7 @@ private fun AppReadingSettings(
             description = stringResource(R.string.app_settings_lock_description),
             checked = preferences.lockPortrait,
         ) {
-            settingsViewModel.savePreferences(preferences.copy(lockPortrait = it))
+            settingsViewModel.savePreferences(preferences.copy(lockPortrait = it), preferences)
         }
     }
 }
@@ -689,7 +689,7 @@ private fun AppImportSettings(
             description = stringResource(R.string.app_settings_clean_description),
             checked = preferences.cleanTxtNoise,
         ) {
-            settingsViewModel.savePreferences(preferences.copy(cleanTxtNoise = it))
+            settingsViewModel.savePreferences(preferences.copy(cleanTxtNoise = it), preferences)
         }
         SettingsNavigationRow(
             title = stringResource(R.string.library_web_import),
@@ -697,6 +697,11 @@ private fun AppImportSettings(
             icon = Icons.Outlined.CloudDownload,
             modifier = Modifier.testTag(ReaderTestTags.APP_SETTINGS_WEB_IMPORT),
         ) { readerViewModel.navigate(AppScreen.WebImport) }
+        SettingsNavigationRow(
+            title = stringResource(R.string.backup_title),
+            description = stringResource(R.string.backup_title),
+            icon = Icons.Outlined.CloudDownload,
+        ) { readerViewModel.navigate(AppScreen.Backup) }
     }
 }
 
@@ -1151,7 +1156,7 @@ private fun BookCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit: () -> U
                 fontSize = 12.sp,
                 lineHeight = 15.sp,
             ),
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .88f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -1228,7 +1233,7 @@ private fun RecentReadingCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.SansSerif),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .9f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     ShelfProgressBar(progressPercent = shelfBook.progressPercent, modifier = Modifier.fillMaxWidth())
                     FlowRow(
@@ -1258,7 +1263,7 @@ private fun RecentReadingCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit
                             lastReadDate?.let {
                                 Text(
                                     stringResource(R.string.library_last_read_date, it),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .68f),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     style = MaterialTheme.typography.labelSmall.copy(
@@ -1388,7 +1393,7 @@ private fun PastelBookCover(book: Book, compact: Boolean = false) {
                         overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
-                    book.author?.takeIf { it.isNotBlank() }?.let { author ->
+                    book.author?.takeIf { !compact && it.isNotBlank() }?.let { author ->
                         Text(
                             author,
                             maxLines = 1,
@@ -1397,11 +1402,11 @@ private fun PastelBookCover(book: Book, compact: Boolean = false) {
                                 fontFamily = FontFamily.SansSerif,
                                 fontSize = if (compact) 8.sp else 10.sp,
                             ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .82f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
-                Text(
+                if (!compact) Text(
                     stringResource(R.string.library_cover_footer, book.chapterCount),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1410,7 +1415,7 @@ private fun PastelBookCover(book: Book, compact: Boolean = false) {
                         fontSize = if (compact) 7.sp else 9.sp,
                         lineHeight = if (compact) 9.sp else 11.sp,
                     ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (compact) .46f else .78f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

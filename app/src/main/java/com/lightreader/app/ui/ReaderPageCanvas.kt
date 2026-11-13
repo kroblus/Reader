@@ -12,6 +12,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import com.lightreader.app.core.reader.readerFontMetrics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -44,13 +46,14 @@ fun ReaderPageCanvas(
     val palette = displayPreferences.palette()
     val layoutValues = layoutPreferences.effectiveLayout()
     val displayStyle = displayPreferences.toReaderStyle()
+    val actualFonts = page.fontMetrics ?: readerFontMetrics(layoutValues.fontSizeSp, LocalContext.current.resources.displayMetrics)
     val footerProgressText = stringResource(
         R.string.reader_footer_book_progress,
         (overallProgress.coerceIn(0f, 1f) * 100f).roundToInt().coerceIn(0, 100),
     )
-    val textPaint = remember(layoutPreferences, density.density, density.fontScale) { TextPaint(Paint.ANTI_ALIAS_FLAG) }.apply {
+    val textPaint = remember(layoutPreferences, actualFonts) { TextPaint(Paint.ANTI_ALIAS_FLAG) }.apply {
         color = palette.foreground.toInt()
-        textSize = layoutValues.fontSizeSp * density.density * density.fontScale
+        textSize = actualFonts.bodyPx
         typeface = Typeface.create(
             when (layoutPreferences.fontFamily) {
                 FontFamilyOption.SYSTEM -> Typeface.DEFAULT
@@ -63,12 +66,12 @@ fun ReaderPageCanvas(
     }
     val secondaryPaint = remember(palette.secondary, density.density, density.fontScale) { TextPaint(Paint.ANTI_ALIAS_FLAG) }.apply {
         color = palette.secondary.toInt()
-        textSize = 12f * density.density * density.fontScale
+        textSize = actualFonts.auxiliaryPx
         typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
     }
-    val titlePaint = remember(layoutPreferences, density.density, density.fontScale) { TextPaint(Paint.ANTI_ALIAS_FLAG) }.apply {
-        color = (if (displayStyle.showHeader) palette.secondary else palette.foreground).toInt()
-        textSize = layoutValues.fontSizeSp * (if (displayStyle.showHeader) 1.16f else 1.38f) * density.density * density.fontScale
+    val titlePaint = remember(layoutPreferences, actualFonts) { TextPaint(Paint.ANTI_ALIAS_FLAG) }.apply {
+        color = palette.foreground.toInt()
+        textSize = actualFonts.titlePx
         typeface = Typeface.create(
             when (layoutPreferences.fontFamily) {
                 FontFamilyOption.SYSTEM -> Typeface.DEFAULT

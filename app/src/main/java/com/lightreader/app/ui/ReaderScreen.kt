@@ -12,6 +12,9 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -37,6 +40,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
@@ -128,6 +132,7 @@ import com.lightreader.app.core.model.PageTurnMode
 import com.lightreader.app.core.model.ReaderPage
 import com.lightreader.app.core.model.ReaderPreferences
 import com.lightreader.app.core.model.ReaderTheme
+import com.lightreader.app.core.reader.toReaderStyle
 import com.lightreader.app.core.reader.palette
 import java.text.DateFormat
 import java.time.LocalTime
@@ -138,13 +143,43 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlin.math.abs
 import kotlin.math.max
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ReaderScreen(
     preferences: ReaderPreferences,
     viewModel: ReaderViewModel,
     downloadViewModel: DownloadViewModel,
     settingsViewModel: SettingsViewModel,
+    onReturnSearchResults: (() -> Unit)? = null,
+    onReturnSearchOrigin: (() -> Unit)? = null,
+) {
+    var preview by remember { mutableStateOf<ReaderPreferences?>(null) }
+    LaunchedEffect(preferences) { preview = null }
+    val displayed = preview ?: preferences
+    LaunchedEffect(preview?.toReaderStyle()?.layoutFingerprint()) {
+        // Persisted preferences already have a single observer in ReaderViewModel.
+        // Mounting this screen must not issue another asynchronous page request.
+        preview?.let(viewModel::previewLayout)
+    }
+    ReaderScreenContent(
+        displayed, viewModel, downloadViewModel, settingsViewModel,
+        onCommitPreferences = { edit -> preview = edit; settingsViewModel.savePreferences(edit, preferences) },
+        onPreviewPreferences = { preview = it },
+        onReturnSearchResults = onReturnSearchResults,
+        onReturnSearchOrigin = onReturnSearchOrigin,
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun ReaderScreenContent(
+    preferences: ReaderPreferences,
+    viewModel: ReaderViewModel,
+    downloadViewModel: DownloadViewModel,
+    settingsViewModel: SettingsViewModel,
+    onCommitPreferences: (ReaderPreferences) -> Unit,
+    onPreviewPreferences: (ReaderPreferences) -> Unit,
+    onReturnSearchResults: (() -> Unit)?,
+    onReturnSearchOrigin: (() -> Unit)?,
 ) {
     val state by viewModel.readerState.collectAsStateWithLifecycle()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -223,7 +258,7 @@ fun ReaderScreen(
                 widthPx.coerceAtLeast(1),
                 heightPx.coerceAtLeast(1),
                 density.density,
-                density.density * density.fontScale,
+                with(density) { 1.sp.toPx() },
                 safeTopPx,
                 safeBottomPx,
             )
@@ -524,7 +559,8 @@ fun ReaderScreen(
                 ReaderSettingsDock(
                     preferences = preferences,
                     settingsHeight = settingsDockHeight,
-                    onChange = settingsViewModel::savePreferences,
+                    onChange = onCommitPreferences,
+                    onPreview = onPreviewPreferences,
                     onOpenMoreSettings = viewModel::openReaderSettingsDetail,
                 )
             }
@@ -548,6 +584,22 @@ fun ReaderScreen(
             }
         }
 
+        if (state.toolbarVisible && onReturnSearchResults != null && !overlayVisible && !state.settingsVisible) {
+            Surface(
+                modifier = Modifier.align(Alignment.TopCenter)
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(top = ReaderUiTokens.iconTouchTarget + 8.dp),
+                color = Color(palette.overlay).copy(alpha = 1f),
+            ) {
+                FlowRow {
+                    TextButton(onClick = onReturnSearchResults) { Text(stringResource(R.string.reader_return_results), color = foreground) }
+                    onReturnSearchOrigin?.let { action ->
+                        TextButton(onClick = action) { Text(stringResource(R.string.reader_return_origin), color = foreground) }
+                    }
+                }
+            }
+        }
+
         AnimatedVisibility(
             visible = state.autoReading && !state.toolbarVisible && !overlayVisible && !state.settingsVisible,
             modifier = Modifier
@@ -558,14 +610,32 @@ fun ReaderScreen(
             exit = fadeOut(tween(120)),
         ) {
             Surface(
-                color = Color(palette.overlay).copy(alpha = .96f),
+                color = Color(palette.overlay).copy(alpha = 1f),
                 shape = RoundedCornerShape(LightReaderShapeTokens.small),
                 shadowElevation = 2.dp,
             ) {
-                TextButton(onClick = viewModel::toggleAutoReading) {
+                TextButton(
+                    onClick = viewModel::toggleAutoReading,
+                    modifier = Modifier.heightIn(min = ReaderUiTokens.iconTouchTarget).widthIn(min = ReaderUiTokens.iconTouchTarget),
+                ) {
                     Icon(Icons.Outlined.Pause, stringResource(R.string.reader_pause_auto_reading), tint = foreground, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(stringResource(R.string.reader_pause_auto), color = foreground, style = MaterialTheme.typography.labelLarge)
+                }
+            }
+        }
+
+        if (state.deletedBookmark != null) {
+            Surface(
+                modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 14.dp),
+                color = Color(palette.overlay).copy(alpha = 1f),
+                shadowElevation = 4.dp,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.reader_bookmark_deleted), color = foreground, modifier = Modifier.padding(start = 12.dp))
+                    TextButton(onClick = viewModel::undoBookmarkDeletion) {
+                        Text(stringResource(R.string.reader_undo_bookmark), color = foreground)
+                    }
                 }
             }
         }
@@ -598,6 +668,7 @@ private fun ReaderSettingsDock(
     preferences: ReaderPreferences,
     settingsHeight: Dp,
     onChange: (ReaderPreferences) -> Unit,
+    onPreview: (ReaderPreferences) -> Unit,
     onOpenMoreSettings: () -> Unit,
 ) {
     val palette = preferences.palette()
@@ -606,14 +677,15 @@ private fun ReaderSettingsDock(
             .fillMaxWidth()
             .height(settingsHeight)
             .testTag(ReaderTestTags.READER_SETTINGS_DOCK),
-        color = Color(palette.overlay).copy(alpha = .99f),
+        color = Color(palette.overlay).copy(alpha = 1f),
         shape = RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp),
         shadowElevation = 4.dp,
     ) {
-        Column(Modifier.fillMaxWidth().wrapContentHeight()) {
+        Column(Modifier.fillMaxWidth().testTag("reader_settings_scroll").verticalScroll(rememberScrollState())) {
             ReaderSettingsPanel(
                 value = preferences,
                 onChange = onChange,
+                onPreview = onPreview,
                 onOpenMoreSettings = onOpenMoreSettings,
                 bottomPadding = 0.dp,
             )
@@ -904,9 +976,9 @@ private fun ReaderAction(
     testTag: String? = null,
 ) {
     val stateText = stringResource(if (selected) R.string.state_selected else R.string.state_not_selected)
-    val itemColor = if (selected) tint else tint.copy(alpha = .86f)
+    val itemColor = tint
     Column(
-        modifier = Modifier.width(76.dp),
+        modifier = Modifier.widthIn(min = 76.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         IconButton(
@@ -938,7 +1010,7 @@ private fun ReaderAction(
 
 @Composable
 @Suppress("DEPRECATION")
-private fun ApplyReaderSystemBars(preferences: ReaderPreferences, visible: Boolean) {
+internal fun ApplyReaderSystemBars(preferences: ReaderPreferences, visible: Boolean) {
     val activity = LocalActivity.current ?: return
     val palette = preferences.palette()
     val controller = remember(activity) { WindowCompat.getInsetsController(activity.window, activity.window.decorView) }
@@ -957,7 +1029,7 @@ private fun ApplyReaderSystemBars(preferences: ReaderPreferences, visible: Boole
         activity.window.statusBarColor = palette.background.toInt()
         @Suppress("DEPRECATION")
         activity.window.navigationBarColor = palette.background.toInt()
-        controller.isAppearanceLightStatusBars = preferences.theme != com.lightreader.app.core.model.ReaderTheme.NIGHT
+        controller.isAppearanceLightStatusBars = readableTextColor(Color.Black, Color(palette.background)) == Color.Black
         controller.isAppearanceLightNavigationBars = controller.isAppearanceLightStatusBars
         if (visible) controller.show(WindowInsetsCompat.Type.systemBars())
         else controller.hide(WindowInsetsCompat.Type.systemBars())
@@ -1078,26 +1150,28 @@ private fun Modifier.readerPageTapNavigation(
     onCenter: () -> Unit,
 ): Modifier = pointerInput(toolbarVisible, settingsVisible, overlayVisible, fullScreenTapNext, onPrevious, onNext, onCenter) {
     awaitEachGesture {
-        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Final)
         if (overlayVisible) {
             var pressed = true
             while (pressed) {
-                val event = awaitPointerEvent(PointerEventPass.Initial)
+                val event = awaitPointerEvent(PointerEventPass.Final)
                 pressed = event.changes.any { it.pressed }
             }
             return@awaitEachGesture
         }
+        var childConsumed = down.isConsumed
         val start = down.position
         var maxDistance = 0f
         var pressed = true
         while (pressed) {
-            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val event = awaitPointerEvent(PointerEventPass.Final)
             val change = event.changes.firstOrNull { it.id == down.id } ?: break
+            childConsumed = childConsumed || change.isConsumed
             val delta = change.position - start
             maxDistance = max(maxDistance, max(abs(delta.x), abs(delta.y)))
             pressed = change.pressed
         }
-        if (maxDistance <= 18.dp.toPx()) {
+        if (!childConsumed && maxDistance <= 18.dp.toPx()) {
             val xFraction = if (size.width > 0) start.x / size.width else .5f
             val yFraction = if (size.height > 0) start.y / size.height else .5f
             when (readerTapAction(xFraction, yFraction, toolbarVisible, settingsVisible, fullScreenTapNext, overlayVisible)) {
@@ -1242,8 +1316,8 @@ private fun ChapterListOverlay(
                     unfocusedLeadingIconColor = secondary,
                     focusedTrailingIconColor = foreground,
                     unfocusedTrailingIconColor = secondary,
-                    focusedPlaceholderColor = secondary.copy(alpha = .78f),
-                    unfocusedPlaceholderColor = secondary.copy(alpha = .78f),
+                    focusedPlaceholderColor = secondary,
+                    unfocusedPlaceholderColor = secondary,
                 ),
             )
             if (chapters.isEmpty()) {
@@ -1305,7 +1379,7 @@ private fun ChapterOverlayRow(
             modifier = Modifier.weight(1f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            color = if (selected) foreground else secondary.copy(alpha = .92f),
+            color = if (selected) foreground else secondary,
             style = MaterialTheme.typography.titleMedium.copy(
                 fontFamily = FontFamily.SansSerif,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
@@ -1317,7 +1391,7 @@ private fun ChapterOverlayRow(
             Spacer(Modifier.width(12.dp))
             Text(
                 readPercentText,
-                color = foreground.copy(alpha = .84f),
+                color = foreground,
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontFamily = FontFamily.SansSerif,
                     fontWeight = FontWeight.Medium,
@@ -1367,7 +1441,7 @@ private fun BookmarksOverlay(
                 Spacer(Modifier.height(6.dp))
                 Text(
                     stringResource(R.string.reader_no_bookmarks_hint),
-                    color = secondary.copy(alpha = .82f),
+                    color = secondary,
                     style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.SansSerif),
                 )
             }
@@ -1417,7 +1491,7 @@ private fun BookmarkOverlayRow(
         Column(Modifier.weight(1f)) {
             Text(
                 bookmark.excerpt,
-                color = foreground.copy(alpha = .86f),
+                color = foreground,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleMedium.copy(
@@ -1430,7 +1504,7 @@ private fun BookmarkOverlayRow(
             Spacer(Modifier.height(5.dp))
             Text(
                 chapterTitle,
-                color = secondary.copy(alpha = .9f),
+                color = secondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.SansSerif),
@@ -1438,7 +1512,7 @@ private fun BookmarkOverlayRow(
             Spacer(Modifier.height(3.dp))
             Text(
                 meta,
-                color = secondary.copy(alpha = .74f),
+                color = secondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.SansSerif, fontSize = 11.sp),
@@ -1469,7 +1543,7 @@ private fun ReaderListOverlay(
     val palette = preferences.palette()
     val foreground = Color(palette.foreground)
     val secondary = Color(palette.secondary)
-    val panelBackground = Color(palette.overlay)
+    val panelBackground = Color(palette.overlay).copy(alpha = 1f)
     val outsideInteraction = remember { MutableInteractionSource() }
     val cardInteraction = remember { MutableInteractionSource() }
     val closeOverlayBackground = stringResource(R.string.reader_close_overlay_background)

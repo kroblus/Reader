@@ -49,6 +49,13 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.staticCompositionLocalOf
+import com.lightreader.app.core.reader.mergeReaderPreferenceEdit
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -57,6 +64,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -75,13 +83,73 @@ import com.lightreader.app.core.model.PageTurnMode
 import com.lightreader.app.core.model.ReaderLayoutPreset
 import com.lightreader.app.core.model.ReaderPreferences
 import com.lightreader.app.core.model.ReaderTheme
+import com.lightreader.app.core.reader.selectLayoutPreset
+import com.lightreader.app.core.reader.layoutSnapshot
+import com.lightreader.app.core.reader.applyLayout
 import com.lightreader.app.core.reader.effectiveLayout
 import com.lightreader.app.core.reader.palette
 import kotlin.math.roundToInt
 
-@OptIn(ExperimentalLayoutApi::class)
+private data class SettingsDragActions(val start: () -> Unit = {}, val finish: () -> Unit = {})
+private val LocalReaderToolBackground = staticCompositionLocalOf { Color.White }
+private val LocalSettingsDrag = staticCompositionLocalOf { SettingsDragActions() }
+
+/** Controls use one draft; drag previews are coalesced, and persistence happens on release
+ * or disposal (including Back/navigation while a pointer is still down). */
+@Composable
+private fun SettingsDraftHost(
+    value: ReaderPreferences,
+    onChange: (ReaderPreferences) -> Unit,
+    onPreview: (ReaderPreferences) -> Unit = {},
+    content: @Composable (ReaderPreferences, (ReaderPreferences) -> Unit) -> Unit,
+) {
+    var draft by remember { mutableStateOf(value) }
+    var baseline by remember { mutableStateOf(value) }
+    var dragging by remember { mutableStateOf(false) }
+    var dirty by remember { mutableStateOf(false) }
+    val save by rememberUpdatedState(onChange)
+    val preview by rememberUpdatedState(onPreview)
+    LaunchedEffect(value) {
+        draft = if (dirty) mergeReaderPreferenceEdit(baseline, draft, value) else value
+        baseline = value
+    }
+    LaunchedEffect(draft, dragging) {
+        if (dragging && dirty) {
+            delay(70)
+            preview(draft)
+        }
+    }
+    fun finish() {
+        dragging = false
+        if (dirty) { save(draft); dirty = false }
+    }
+    DisposableEffect(Unit) { onDispose { if (dirty) save(draft) } }
+    val rendered = draft
+    CompositionLocalProvider(LocalSettingsDrag provides SettingsDragActions({ dragging = true }, ::finish)) {
+        content(rendered) { edit ->
+            draft = mergeReaderPreferenceEdit(rendered, edit, draft)
+            dirty = true
+            if (!dragging) finish()
+        }
+    }
+}
+
 @Composable
 fun ReaderSettingsPanel(
+    value: ReaderPreferences,
+    onChange: (ReaderPreferences) -> Unit,
+    onOpenMoreSettings: () -> Unit,
+    bottomPadding: Dp = 24.dp,
+    onPreview: (ReaderPreferences) -> Unit = {},
+) {
+    SettingsDraftHost(value, onChange, onPreview) { draft, edit ->
+        ReaderSettingsPanelContent(draft, edit, onOpenMoreSettings, bottomPadding)
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ReaderSettingsPanelContent(
     value: ReaderPreferences,
     onChange: (ReaderPreferences) -> Unit,
     onOpenMoreSettings: () -> Unit,
@@ -93,7 +161,7 @@ fun ReaderSettingsPanel(
     val layout = value.effectiveLayout()
     val compactAccessibilityLayout = LocalDensity.current.fontScale >= 1.2f
 
-    CompositionLocalProvider(LocalContentColor provides foreground) {
+    CompositionLocalProvider(LocalContentColor provides foreground, LocalReaderToolBackground provides Color(palette.overlay)) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -101,33 +169,9 @@ fun ReaderSettingsPanel(
                 .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = bottomPadding + 6.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            SettingsPanelSection(stringResource(R.string.settings_layout)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(
-                        ReaderLayoutPreset.COMFORT,
-                        ReaderLayoutPreset.COMPACT,
-                        ReaderLayoutPreset.IMMERSIVE,
-                        ReaderLayoutPreset.CUSTOM,
-                    ).forEach { preset ->
-                        val label = preset.label()
-                        PresetQuickCard(
-                            preset = preset,
-                            label = label,
-                            description = preset.description(),
-                            selected = value.layoutPreset == preset,
-                            primary = secondary,
-                            modifier = Modifier.weight(1f),
-                            onClick = {
-                                onChange(if (preset == ReaderLayoutPreset.CUSTOM) value.customLayout() else value.withPreset(preset))
-                            },
-                        )
-                    }
-                }
-            }
-
             SettingsPanelSection(stringResource(R.string.settings_quick_text)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SettingsPill("A-", false, secondary, modifier = Modifier.width(42.dp)) {
+                    SettingsPill("A-", false, secondary, modifier = Modifier.width(48.dp), contentDescription = stringResource(R.string.reader_font_decrease)) {
                         onChange(value.customLayout().copy(fontSizeSp = (layout.fontSizeSp - 1f).coerceAtLeast(14f)))
                     }
                     Box(
@@ -143,7 +187,7 @@ fun ReaderSettingsPanel(
                             ),
                         )
                     }
-                    SettingsPill("A+", false, secondary, modifier = Modifier.width(42.dp)) {
+                    SettingsPill("A+", false, secondary, modifier = Modifier.width(48.dp), contentDescription = stringResource(R.string.reader_font_increase)) {
                         onChange(value.customLayout().copy(fontSizeSp = (layout.fontSizeSp + 1f).coerceAtMost(36f)))
                     }
                     val spacingOptions = listOf(1.48f, 1.72f, 1.92f)
@@ -194,6 +238,39 @@ fun ReaderSettingsPanel(
                     )
                 }
             }
+            SettingSlider(
+                stringResource(R.string.settings_brightness),
+                if (value.brightness < 0) stringResource(R.string.settings_follow_system) else "${(value.brightness * 100).roundToInt()}%",
+                value.brightness.coerceAtLeast(.05f), .05f..1f, secondary,
+            ) { onChange(value.copy(brightness = it)) }
+            TextButton(onClick = { onChange(value.copy(brightness = -1f)) }) {
+                Text(stringResource(R.string.settings_follow_system))
+            }
+
+            SettingsPanelSection(stringResource(R.string.settings_layout)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(
+                        ReaderLayoutPreset.COMFORT,
+                        ReaderLayoutPreset.COMPACT,
+                        ReaderLayoutPreset.IMMERSIVE,
+                        ReaderLayoutPreset.CUSTOM,
+                    ).forEach { preset ->
+                        val label = preset.label()
+                        PresetQuickCard(
+                            preset = preset,
+                            label = label,
+                            description = preset.description(),
+                            selected = value.layoutPreset == preset,
+                            primary = secondary,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                onChange(value.selectLayoutPreset(preset))
+                            },
+                        )
+                    }
+                }
+            }
+
 
         }
     }
@@ -209,6 +286,8 @@ private fun PresetQuickCard(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
+    val controlBackground = primary.copy(alpha = if (selected) .24f else .07f).compositeOver(LocalReaderToolBackground.current)
+    val labelColor = readableTextColor(LocalContentColor.current, controlBackground)
     val stateText = stringResource(if (selected) R.string.state_selected else R.string.state_not_selected)
     Column(
         modifier
@@ -219,7 +298,7 @@ private fun PresetQuickCard(
                 if (selected) primary.copy(alpha = .82f) else primary.copy(alpha = .16f),
                 RoundedCornerShape(LightReaderShapeTokens.medium),
             )
-            .background(if (selected) primary.copy(alpha = .24f) else primary.copy(alpha = .07f))
+            .background(controlBackground)
             .semantics {
                 contentDescription = "$label. $description"
                 stateDescription = stateText
@@ -231,11 +310,12 @@ private fun PresetQuickCard(
     ) {
         Text(
             label,
+            color = labelColor,
             maxLines = 1,
             style = MaterialTheme.typography.labelMedium.copy(
                 fontFamily = FontFamily.SansSerif,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                fontSize = 9.sp,
+                fontSize = 11.sp,
             ),
         )
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -266,7 +346,7 @@ private fun SettingsPanelSection(title: String, content: @Composable ColumnScope
     ) {
         Text(
             title,
-            color = LocalContentColor.current.copy(alpha = .88f),
+            color = LocalContentColor.current,
             style = MaterialTheme.typography.labelMedium.copy(
                 fontFamily = FontFamily.SansSerif,
                 fontWeight = FontWeight.Bold,
@@ -298,9 +378,22 @@ private fun CompactSettingRow(label: String, content: @Composable RowScope.() ->
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ReaderSettingsDetailScreen(
+    preferences: ReaderPreferences,
+    autoReading: Boolean,
+    onChange: (ReaderPreferences) -> Unit,
+    onToggleAutoReading: () -> Unit,
+    onBack: () -> Unit,
+) {
+    SettingsDraftHost(preferences, onChange) { draft, edit ->
+        ReaderSettingsDetailContent(draft, autoReading, edit, onToggleAutoReading, onBack)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun ReaderSettingsDetailContent(
     preferences: ReaderPreferences,
     autoReading: Boolean,
     onChange: (ReaderPreferences) -> Unit,
@@ -341,7 +434,7 @@ fun ReaderSettingsDetailScreen(
             )
         },
     ) { padding ->
-        CompositionLocalProvider(LocalContentColor provides foreground) {
+        CompositionLocalProvider(LocalContentColor provides foreground, LocalReaderToolBackground provides background) {
             BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
                 val wide = maxWidth >= 720.dp
                 val contentModifier = Modifier
@@ -409,7 +502,7 @@ private fun ReaderLayoutDetail(
                             primary = secondary,
                             modifier = Modifier.weight(1f),
                             onClick = {
-                                onChange(if (preset == ReaderLayoutPreset.CUSTOM) preferences.customLayout() else preferences.withPreset(preset))
+                                onChange(preferences.selectLayoutPreset(preset))
                             },
                         )
                     }
@@ -493,6 +586,7 @@ private fun ReaderLayoutDetail(
             Icon(Icons.Outlined.RestartAlt, contentDescription = null, modifier = Modifier.size(20.dp))
             Text(stringResource(R.string.settings_restore_defaults), modifier = Modifier.padding(start = 8.dp))
         }
+        Text(stringResource(R.string.reader_reset_scope), style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -506,6 +600,8 @@ private fun PresetDetailCard(
 ) {
     val label = preset.label()
     val description = preset.description()
+    val controlBackground = primary.copy(alpha = if (selected) .20f else .06f).compositeOver(LocalReaderToolBackground.current)
+    val labelColor = readableTextColor(LocalContentColor.current, controlBackground)
     val stateText = stringResource(if (selected) R.string.state_selected else R.string.state_not_selected)
     Column(
         modifier
@@ -517,7 +613,7 @@ private fun PresetDetailCard(
                 if (selected) primary.copy(alpha = .85f) else primary.copy(alpha = .18f),
                 RoundedCornerShape(LightReaderShapeTokens.medium),
             )
-            .background(if (selected) primary.copy(alpha = .20f) else primary.copy(alpha = .06f))
+            .background(controlBackground)
             .semantics {
                 contentDescription = "$label. $description"
                 stateDescription = stateText
@@ -528,6 +624,7 @@ private fun PresetDetailCard(
     ) {
         Text(
             label,
+            color = labelColor,
             style = MaterialTheme.typography.titleMedium.copy(
                 fontFamily = FontFamily.SansSerif,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
@@ -535,7 +632,7 @@ private fun PresetDetailCard(
         )
         Text(
             description,
-            color = LocalContentColor.current.copy(alpha = .72f),
+            color = labelColor,
             maxLines = 2,
             style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.SansSerif, fontSize = 12.sp),
         )
@@ -623,9 +720,11 @@ private fun ReaderBehaviorDetail(
                     } else {
                         stringResource(R.string.settings_brightness_percent, (preferences.brightness * 100).roundToInt())
                     }
+                    val drag = LocalSettingsDrag.current
                     Slider(
                         value = preferences.brightness.takeIf { it >= 0f } ?: .5f,
-                        onValueChange = { onChange(preferences.copy(brightness = it)) },
+                        onValueChange = { drag.start(); onChange(preferences.copy(brightness = it)) },
+                        onValueChangeFinished = drag.finish,
                         enabled = preferences.brightness >= 0f,
                         valueRange = .05f..1f,
                         modifier = Modifier
@@ -745,6 +844,8 @@ private fun SettingsPill(
     contentDescription: String = text,
     onClick: () -> Unit,
 ) {
+    val controlBackground = primary.copy(alpha = if (selected) .28f else .10f).compositeOver(LocalReaderToolBackground.current)
+    val labelColor = readableTextColor(LocalContentColor.current, controlBackground)
     val stateText = stringResource(if (selected) R.string.state_selected else R.string.state_not_selected)
     Box(
         modifier
@@ -755,7 +856,7 @@ private fun SettingsPill(
                 if (selected) primary.copy(alpha = .78f) else primary.copy(alpha = .12f),
                 RoundedCornerShape(LightReaderShapeTokens.small),
             )
-            .background(if (selected) primary.copy(alpha = .28f) else primary.copy(alpha = .10f))
+            .background(controlBackground)
             .semantics {
                 this.contentDescription = contentDescription
                 stateDescription = stateText
@@ -766,6 +867,7 @@ private fun SettingsPill(
     ) {
         Text(
             text,
+            color = labelColor,
             maxLines = 2,
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.labelLarge.copy(
@@ -838,13 +940,15 @@ private fun readerSliderColors(primary: Color) = SliderDefaults.colors(
 )
 
 @Composable
-private fun settingsChipColors(background: Color, foreground: Color, primary: Color) =
-    FilterChipDefaults.filterChipColors(
-        containerColor = background.copy(alpha = .38f),
-        labelColor = foreground,
-        selectedContainerColor = primary.copy(alpha = .22f),
-        selectedLabelColor = foreground,
+private fun settingsChipColors(background: Color, foreground: Color, primary: Color): androidx.compose.material3.SelectableChipColors {
+    val selectedBackground = primary.copy(alpha = .22f).compositeOver(background)
+    return FilterChipDefaults.filterChipColors(
+        containerColor = background,
+        labelColor = readableTextColor(foreground, background),
+        selectedContainerColor = selectedBackground,
+        selectedLabelColor = readableTextColor(foreground, selectedBackground),
     )
+}
 
 @Composable
 private fun ReaderChoiceChip(
@@ -885,6 +989,7 @@ private fun SettingSlider(
     primary: Color,
     onValue: (Float) -> Unit,
 ) {
+    val drag = LocalSettingsDrag.current
     Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(label, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.SansSerif))
@@ -892,9 +997,10 @@ private fun SettingSlider(
         }
         Slider(
             value = value,
-            onValueChange = onValue,
+            onValueChange = { drag.start(); onValue(it) },
+            onValueChangeFinished = drag.finish,
             valueRange = range,
-            modifier = Modifier.semantics { stateDescription = "$label $valueText" },
+            modifier = Modifier.semantics { contentDescription = label; stateDescription = "$label $valueText" },
             colors = readerSliderColors(primary),
         )
     }
@@ -1000,37 +1106,13 @@ private fun PageTurnMode.label(): String = when (this) {
     PageTurnMode.SIMULATION -> stringResource(R.string.page_turn_simulation)
 }
 
-private fun ReaderPreferences.withPreset(preset: ReaderLayoutPreset): ReaderPreferences {
-    val values = copy(layoutPreset = preset).effectiveLayout()
-    return copy(
-        layoutPreset = preset,
-        fontSizeSp = values.fontSizeSp,
-        lineSpacingMultiplier = values.lineSpacingMultiplier,
-        paragraphSpacingDp = values.paragraphSpacingDp,
-        horizontalPaddingDp = values.horizontalPaddingDp,
-        verticalPaddingTopDp = values.verticalPaddingTopDp,
-        verticalPaddingBottomDp = values.verticalPaddingBottomDp,
-    )
-}
-
-private fun ReaderPreferences.customLayout(): ReaderPreferences {
-    if (layoutPreset == ReaderLayoutPreset.CUSTOM) return this
-    val values = effectiveLayout()
-    return copy(
-        layoutPreset = ReaderLayoutPreset.CUSTOM,
-        fontSizeSp = values.fontSizeSp,
-        lineSpacingMultiplier = values.lineSpacingMultiplier,
-        paragraphSpacingDp = values.paragraphSpacingDp,
-        horizontalPaddingDp = values.horizontalPaddingDp,
-        verticalPaddingTopDp = values.verticalPaddingTopDp,
-        verticalPaddingBottomDp = values.verticalPaddingBottomDp,
-    )
-}
+private fun ReaderPreferences.customLayout(): ReaderPreferences = applyLayout(layoutSnapshot())
 
 private fun ReaderPreferences.resetReadingDefaults(): ReaderPreferences {
     val defaults = ReaderPreferences()
     return copy(
         layoutPreset = defaults.layoutPreset,
+        lastCustomLayout = null,
         fontSizeSp = defaults.fontSizeSp,
         fontWeight = defaults.fontWeight,
         lineSpacingMultiplier = defaults.lineSpacingMultiplier,
