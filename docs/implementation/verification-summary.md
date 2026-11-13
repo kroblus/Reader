@@ -53,7 +53,7 @@ git diff --check
 - QA11：`build/reports/reader-user-tests/20261113T073649Z-763d7af2-700916f41a46-7cfcc6793c20`；指定语言后返回书架、打开真实DocumentsUI并取消回书架1/1通过。
 - **最终完整QA2**：`build/reports/reader-user-tests/20261113T081344Z-9719544c-700916f41a46-5fdd0121246e`；109常规用例+2新进程阶段+2全新安装阶段，**113项、0失败、0错误、0跳过**。常规connected构建17m2s，宿主阶段完成时间2026-11-13T08:31:33Z。QA安装/冷启动成功，主代理已目视`qa-home.png`，没有崩溃或遮挡启动页。
 - 本次全新安装子报告为`backup-fresh-install/20261113T083108Z_96a2f5f77d`：确实卸载QA/QA.test并检查为空，同APK重装，三种格式全部打开、重复恢复0新增、AI未配置。归档SHA256为`24a88b8ed4091fad540e9ed76a45c4c9a158ef27c8c3168a0153436eb49f77ec`；正式包前后均不存在且未触碰。
-- 最终测试身份为基线HEAD `700916f41a46af9a00399749b06f0e59769dad33` 加当时未提交源码，`sourceTreeSha256=5fdd0121246e6919f53142bae029ad47536d67d38b7a2eddb1a1df25579b30b2`；不能把基线HEAD说成包含修改。178项源码清单已逐文件与最终工作区核验一致；清单还包含两份用户原有未跟踪的文档生成脚本，它们保留但不纳入提交。最终提交后的对应核验见本run的`source-verification.json`。
+- 最终测试身份为基线HEAD `700916f41a46af9a00399749b06f0e59769dad33` 加当时未提交源码，`sourceTreeSha256=5fdd0121246e6919f53142bae029ad47536d67d38b7a2eddb1a1df25579b30b2`；不能把基线HEAD说成包含修改。178项源码清单已逐文件与最终工作区核验一致，其中175项属于最终提交；另3项为用户原有未跟踪的文档生成脚本（docs/ui-optimization下2项、tmp/pdfs下1项），保留但不纳入提交。最终提交后的对应核验见本run的`source-verification.json`。
 - static5之后只改测试采集与诊断harness，两份测试APK已重建并真实执行；本轮生产代码与static5验证版本相同。文档更新不改变最终测试源码。
 
 真实新进程恢复：
