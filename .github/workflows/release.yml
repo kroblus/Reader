@@ -71,16 +71,18 @@ jobs:
           test -f "$APK"
           APKSIGNER="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner"
           "$APKSIGNER" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/signature.txt"
-          CERT=$(sed -n 's/Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/signature.txt" | head -1)
+          CERT=$(python3 scripts/read-apk-certificate.py "$RUNNER_TEMP/signature.txt")
           EXPECTED_CERT=$(keytool -exportcert -keystore "$RUNNER_TEMP/lightreader-release.jks" -storepass:env RELEASE_STORE_PASSWORD -alias "$RELEASE_KEY_ALIAS" | sha256sum | cut -d' ' -f1)
-          test "$CERT" = "$EXPECTED_CERT"
+          test "$CERT" = "$EXPECTED_CERT" || { echo 'APK signer differs from configured release certificate'; exit 1; }
+          echo "Verified configured release certificate: $CERT"
           # Keep updates compatible with the already-distributed signing identity.
           gh release download v0.3.4 --repo "$GITHUB_REPOSITORY" --pattern Reader-v0.3.4.apk --dir "$RUNNER_TEMP/previous-release"
           PREVIOUS_APK="$RUNNER_TEMP/previous-release/Reader-v0.3.4.apk"
           echo "2afeedb7ad2ece07a5a948060103b2017a08c84a5e1f435f78bc0f5e32b7548d  $PREVIOUS_APK" | sha256sum --check --status
           "$APKSIGNER" verify --verbose --print-certs "$PREVIOUS_APK" > "$RUNNER_TEMP/previous-signature.txt"
-          PREVIOUS_CERT=$(sed -n 's/Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/previous-signature.txt" | head -1)
-          test -n "$PREVIOUS_CERT" && test "$CERT" = "$PREVIOUS_CERT"
+          PREVIOUS_CERT=$(python3 scripts/read-apk-certificate.py "$RUNNER_TEMP/previous-signature.txt")
+          test "$CERT" = "$PREVIOUS_CERT" || { echo 'APK signer differs from published v0.3.4'; exit 1; }
+          echo "Verified signing continuity with v0.3.4: $CERT"
           AAPT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/aapt"
           "$AAPT" dump badging "$APK" > "$RUNNER_TEMP/badging.txt"
           grep -F "package: name='com.lightreader.app' versionCode='$EXPECTED_CODE' versionName='$EXPECTED_VERSION'" "$RUNNER_TEMP/badging.txt"

@@ -36,3 +36,11 @@
 - `scripts/run-reader-user-tests.ps1 -Serial emulator-5556 -TestClass 'com.lightreader.app.BackupUiInstrumentedTest,com.lightreader.app.ReaderUiInstrumentedTest#appSettingsSwitchesLanguageImmediately,com.lightreader.app.SearchLifecycleInstrumentedTest,com.lightreader.app.ReaderLifecycleInstrumentedTest'`：**11/11通过**，0失败/跳过，3m12s。报告`build/reports/reader-user-tests/20261113T153307Z-b237b468-7fb1e70ed3c2-5bfb552d790a`。本地结果不能替代最终tag的完整CI。
 
 第二轮原始日志和JUnit位于`failed-ci-second/`，继续保留。发布前须在修复后的同一tag SHA上重新通过完整门禁。
+
+## 第三轮完整回归与签名报告兼容
+
+运行[43454507594](https://github.com/kroblus/Reader/actions/runs/43454507594)，源码`451ace602dbc7e01d84df7ac132952b7e95ecc91`。单元/Lint/构建、比较器及API35完整设备回归全部通过：109项普通测试、2项新进程恢复、2项全新安装恢复，共113项，0失败/错误/跳过。正式APK构建成功，上传前的证书报告解析失败，未生成Release。
+
+失败脚本只识别旧版`Signer #1 certificate SHA-256 digest:`；仓库已发布v0.3.4的成功日志已经使用新版`V3.0 Signer: certificate SHA-256 digest:`，旧解析返回空值而无法继续核验。增加严格解析器与8项正反用例，兼容两种格式，仍要求APK验证成功、唯一签名身份、完整SHA-256，并拒绝未知格式和冲突证书。新APK与配置证书、已发布v0.3.4的证书一致性检查均保留，并输出公开指纹及具体失败环节；不打印私钥或口令。
+
+本轮报告与签名失败日志保留于`build/reports/github-release-v0.3.5/final-ci/`、`ci-failure-third.log`。修正仅涉及发布验证脚本、CI调用和本文；最终标签仍重新执行完整门禁。
