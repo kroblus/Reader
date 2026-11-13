@@ -1,6 +1,6 @@
 # 轻阅 LightReader
 
-轻阅是一款本地优先的 Android 小说阅读器，使用 Kotlin 与 Jetpack Compose 构建。当前版本为 `0.3.4`，重点覆盖中文 TXT 阅读体验，同时支持无 DRM EPUB、公开 HTTPS 网页导入、书内搜索、书签、网页追更和本机加密保存 DeepSeek API Key。
+轻阅是一款本地优先的 Android 小说阅读器，使用 Kotlin 与 Jetpack Compose 构建。当前版本为 `0.3.5`，重点覆盖中文 TXT 阅读体验，同时支持无 DRM EPUB、公开 HTTPS 网页导入、可续查的书内搜索、书签、网页追更、手动备份恢复和本机加密保存 DeepSeek API Key。
 
 最新 APK 可在 [GitHub Releases](https://github.com/kroblus/Reader/releases) 下载。
 

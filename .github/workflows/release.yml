@@ -41,6 +41,7 @@ jobs:
           CODE=$(sed -n 's/.*versionCode = \([0-9]*\)/\1/p' app/build.gradle.kts | head -1)
           test -n "$VERSION" && test -n "$CODE"
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then test "$GITHUB_REF_NAME" = "v$VERSION"; fi
+          test -s "docs/releases/v${VERSION}.md"
           echo "EXPECTED_VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "EXPECTED_CODE=$CODE" >> "$GITHUB_ENV"
       - uses: actions/setup-java@v4
@@ -62,6 +63,8 @@ jobs:
           RELEASE_STORE_FILE: ${{ runner.temp }}/lightreader-release.jks
         run: bash ./gradlew :app:assembleRelease --stacktrace
       - name: Verify signed APK
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           APK=app/build/outputs/apk/release/app-release.apk
@@ -71,6 +74,13 @@ jobs:
           CERT=$(sed -n 's/Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/signature.txt" | head -1)
           EXPECTED_CERT=$(keytool -exportcert -keystore "$RUNNER_TEMP/lightreader-release.jks" -storepass:env RELEASE_STORE_PASSWORD -alias "$RELEASE_KEY_ALIAS" | sha256sum | cut -d' ' -f1)
           test "$CERT" = "$EXPECTED_CERT"
+          # Keep updates compatible with the already-distributed signing identity.
+          gh release download v0.3.4 --repo "$GITHUB_REPOSITORY" --pattern Reader-v0.3.4.apk --dir "$RUNNER_TEMP/previous-release"
+          PREVIOUS_APK="$RUNNER_TEMP/previous-release/Reader-v0.3.4.apk"
+          echo "2afeedb7ad2ece07a5a948060103b2017a08c84a5e1f435f78bc0f5e32b7548d  $PREVIOUS_APK" | sha256sum --check --status
+          "$APKSIGNER" verify --verbose --print-certs "$PREVIOUS_APK" > "$RUNNER_TEMP/previous-signature.txt"
+          PREVIOUS_CERT=$(sed -n 's/Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/previous-signature.txt" | head -1)
+          test -n "$PREVIOUS_CERT" && test "$CERT" = "$PREVIOUS_CERT"
           AAPT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/aapt"
           "$AAPT" dump badging "$APK" > "$RUNNER_TEMP/badging.txt"
           grep -F "package: name='com.lightreader.app' versionCode='$EXPECTED_CODE' versionName='$EXPECTED_VERSION'" "$RUNNER_TEMP/badging.txt"
@@ -88,7 +98,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          name: LightReader ${{ env.EXPECTED_VERSION }}
+          body_path: docs/releases/v${{ env.EXPECTED_VERSION }}.md
           files: Reader-v${{ env.EXPECTED_VERSION }}.apk
       - name: Remove temporary signing material
         if: always()
