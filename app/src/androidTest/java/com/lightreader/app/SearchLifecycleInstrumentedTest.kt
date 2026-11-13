@@ -125,13 +125,24 @@ class SearchLifecycleInstrumentedTest {
     }
 
     @Test fun pagedResultsReturnToListAndOriginalSavedAnchor() {
-        seedBook(matches = 131)
+        // Keep the origin beyond the first page even when the default font/spacing changes.
+        // The old 1.8K-character chapter can fit into two pages with the 0.3.6 layout.
+        seedBook(matches = 131, openingParagraphs = 400)
         val reader = ViewModelProvider(composeRule.activity)[ReaderViewModel::class.java]
         val search = ViewModelProvider(composeRule.activity)[BookSearchViewModel::class.java]
         composeRule.runOnIdle { reader.openBook(BOOK_ID) }
-        composeRule.waitUntil(10_000) { !reader.readerState.value.loading && reader.readerState.value.pages.size > 2 }
+        try {
+            composeRule.waitUntil(10_000) {
+                val state = reader.readerState.value
+                state.book?.id == BOOK_ID && !state.loading && state.pages.size > 2
+            }
+        } catch (timeout: Throwable) {
+            val state = reader.readerState.value
+            throw AssertionError("Search origin fixture: loading=${state.loading}, pages=${state.pages.size}, error=${state.error}", timeout)
+        }
         composeRule.runOnIdle { reader.pageSelected(2) }
         val origin = reader.currentSearchOrigin()!!
+        assertTrue("The origin must exercise restoration of a non-zero character offset", origin.charOffset > 0)
         composeRule.runOnIdle { reader.openSearch(BOOK_ID) }
         composeRule.onNodeWithTag(ReaderTestTags.SEARCH_INPUT).performTextReplacement(QUERY)
         composeRule.onNodeWithTag(ReaderTestTags.SEARCH_SUBMIT).performClick()
@@ -182,11 +193,12 @@ class SearchLifecycleInstrumentedTest {
         assertEquals(origin, reader.currentSearchOrigin())
     }
 
-    private fun seedBook(matches: Int = 1): Long = runBlocking {
+    private fun seedBook(matches: Int = 1, openingParagraphs: Int = 40): Long = runBlocking {
         val directory = File(application.filesDir, "books/$BOOK_ID/chapters").apply { mkdirs() }
         val chapters = (0..1).map { index ->
             val title = if (index == 0) "First Chapter" else "Second Chapter"
-            val content = "$title\n" + "Morning light falls across the quiet river. ".repeat(40) +
+            val repetitions = if (index == 0) openingParagraphs else 40
+            val content = "$title\n" + "Morning light falls across the quiet river. ".repeat(repetitions) +
                 if (index == 1) "\nThe lighthouse opens the way home.\n".repeat(matches) else "\nThe journey begins.\n"
             val file = File(directory, "$index.txt").apply { writeText(content) }
             ChapterEntity(

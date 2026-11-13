@@ -105,6 +105,7 @@ class ReaderSystemBoundaryInstrumentedTest {
         val books = runBlocking { application.container.database.readerDao().observeBooks().first() }
         assertEquals(1, books.size)
         assertTrue(books.single().title.contains("reader_qa_system", ignoreCase = true))
+        composeRule.onNodeWithText(books.single().title).assertIsDisplayed()
         assertTrue(uiDevice.executeShellCommand("pm path ${BuildConfig.APPLICATION_ID}").contains("package:"))
     }
 
@@ -166,8 +167,13 @@ class ReaderSystemBoundaryInstrumentedTest {
     }
 
     private fun awaitAppWindow(uiDevice: UiDevice) {
-        composeRule.waitForIdle()
-        windows.awaitAppWindow { dismissKnownSystemOverlays(uiDevice) }
+        windows.awaitAppWindow {
+            dismissKnownSystemOverlays(uiDevice)
+            // SAF returns while the Compose import dialog can still own input focus.
+            // Pump the Compose test clock on EVERY poll so a completed import can
+            // recompose and dismiss that dialog. A wall-clock-only poll freezes it.
+            composeRule.waitForIdle()
+        }
     }
 
     private fun awaitSystemPickerWindow(uiDevice: UiDevice) {

@@ -45,6 +45,8 @@ jobs:
         run: ./scripts/test-performance-comparison.ps1
       - name: Verify APK certificate report parsing
         run: python3 scripts/test-apk-certificate.py
+      - name: Verify unpublished release recovery safeguards
+        run: python3 scripts/test-release-tag-recovery.py
       - name: Verify local quality gates
         run: bash ./gradlew :core-reader:testDebugUnitTest :core-formats:testDebugUnitTest :core-data:assemble :feature-reader:testDebugUnitTest :feature-download:testDebugUnitTest :app:testDebugUnitTest :core-reader:lintDebug :core-formats:lintDebug :core-data:lintDebug :feature-reader:lintDebug :feature-download:lintDebug :app:lintDebug :app:assembleDebug :app:assembleQaAndroidTest :app:assembleBenchmark :macrobenchmark:assemble --stacktrace
       - name: Enable KVM group permissions
