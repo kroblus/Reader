@@ -129,8 +129,13 @@ class BackupUiInstrumentedTest {
         // CreateDocument may first dismiss its filename IME; a second Back closes DocumentsUI.
         repeat(3) {
             if (device.currentPackageName in DOCUMENT_PACKAGES) {
-                assertTrue(device.pressBack())
+                // The event wait can report false after DocumentsUI already closed.
+                // Accept that only when Reader actually owns the window; the resumed
+                // activity, backup screen and original data are still asserted below.
+                val reportedSuccess = device.pressBack()
                 device.waitForIdle(1_000)
+                assertTrue("Back must report success or return to Reader",
+                    reportedSuccess || device.currentPackageName == BuildConfig.APPLICATION_ID)
             }
         }
         awaitAppWindow()

@@ -20,7 +20,7 @@ permissions:
 jobs:
   verify:
     name: Unit, lint, build and QA emulator
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     outputs:
       verified_sha: ${{ steps.source.outputs.sha }}
@@ -57,6 +57,8 @@ jobs:
           api-level: 35
           arch: x86_64
           profile: pixel_6
+          emulator-build: 15507667
+          emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim
           script: |
             ANDROID_SERIAL=emulator-5554 bash ./gradlew :app:connectedQaAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=com.lightreader.app.ReaderProcessRecoveryInstrumentedTest,com.lightreader.app.BackupFreshInstallInstrumentedTest,com.lightreader.app.LargeTxtImportInstrumentedTest,com.lightreader.app.HtmlBridgeInstrumentedTest,com.lightreader.app.journey.ReaderSystemBoundaryInstrumentedTest -Pandroid.testInstrumentationRunnerArguments.runId=${{ github.run_id }}-${{ github.run_attempt }} -Pandroid.testInstrumentationRunnerArguments.sourceId=${{ steps.source.outputs.sha }} --stacktrace
             bash scripts/run-reader-process-recovery.sh emulator-5554 "${{ github.run_id }}-${{ github.run_attempt }}" "${{ steps.source.outputs.sha }}"
@@ -69,6 +71,8 @@ jobs:
           api-level: 35
           arch: x86_64
           profile: pixel_6
+          emulator-build: 15507667
+          emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim
           script: |
             ANDROID_SERIAL=emulator-5554 bash ./gradlew :app:connectedQaAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=com.lightreader.app.ReaderProcessRecoveryInstrumentedTest,com.lightreader.app.BackupFreshInstallInstrumentedTest,com.lightreader.app.HtmlBridgeInstrumentedTest -Pandroid.testInstrumentationRunnerArguments.runId=${{ github.run_id }}-${{ github.run_attempt }} -Pandroid.testInstrumentationRunnerArguments.sourceId=${{ steps.source.outputs.sha }} --stacktrace
             bash scripts/run-reader-process-recovery.sh emulator-5554 "${{ github.run_id }}-${{ github.run_attempt }}" "${{ steps.source.outputs.sha }}"
@@ -92,7 +96,7 @@ jobs:
   dependency-review:
     name: Dependency review
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
