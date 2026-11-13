@@ -5,6 +5,7 @@ import android.content.res.Configuration
 import android.os.SystemClock
 import androidx.annotation.StringRes
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -18,8 +19,11 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.printToString
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.uiautomator.UiDevice
+import androidx.lifecycle.ViewModelProvider
+import com.lightreader.app.ui.ReaderViewModel
 import com.lightreader.app.core.data.BookEntity
 import com.lightreader.app.core.data.ChapterEntity
 import com.lightreader.app.core.data.ReadingProgressEntity
@@ -43,6 +47,11 @@ class UiOptimizationScreenshotInstrumentedTest {
     private val application: ReaderApplication
         get() = composeRule.activity.application as ReaderApplication
     private val device by lazy { UiDevice.getInstance(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()) }
+    private val screenshotRoot by lazy {
+        val runId = androidx.test.platform.app.InstrumentationRegistry.getArguments().getString("runId")
+            ?.replace(Regex("[^A-Za-z0-9_.-]"), "_") ?: "direct-${android.os.Process.myPid()}"
+        "/sdcard/Download/LightReader-QA-Evidence/$runId/screenshots"
+    }
     private lateinit var server: QaHttpsFixtureServer
 
     @Before
@@ -53,7 +62,7 @@ class UiOptimizationScreenshotInstrumentedTest {
             application.container.settingsRepository.save(ReaderPreferences())
         }
         server = QaHttpsFixtureServer()
-        device.executeShellCommand("mkdir -p $SCREENSHOT_ROOT")
+        device.executeShellCommand("mkdir -p $screenshotRoot")
     }
 
     @After
@@ -93,7 +102,7 @@ class UiOptimizationScreenshotInstrumentedTest {
         capture("006_reader_toc")
         composeRule.onNodeWithContentDescription(text(R.string.reader_close_overlay)).performClick()
 
-        composeRule.onNodeWithContentDescription(text(R.string.action_search)).performClick()
+        openSearchWhenReady()
         composeRule.onNodeWithTag(ReaderTestTags.SEARCH_INPUT).performTextReplacement("修行")
         composeRule.onNodeWithTag(ReaderTestTags.SEARCH_SUBMIT).performClick()
         composeRule.waitUntil(10_000) {
@@ -114,7 +123,7 @@ class UiOptimizationScreenshotInstrumentedTest {
         composeRule.onNodeWithTag(ReaderTestTags.READER_SETTINGS_TOGGLE).performClick()
         composeRule.onNodeWithTag(ReaderTestTags.READER_SETTINGS_PANEL).assertIsDisplayed()
         capture("009_reader_quick_settings")
-        composeRule.onNodeWithTag(ReaderTestTags.READER_SETTINGS_MORE).performClick()
+        composeRule.onNodeWithTag(ReaderTestTags.READER_SETTINGS_MORE).performScrollTo().performClick()
         composeRule.onNodeWithText(text(R.string.settings_page_turn)).assertIsDisplayed()
         capture("reader_settings_after")
         composeRule.onNodeWithTag(ReaderTestTags.READER_ADVANCED_SETTINGS).performScrollTo().assertIsDisplayed()
@@ -136,6 +145,22 @@ class UiOptimizationScreenshotInstrumentedTest {
         composeRule.onNodeWithText(text(R.string.reader_night)).performClick()
         tapReaderCenter()
         capture("014_reader_night")
+        showReaderChrome()
+        composeRule.onNodeWithTag(ReaderTestTags.READER_SETTINGS_TOGGLE).performClick()
+        capture("022_reader_night_tools")
+        composeRule.onNodeWithTag(ReaderTestTags.READER_SETTINGS_MORE).performScrollTo().performClick()
+        capture("023_reader_night_settings")
+        composeRule.onNodeWithContentDescription(text(R.string.action_back)).performClick()
+
+        showReaderChrome()
+        openSearchWhenReady()
+        composeRule.onNodeWithTag(ReaderTestTags.SEARCH_INPUT).performTextReplacement("修行")
+        composeRule.onNodeWithTag(ReaderTestTags.SEARCH_SUBMIT).performClick()
+        composeRule.waitUntil(10_000) {
+            composeRule.onAllNodesWithTag(ReaderTestTags.SEARCH_RESULT).fetchSemanticsNodes().isNotEmpty()
+        }
+        capture("027_reader_night_search")
+        composeRule.onNodeWithContentDescription(text(R.string.action_back)).performClick()
 
         showReaderChrome()
         composeRule.onNodeWithContentDescription(text(R.string.reader_more_actions)).performClick()
@@ -203,6 +228,10 @@ class UiOptimizationScreenshotInstrumentedTest {
             composeRule.onNodeWithTag(ReaderTestTags.READER).assertIsDisplayed()
             SystemClock.sleep(1_500)
             capture("021_reader_landscape_unlocked")
+            showReaderChrome()
+            composeRule.onNodeWithTag(ReaderTestTags.READER_SETTINGS_TOGGLE).performClick()
+            composeRule.onNodeWithTag(ReaderTestTags.READER_SETTINGS_MORE).performScrollTo().assertIsDisplayed()
+            capture("024_reader_landscape_tools")
         } finally {
             device.setOrientationNatural()
             device.unfreezeRotation()
@@ -210,7 +239,7 @@ class UiOptimizationScreenshotInstrumentedTest {
     }
 
     private fun selectPresetAndCapture(@StringRes preset: Int, outputName: String) {
-        composeRule.onNodeWithText(text(preset)).performClick()
+        composeRule.onNodeWithText(text(preset)).performScrollTo().performClick()
         composeRule.onNodeWithTag(ReaderTestTags.READER_SETTINGS_TOGGLE).performClick()
         tapReaderCenter()
         capture(outputName)
@@ -225,6 +254,25 @@ class UiOptimizationScreenshotInstrumentedTest {
         }
     }
 
+    private fun openSearchWhenReady() {
+        val reader = ViewModelProvider(composeRule.activity)[ReaderViewModel::class.java]
+        composeRule.waitUntil(10_000) {
+            val visible = composeRule.onAllNodesWithTag(ReaderTestTags.READER).fetchSemanticsNodes().isNotEmpty()
+            visible && !reader.readerState.value.loading && reader.readerState.value.pages.isNotEmpty()
+        }
+        showReaderChrome()
+        composeRule.onNodeWithContentDescription(text(R.string.action_search)).assertIsDisplayed().assertIsEnabled().performClick()
+        try {
+            composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag(ReaderTestTags.SEARCH_INPUT).fetchSemanticsNodes().isNotEmpty() }
+        } catch (failure: Throwable) {
+            val state = reader.readerState.value
+            android.util.Log.e("ReaderGallery", "Search click: screen=${reader.uiState.value.screen}, loading=${state.loading}, pages=${state.pages.size}, toolbar=${state.toolbarVisible}, settings=${state.settingsVisible}, overlay=${state.overlay}")
+            android.util.Log.e("ReaderGallery", composeRule.onRoot().printToString())
+            device.executeShellCommand("screencap -p $screenshotRoot/search-navigation-failure.png")
+            throw failure
+        }
+    }
+
     private fun tapReaderCenter() {
         composeRule.onRoot().performTouchInput { click(center) }
         composeRule.waitForIdle()
@@ -234,7 +282,7 @@ class UiOptimizationScreenshotInstrumentedTest {
     private fun capture(name: String) {
         composeRule.waitForIdle()
         SystemClock.sleep(420)
-        device.executeShellCommand("screencap -p $SCREENSHOT_ROOT/$name.png")
+        device.executeShellCommand("screencap -p $screenshotRoot/$name.png")
     }
 
     private fun seedBook(title: String) = runBlocking {
@@ -286,7 +334,4 @@ class UiOptimizationScreenshotInstrumentedTest {
 
     private fun text(@StringRes id: Int, vararg args: Any): String = composeRule.activity.getString(id, *args)
 
-    private companion object {
-        const val SCREENSHOT_ROOT = "/sdcard/Download/LightReader-UIUX"
-    }
 }

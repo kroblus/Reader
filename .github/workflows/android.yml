@@ -1,6 +1,14 @@
 name: Android quality gate
 
 on:
+  workflow_call:
+    inputs:
+      source_sha:
+        required: true
+        type: string
+    outputs:
+      verified_sha:
+        value: ${{ jobs.verify.outputs.verified_sha }}
   push:
     branches: [main]
   pull_request:
@@ -13,14 +21,28 @@ jobs:
   verify:
     name: Unit, lint, build and QA emulator
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 60
+    outputs:
+      verified_sha: ${{ steps.source.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+      - name: Identify exact checked source
+        id: source
+        env:
+          EXPECTED_SHA: ${{ inputs.source_sha || github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v4
+      - name: Verify performance comparison rejection rules
+        shell: pwsh
+        run: ./scripts/test-performance-comparison.ps1
       - name: Verify local quality gates
         run: bash ./gradlew :core-reader:testDebugUnitTest :core-formats:testDebugUnitTest :core-data:assemble :feature-reader:testDebugUnitTest :feature-download:testDebugUnitTest :app:testDebugUnitTest :core-reader:lintDebug :core-formats:lintDebug :core-data:lintDebug :feature-reader:lintDebug :feature-download:lintDebug :app:lintDebug :app:assembleDebug :app:assembleQaAndroidTest :app:assembleBenchmark :macrobenchmark:assemble --stacktrace
       - name: Enable KVM group permissions
@@ -36,31 +58,33 @@ jobs:
           arch: x86_64
           profile: pixel_6
           script: |
-            set +e
-            ANDROID_SERIAL=emulator-5554 bash ./gradlew :app:connectedQaAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=com.lightreader.app.LargeTxtImportInstrumentedTest,com.lightreader.app.HtmlBridgeInstrumentedTest,com.lightreader.app.journey.ReaderSystemBoundaryInstrumentedTest --stacktrace
-            status=$?
-            exit $status
+            ANDROID_SERIAL=emulator-5554 bash ./gradlew :app:connectedQaAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=com.lightreader.app.ReaderProcessRecoveryInstrumentedTest,com.lightreader.app.BackupFreshInstallInstrumentedTest,com.lightreader.app.LargeTxtImportInstrumentedTest,com.lightreader.app.HtmlBridgeInstrumentedTest,com.lightreader.app.journey.ReaderSystemBoundaryInstrumentedTest -Pandroid.testInstrumentationRunnerArguments.runId=${{ github.run_id }}-${{ github.run_attempt }} -Pandroid.testInstrumentationRunnerArguments.sourceId=${{ steps.source.outputs.sha }} --stacktrace
+            bash scripts/run-reader-process-recovery.sh emulator-5554 "${{ github.run_id }}-${{ github.run_attempt }}" "${{ steps.source.outputs.sha }}"
+            python3 scripts/run-backup-fresh-install.py --serial emulator-5554 --report-root app/build/reports/backup-fresh-install
 
       - name: Run main-branch complete deterministic journeys
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           arch: x86_64
           profile: pixel_6
           script: |
-            set +e
-            ANDROID_SERIAL=emulator-5554 bash ./gradlew :app:connectedQaAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=com.lightreader.app.LargeTxtImportInstrumentedTest,com.lightreader.app.HtmlBridgeInstrumentedTest --stacktrace
-            status=$?
-            exit $status
+            ANDROID_SERIAL=emulator-5554 bash ./gradlew :app:connectedQaAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=com.lightreader.app.ReaderProcessRecoveryInstrumentedTest,com.lightreader.app.BackupFreshInstallInstrumentedTest,com.lightreader.app.HtmlBridgeInstrumentedTest -Pandroid.testInstrumentationRunnerArguments.runId=${{ github.run_id }}-${{ github.run_attempt }} -Pandroid.testInstrumentationRunnerArguments.sourceId=${{ steps.source.outputs.sha }} --stacktrace
+            bash scripts/run-reader-process-recovery.sh emulator-5554 "${{ github.run_id }}-${{ github.run_attempt }}" "${{ steps.source.outputs.sha }}"
+            python3 scripts/run-backup-fresh-install.py --serial emulator-5554 --report-root app/build/reports/backup-fresh-install
 
       - name: Upload QA reports and evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: reader-qa-${{ github.run_id }}
+          name: reader-qa-${{ github.run_id }}-${{ steps.source.outputs.sha }}
           if-no-files-found: warn
           path: |
+            app/build/reports/tests/
+            app/build/reports/lint-results*
+            app/build/reports/process-recovery/
+            app/build/reports/backup-fresh-install/
             app/build/reports/androidTests/connected/
             app/build/outputs/androidTest-results/connected/
             app/build/outputs/connected_android_test_additional_output/

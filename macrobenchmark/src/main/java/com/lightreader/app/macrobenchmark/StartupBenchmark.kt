@@ -18,8 +18,19 @@ class StartupBenchmark {
     val benchmarkRule = MacrobenchmarkRule()
 
     @Test
+    fun warmStartup() = benchmarkRule.measureRepeated(
+        packageName = "com.lightreader.app.benchmark",
+        metrics = listOf(StartupTimingMetric()),
+        compilationMode = CompilationMode.Partial(),
+        startupMode = StartupMode.WARM,
+        iterations = 10,
+        setupBlock = { pressHome() },
+        measureBlock = { startActivityAndWait() },
+    )
+
+    @Test
     fun coldStartup() = benchmarkRule.measureRepeated(
-        packageName = "com.lightreader.app",
+        packageName = "com.lightreader.app.benchmark",
         metrics = listOf(StartupTimingMetric()),
         compilationMode = CompilationMode.Partial(),
         startupMode = StartupMode.COLD,

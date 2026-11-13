@@ -314,7 +314,8 @@ class ReaderCoreInstrumentedTest {
     @Test
     fun refreshBookQueuesOnlyNewWebChapters() = kotlinx.coroutines.runBlocking {
         val database = Room.inMemoryDatabaseBuilder(context, ReaderDatabase::class.java).build()
-        val repository = BookRepository(context, database.readerDao())
+        val dao = database.readerDao()
+        val repository = BookRepository(context, dao)
         val parser = object : WebSourceParser {
             override suspend fun preview(url: String): WebBookPreview = WebBookPreview(
                 title = "Web Book",
@@ -359,12 +360,41 @@ class ReaderCoreInstrumentedTest {
 
             val count = downloadRepository.refreshBook(book.id)
 
-            val task = database.readerDao().observeDownloadTasks().first().single()
-            val queued = database.readerDao().downloadChapters(task.id)
+            val originalChapters = repository.chapters(book.id)
+            val originalBodies = originalChapters.map { repository.readChapter(it) }
+            repository.saveProgress(book.id, originalChapters.first().id, 2, 0, 0, originalChapters.first().title, 0)
+            val task = dao.observeDownloadTasks().first().single()
+            val queued = dao.downloadChapters(task.id)
             assertEquals(2, count)
             assertEquals(book.id, task.importedBookId)
             assertEquals(listOf("Chapter 3", "Chapter 4"), queued.map { it.title })
-            assertEquals(listOf(2, 3), queued.map { it.orderIndex })
+            // Download rows describe a private task, not speculative positions in the live book.
+            // The guarded final DAO transaction allocates the actual book order after rereading it.
+            assertEquals(listOf(0, 1), queued.map { it.orderIndex })
+            assertEquals(1, dao.claimDownloadTask(task.id, task.executionGeneration, System.currentTimeMillis(), "qa-refresh-owner"))
+            val stage = File(root, "task-staging/${task.id}").apply { mkdirs() }
+            val downloadedBodies = queued.map { chapter ->
+                val body = "Downloaded ${chapter.title} 😀"
+                val file = File(stage, "${chapter.orderIndex}.txt").apply { writeText(body) }
+                assertEquals(1, dao.updateDownloadChapterExecution(chapter.id, task.id, task.executionGeneration,
+                    "COMPLETED", file.absolutePath, null))
+                body
+            }
+            assertTrue(repository.commitDownloadedTask(task.id, task.executionGeneration))
+            val finalChapters = repository.chapters(book.id)
+            assertEquals(listOf(0, 1, 2, 3), finalChapters.map { it.orderIndex })
+            assertEquals(originalChapters.map { it.id }, finalChapters.take(2).map { it.id })
+            assertEquals(originalChapters.map { it.contentPath }, finalChapters.take(2).map { it.contentPath })
+            assertEquals(originalBodies + downloadedBodies, finalChapters.map { repository.readChapter(it) })
+            assertEquals(listOf("https://example.test/1", "https://example.test/2", "https://example.test/3", "https://example.test/4"),
+                finalChapters.map { it.sourceUrl })
+            assertEquals(4, repository.book(book.id)!!.chapterCount)
+            assertEquals((originalBodies + downloadedBodies).sumOf { it.length.toLong() }, repository.book(book.id)!!.totalChars)
+            assertEquals(originalChapters.first().id, repository.progress(book.id)!!.chapterId)
+            assertEquals(2, repository.progress(book.id)!!.charOffset)
+            assertEquals("COMPLETED", dao.downloadTask(task.id)!!.status)
+            assertFalse(repository.commitDownloadedTask(task.id, task.executionGeneration))
+            assertEquals(finalChapters.map { it.id }, repository.chapters(book.id).map { it.id })
         } finally {
             database.close()
             root.deleteRecursively()

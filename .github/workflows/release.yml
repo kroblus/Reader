@@ -9,7 +9,15 @@ permissions:
   contents: write
 
 jobs:
+  quality:
+    uses: ./.github/workflows/android.yml
+    permissions:
+      contents: read
+    with:
+      source_sha: ${{ github.sha }}
+
   release:
+    needs: quality
     name: Build and verify signed APK
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -20,6 +28,21 @@ jobs:
       RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.quality.outputs.verified_sha }}
+      - name: Verify source and release tag
+        env:
+          VERIFIED_SHA: ${{ needs.quality.outputs.verified_sha }}
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$VERIFIED_SHA" = "$GITHUB_SHA"
+          VERSION=$(sed -n 's/.*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -1)
+          CODE=$(sed -n 's/.*versionCode = \([0-9]*\)/\1/p' app/build.gradle.kts | head -1)
+          test -n "$VERSION" && test -n "$CODE"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then test "$GITHUB_REF_NAME" = "v$VERSION"; fi
+          echo "EXPECTED_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "EXPECTED_CODE=$CODE" >> "$GITHUB_ENV"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -44,19 +67,30 @@ jobs:
           APK=app/build/outputs/apk/release/app-release.apk
           test -f "$APK"
           APKSIGNER="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner"
-          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          "$APKSIGNER" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/signature.txt"
+          CERT=$(sed -n 's/Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/signature.txt" | head -1)
+          EXPECTED_CERT=$(keytool -exportcert -keystore "$RUNNER_TEMP/lightreader-release.jks" -storepass:env RELEASE_STORE_PASSWORD -alias "$RELEASE_KEY_ALIAS" | sha256sum | cut -d' ' -f1)
+          test "$CERT" = "$EXPECTED_CERT"
+          AAPT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/aapt"
+          "$AAPT" dump badging "$APK" > "$RUNNER_TEMP/badging.txt"
+          grep -F "package: name='com.lightreader.app' versionCode='$EXPECTED_CODE' versionName='$EXPECTED_VERSION'" "$RUNNER_TEMP/badging.txt"
+          sha256sum "$APK" > "$RUNNER_TEMP/apk.sha256"
       - name: Name release asset
         shell: bash
-        run: cp app/build/outputs/apk/release/app-release.apk "Reader-${GITHUB_REF_NAME}.apk"
+        run: cp app/build/outputs/apk/release/app-release.apk "Reader-v${EXPECTED_VERSION}.apk"
       - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
           name: lightreader-signed-release
-          path: Reader-${{ github.ref_name }}.apk
+          path: Reader-v${{ env.EXPECTED_VERSION }}.apk
           if-no-files-found: error
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: Reader-${{ github.ref_name }}.apk
+          files: Reader-v${{ env.EXPECTED_VERSION }}.apk
+      - name: Remove temporary signing material
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/lightreader-release.jks"

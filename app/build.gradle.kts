@@ -37,6 +37,8 @@ android {
         testApplicationId = "com.lightreader.app.qa.test"
         testInstrumentationRunnerArguments["clearPackageData"] = "true"
         testInstrumentationRunnerArguments["useTestStorageService"] = "true"
+        // These tests require explicit host-controlled process/install boundaries.
+        testInstrumentationRunnerArguments["notClass"] = "com.lightreader.app.ReaderProcessRecoveryInstrumentedTest,com.lightreader.app.BackupFreshInstallInstrumentedTest"
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -75,10 +77,13 @@ android {
         }
         create("benchmark") {
             initWith(getByName("release"))
+            applicationIdSuffix = ".benchmark"
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += listOf("release")
         }
     }
+
+    sourceSets.getByName("androidTest").assets.srcDir("$rootDir/core-data/schemas")
 
     testBuildType = "qa"
 
@@ -125,6 +130,7 @@ dependencies {
     implementation(libs.juniversalchardet)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+    "qaImplementation"(libs.androidx.compose.ui.test.manifest)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)

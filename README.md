@@ -12,6 +12,9 @@
 - 阅读排版：基于 Android `TextPaint` 实测字宽分页，使用 Unicode 安全边界保护 emoji 和组合字符，支持章节标题页、段距、行距、首行缩进、边距、字重、两端对齐和多套排版预设。
 - 阅读操作：点击、滑动、音量键翻页；支持横向、纵向分页、连续滚动、平移、无动画和仿真翻页；支持自动阅读、极简模式、全屏点击下一页。
 - 阅读辅助：目录、倒序/正序切换、书签、书内搜索、右侧进度条、页眉页脚、亮度调节，以及可恢复原阅读背景的夜间模式。
+- 完整搜索：分批续查并明确检索是否完成；从命中位置返回原结果列表，或恢复查找前的章节和 UTF-16 字符锚点。
+- 手动备份：在书库设置中使用系统文件选择器导出或恢复 ZIP；恢复前校验并预览，重复书籍默认跳过，不覆盖现有进度。归档包含书籍正文、进度、书签及阅读设置，不含 API Key 或未完成下载。
+- 自定义排版：预设与最后一次自定义参数分开保存；快捷设置拖动预览、松手保存，关闭面板提交最后的有效值。
 - 网页小说：校验公开 HTTPS 目录页，规则解析章节列表，预览正文，创建整本下载任务，支持暂停、恢复、失败重试和网页书籍追更。
 - DOM/WebView 辅助验证：提供 DOM 桥接页面，用于检查 WebView 中实际加载后的 HTML 与正文预览。
 - DeepSeek 兜底解析：本地规则无法识别网页结构时，可使用用户自己的 DeepSeek API Key 解析裁剪后的目录页 HTML 样本。
@@ -45,7 +48,7 @@ TXT/EPUB 文件
 5. 用户确认后创建整本下载任务。
 6. 下载完成后以本地书籍加入书架，后续可检查新增章节并追更。
 
-如果本地规则失败且已配置 DeepSeek，应用只发送裁剪后的目录页 HTML 样本用于结构识别；不会发送已下载的整本正文，也不会绕过登录、付费墙、验证码、DRM、robots.txt 或站点访问限制。
+如果本地规则失败且已配置并主动启用 DeepSeek，应用只发送裁剪后的目录页 HTML 样本用于结构识别，调用可能产生服务商费用；不会发送已下载的整本正文，也不会绕过登录、付费墙、验证码、DRM、robots.txt 或站点访问限制。保存配置和连接测试是两个独立操作。
 
 ## 数据与隐私
 
@@ -68,7 +71,7 @@ TXT/EPUB 文件
 - Macrobenchmark / Baseline Profile
 - Gradle core modules: `:core-reader`、`:core-formats`、`:core-data`
 
-当前数据库版本为 Room schema `7`，包含下载任务元数据、章节来源 URL、阅读进度诊断字段、内容指纹、站点适配器版本与迁移测试。
+当前数据库版本为 Room schema `9`。8→9 只增加下载任务的执行代次、WorkRequest owner、重试时间和自动重试次数，保留原章节 ID、进度、书签及文件引用；备份采用独立的 `archiveVersion=1`，不复制数据库的旧绝对路径。
 
 ## 构建与测试
 
@@ -87,10 +90,13 @@ TXT/EPUB 文件
 .\gradlew.bat :app:assembleDebug
 .\gradlew.bat :app:assembleRelease
 .\gradlew.bat :app:connectedQaAndroidTest
+.\scripts\run-reader-user-tests.ps1 -Serial emulator-5554 -IncludeLargeCorpus
 .\gradlew.bat :app:assembleBenchmark :macrobenchmark:assemble
 ```
 
 `connectedQaAndroidTest` 需要在线 Android 模拟器或真机。它会安装 `com.lightreader.app.qa`，可安全重置测试数据，不会触碰正式包的数据。
+
+完整脚本另外运行新进程恢复和全新安装备份恢复。后者只卸载重装隔离 QA 包。直接运行 `connectedQaAndroidTest` 排除这些需要宿主分阶段控制的测试类；使用完整脚本执行全部阶段。每次报告保存在 `build/reports/reader-user-tests/<runId>-<sourceId>`，包含本次源码哈希、失败日志和真实测试计数。
 
 性能基准的构建和实体设备执行规则见 [design/performance-testing.md](design/performance-testing.md)。模拟器只验证基准接线，不能作为性能分数依据。
 

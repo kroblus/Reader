@@ -11,7 +11,9 @@ object TestEvidenceOutput {
     private const val FALLBACK_ROOT = "/sdcard/Download/LightReader-QA-Evidence"
 
     fun writeText(relativePath: String, text: String): String {
-        val safePath = relativePath.split('/')
+        val runId = InstrumentationRegistry.getArguments().getString("runId")
+            ?.replace(Regex("[^A-Za-z0-9_.-]"), "_") ?: "direct-${android.os.Process.myPid()}"
+        val safePath = ("$runId/$relativePath").split('/')
             .filter { it.isNotBlank() }
             .joinToString("/") { it.replace(Regex("[^A-Za-z0-9_.-]"), "_") }
         require(safePath.isNotBlank())
@@ -26,12 +28,21 @@ object TestEvidenceOutput {
             val output = "$FALLBACK_ROOT/$safePath"
             val encoded = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
             runCatching {
-                device.executeShellCommand("mkdir -p '$directory' && echo '$encoded' | base64 -d > '$output'")
+                // UiAutomation tokenizes the command rather than interpreting shell operators.
+                // Keep the sh program in one token; all paths above contain only safe characters.
+                val separator = "${'$'}{IFS}"
+                val script = "mkdir${separator}-p${separator}$directory&&printf${separator}%s${separator}$encoded|base64${separator}-d>$output&&sha256sum${separator}$output"
+                val actual = device.executeShellCommand("sh -c $script").trim()
+                val expected = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+                check(Regex("^$expected\\s+${Regex.escape(output)}$").matches(actual)) {
+                    "QA fallback output was not written and verified: $output; shell result: $actual"
+                }
             }.onFailure { fallbackFailure ->
                 storageFailure.addSuppressed(fallbackFailure)
                 throw storageFailure
             }
-            Log.w("LightReaderQaEvidence", "AndroidX Test Storage unavailable; wrote $output", storageFailure)
+            Log.w("LightReaderQaEvidence", "AndroidX Test Storage unavailable; wrote and verified $output", storageFailure)
             output
         }
     }

@@ -15,6 +15,9 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Identify checked source
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -32,15 +35,12 @@ jobs:
           arch: x86_64
           profile: pixel_6
           script: |
-            set +e
-            ANDROID_SERIAL=emulator-5554 bash ./gradlew :app:connectedQaAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.lightreader.app.LargeTxtImportInstrumentedTest --stacktrace
-            status=$?
-            exit $status
+            ANDROID_SERIAL=emulator-5554 bash ./gradlew :app:connectedQaAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.lightreader.app.LargeTxtImportInstrumentedTest -Pandroid.testInstrumentationRunnerArguments.runId=${{ github.run_id }}-${{ github.run_attempt }}-corpus -Pandroid.testInstrumentationRunnerArguments.sourceId=${{ steps.source.outputs.sha }} --stacktrace
       - name: Upload TXT performance evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: reader-large-txt-${{ github.run_id }}
+          name: reader-large-txt-${{ github.run_id }}-${{ github.run_attempt }}-${{ steps.source.outputs.sha }}
           if-no-files-found: warn
           path: |
             app/build/reports/androidTests/connected/

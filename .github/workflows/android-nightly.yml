@@ -19,6 +19,9 @@ jobs:
         api-level: [26, 35]
     steps:
       - uses: actions/checkout@v4
+      - name: Identify checked source
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -36,17 +39,18 @@ jobs:
           arch: x86_64
           profile: pixel_2
           script: |
-            set +e
-            ANDROID_SERIAL=emulator-5554 bash ./gradlew :app:connectedQaAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=com.lightreader.app.LargeTxtImportInstrumentedTest,com.lightreader.app.HtmlBridgeInstrumentedTest --stacktrace
-            status=$?
-            exit $status
+            ANDROID_SERIAL=emulator-5554 bash ./gradlew :app:connectedQaAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=com.lightreader.app.ReaderProcessRecoveryInstrumentedTest,com.lightreader.app.BackupFreshInstallInstrumentedTest,com.lightreader.app.HtmlBridgeInstrumentedTest -Pandroid.testInstrumentationRunnerArguments.runId=${{ github.run_id }}-${{ github.run_attempt }}-api${{ matrix.api-level }} -Pandroid.testInstrumentationRunnerArguments.sourceId=${{ steps.source.outputs.sha }} --stacktrace
+            bash scripts/run-reader-process-recovery.sh emulator-5554 "${{ github.run_id }}-${{ github.run_attempt }}-api${{ matrix.api-level }}" "${{ steps.source.outputs.sha }}"
+            python3 scripts/run-backup-fresh-install.py --serial emulator-5554 --report-root app/build/reports/backup-fresh-install
       - name: Upload nightly reports and evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: reader-nightly-api-${{ matrix.api-level }}-${{ github.run_id }}
+          name: reader-nightly-api-${{ matrix.api-level }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ steps.source.outputs.sha }}
           if-no-files-found: warn
           path: |
+            app/build/reports/process-recovery/
+            app/build/reports/backup-fresh-install/
             app/build/reports/androidTests/connected/
             app/build/outputs/androidTest-results/connected/
             app/build/outputs/connected_android_test_additional_output/

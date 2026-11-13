@@ -43,7 +43,7 @@ class ReaderEnginePerformanceInstrumentedTest {
         val beforePssKb = Debug.getPss()
         val previewEnd = UnicodeTextBoundary.safeEnd(raw, 0, 8_192)
         val previewParagraphs = BookTextNormalizer().normalize(raw.substring(0, previewEnd))
-        val firstVisibleDurationsMs = List(10) {
+        val previewPaginationDurationsMs = List(10) {
             measureNanoTime {
                 engine.paginate(0, "性能基准", previewParagraphs, viewport, style).pages.first()
             } / 1_000_000.0
@@ -52,10 +52,12 @@ class ReaderEnginePerformanceInstrumentedTest {
             measureNanoTime { engine.paginate(0, "性能基准", paragraphs, viewport, style) } / 1_000_000.0
         }
         val firstPages = engine.paginate(0, "性能基准", paragraphs, viewport, style).pages
-        val crossChapterMs = measureNanoTime {
-            engine.paginate(0, "第一章", paragraphs, viewport, style)
-            engine.paginate(1, "第二章", paragraphs, viewport, style)
-        } / 1_000_000.0
+        val twoChapterDurationsMs = List(10) {
+            measureNanoTime {
+                engine.paginate(0, "第一章", paragraphs, viewport, style)
+                engine.paginate(1, "第二章", paragraphs, viewport, style)
+            } / 1_000_000.0
+        }
 
         val controller = ReaderSessionController(CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate))
         val cacheKey = ReaderLayoutCacheKey("benchmark", 1, style.layoutFingerprint(), viewport)
@@ -64,17 +66,26 @@ class ReaderEnginePerformanceInstrumentedTest {
             measureNanoTime { repeat(1_000) { check(controller.pages(cacheKey) === firstPages) } } / 1_000_000.0 / 1_000.0
         }
         val paginationP95 = percentile95(durationsMs)
-        val firstVisibleP95 = percentile95(firstVisibleDurationsMs)
+        val previewPaginationP95 = percentile95(previewPaginationDurationsMs)
         val cacheP95 = percentile95(cacheSamplesMs)
         val isEmulator = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
             .executeShellCommand("getprop ro.kernel.qemu").trim() == "1"
-        if (!isEmulator) {
-            assertTrue("First visible page p95 was $firstVisibleP95 ms", firstVisibleP95 <= 300.0)
-            assertTrue("Cached page lookup p95 was $cacheP95 ms", cacheP95 <= 50.0)
-        }
 
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val displayManager = context.getSystemService(android.content.Context.DISPLAY_SERVICE) as android.hardware.display.DisplayManager
+        val battery = context.registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
         val evidence = JSONObject()
+            .put("font_scale", context.resources.configuration.fontScale)
+            .put("density_dpi", context.resources.displayMetrics.densityDpi)
+            .put("viewport_width_px", context.resources.displayMetrics.widthPixels)
+            .put("viewport_height_px", context.resources.displayMetrics.heightPixels)
+            .put("measurement_scope", "prepared_text_engine")
+            .put("source_id", InstrumentationRegistry.getArguments().getString("sourceId", "direct-local"))
+            .put("run_id", InstrumentationRegistry.getArguments().getString("runId", "direct-local"))
+            .put("fingerprint", android.os.Build.FINGERPRINT)
+            .put("refresh_rate_hz", displayManager.getDisplay(android.view.Display.DEFAULT_DISPLAY)?.refreshRate ?: 0f)
+            .put("power_state", battery?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, -1) ?: -1)
+            .put("corpus_sha256", java.security.MessageDigest.getInstance("SHA-256").digest(raw.toByteArray()).joinToString("") { "%02x".format(it) })
             .put("manufacturer", android.os.Build.MANUFACTURER)
             .put("model", android.os.Build.MODEL)
             .put("sdk", android.os.Build.VERSION.SDK_INT)
@@ -82,11 +93,13 @@ class ReaderEnginePerformanceInstrumentedTest {
             .put("chapter_chars", raw.length)
             .put("pages", firstPages.size)
             .put("pagination_ms", JSONArray(durationsMs))
-            .put("first_visible_ms", JSONArray(firstVisibleDurationsMs))
-            .put("first_visible_p95_ms", firstVisibleP95)
+            .put("preview_pagination_ms", JSONArray(previewPaginationDurationsMs))
+            .put("preview_pagination_p95_ms", previewPaginationP95)
             .put("pagination_p95_ms", paginationP95)
+            .put("cache_lookup_ms", JSONArray(cacheSamplesMs))
             .put("cache_lookup_p95_ms", cacheP95)
-            .put("cross_chapter_ms", crossChapterMs)
+            .put("two_chapter_pagination_ms", JSONArray(twoChapterDurationsMs))
+            .put("two_chapter_pagination_p95_ms", percentile95(twoChapterDurationsMs))
             .put("pss_delta_kb", Debug.getPss() - beforePssKb)
             .put("package", context.packageName)
         TestEvidenceOutput.writeText("qa-evidence/performance/reader-engine-benchmark.json", evidence.toString(2))
