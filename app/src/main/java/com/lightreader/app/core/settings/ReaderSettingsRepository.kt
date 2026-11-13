@@ -88,7 +88,7 @@ class ReaderSettingsRepository(private val context: Context) {
             minimalMode = values[MINIMAL_MODE] ?: false,
             autoReadIntervalSeconds = (values[AUTO_READ_INTERVAL] ?: 8).coerceIn(3, 60),
             volumeKeys = values[VOLUME_KEYS] ?: true,
-            fontFamily = enumValue(values[FONT_FAMILY], FontFamilyOption.SERIF),
+            fontFamily = enumValue(values[FONT_FAMILY], FontFamilyOption.SYSTEM),
             pageTurnMode = pageTurnMode(values[PAGE_TURN_MODE] ?: values[PAGE_ANIMATION]),
             fullScreenTapNext = values[FULL_SCREEN_TAP_NEXT] ?: false,
         )

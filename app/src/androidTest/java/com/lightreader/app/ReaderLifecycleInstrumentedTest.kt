@@ -1,5 +1,6 @@
 package com.lightreader.app
 
+import android.content.Intent
 import android.net.Uri
 import android.os.SystemClock
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -7,6 +8,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.UiDevice
 import com.lightreader.app.core.model.PageTurnMode
 import com.lightreader.app.core.model.ReaderPreferences
 import com.lightreader.app.core.model.ReaderLayoutPreset
@@ -68,6 +71,16 @@ class ReaderLifecycleInstrumentedTest {
             viewModel.setAutoReading(true)
         }
         val scenario = composeRule.activityRule.scenario
+        val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        fun returnToReader() {
+            val flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+            device.executeShellCommand(
+                "am start -W -a ${Intent.ACTION_MAIN} -c ${Intent.CATEGORY_LAUNCHER} " +
+                    "-f 0x${flags.toString(16)} -n ${BuildConfig.APPLICATION_ID}/com.lightreader.app.MainActivity",
+            )
+            composeRule.waitUntil(10_000) { scenario.state == Lifecycle.State.RESUMED }
+        }
         try {
             // STARTED sends ON_PAUSE while the activity is still visible, such as under another activity.
             scenario.moveToState(Lifecycle.State.STARTED)
@@ -76,8 +89,11 @@ class ReaderLifecycleInstrumentedTest {
             assertEquals("Automatic reading must not turn pages while paused", paused.pageIndex, viewModel.readerState.value.pageIndex)
             assertEquals(paused.chapterIndex, viewModel.readerState.value.chapterIndex)
 
-            // CREATED sends ON_STOP without disposing this activity's composition.
-            scenario.moveToState(Lifecycle.State.CREATED)
+            // Use an actual background transition: some OEMs leave ActivityScenario's
+            // synthetic STARTED -> CREATED transition paused instead of delivering ON_STOP.
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            assertTrue("Home must background the reader", device.pressHome())
+            composeRule.waitUntil(10_000) { scenario.state == Lifecycle.State.CREATED }
             val stopped = viewModel.readerState.value
             val expectedOffset = stopped.pages[stopped.pageIndex].startOffset
             SystemClock.sleep(6_500)
@@ -86,13 +102,13 @@ class ReaderLifecycleInstrumentedTest {
             val saved = runBlocking { application.container.bookRepository.progress(book.id) }
             assertEquals("Leaving the foreground must persist the visible position", expectedOffset, saved?.charOffset)
 
-            scenario.moveToState(Lifecycle.State.RESUMED)
+            returnToReader()
             composeRule.waitUntil(8_000) {
                 viewModel.readerState.value.pageIndex > stopped.pageIndex ||
                     viewModel.readerState.value.chapterIndex > stopped.chapterIndex
             }
         } finally {
-            scenario.moveToState(Lifecycle.State.RESUMED)
+            if (scenario.state != Lifecycle.State.RESUMED) returnToReader()
             composeRule.runOnIdle { viewModel.setAutoReading(false) }
         }
     }

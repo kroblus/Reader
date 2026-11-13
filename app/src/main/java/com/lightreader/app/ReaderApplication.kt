@@ -2,6 +2,7 @@ package com.lightreader.app
 
 import android.app.Application
 import android.content.ComponentCallbacks2
+import com.lightreader.app.core.reader.ReaderTypefaces
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -14,6 +15,11 @@ class ReaderApplication : Application() {
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     val memoryTrimEvents: SharedFlow<Int> = mutableMemoryTrimEvents.asSharedFlow()
+
+    override fun onCreate() {
+        super.onCreate()
+        ReaderTypefaces.preload(this)
+    }
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)

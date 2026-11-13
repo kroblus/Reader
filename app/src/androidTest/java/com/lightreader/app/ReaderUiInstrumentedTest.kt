@@ -299,6 +299,11 @@ class ReaderUiInstrumentedTest {
         val dockHeight = composeRule.onNodeWithTag("reader_settings_dock").fetchSemanticsNode().boundsInRoot.height
         assertTrue("Reader settings panel should be compressed to roughly three tenths of the screen", dockHeight <= rootHeight * 0.32f)
         val settingsPanel = composeRule.onNodeWithTag("reader_settings_panel")
+        // Presets are the first action on opening the dock, without scrolling past controls.
+        listOf(R.string.layout_comfort, R.string.layout_compact, R.string.layout_immersive).forEach {
+            composeRule.onNodeWithText(text(it)).assertIsDisplayed()
+        }
+        composeRule.onAllNodesWithText(text(R.string.layout_custom)).assertCountEquals(0)
         val expectedProgressText = text(R.string.reader_progress, 0, text(R.string.reader_progress_chapter, 1))
         // Quick tools now scroll on short/landscape screens, including brightness.
         // Their scroll/click gestures must never turn the underlying reader page.
@@ -343,7 +348,7 @@ class ReaderUiInstrumentedTest {
         }
         composeRule.onNodeWithText(text(R.string.settings_more)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.settings_layout)).assertIsDisplayed()
-        composeRule.onNodeWithText(text(R.string.settings_page_turn)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_page_turn)).performScrollTo().assertIsDisplayed()
         composeRule.onAllNodesWithText(text(R.string.settings_show_progress)).assertCountEquals(0)
         composeRule.onAllNodesWithText(text(R.string.settings_top_padding)).assertCountEquals(0)
         composeRule.onNodeWithTag(ReaderTestTags.READER_ADVANCED_SETTINGS).performScrollTo().performClick()

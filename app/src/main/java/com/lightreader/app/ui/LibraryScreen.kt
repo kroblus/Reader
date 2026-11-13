@@ -1,5 +1,6 @@
 package com.lightreader.app.ui
 
+import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -96,6 +97,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
@@ -126,6 +130,7 @@ import java.util.Date
 @Composable
 fun LibraryScreen(
     state: LibraryUiState,
+    screenActive: Boolean,
     viewModel: LibraryViewModel,
     onOpenAppSettings: () -> Unit,
     onOpenWebImport: () -> Unit,
@@ -144,6 +149,7 @@ fun LibraryScreen(
         projectLibraryShelf(state.shelfBooks, searchQuery, sortOrder, locale)
     }
     val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
     val fontScale = LocalDensity.current.fontScale
     val sortLabel = stringResource(sortOrder.labelResource())
     val taglines = stringArrayResource(R.array.brand_taglines)
@@ -178,13 +184,13 @@ fun LibraryScreen(
                                     Text(
                                         stringResource(R.string.brand_name),
                                         style = MaterialTheme.typography.headlineMedium.copy(
-                                            fontFamily = FontFamily.SansSerif,
+                                            fontFamily = FontFamily.Default,
                                             fontWeight = FontWeight.Bold,
                                         ),
                                     )
                                     Text(
                                         taglines.taglineAt(state.libraryTaglineIndex),
-                                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.SansSerif),
+                                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Default),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
@@ -193,7 +199,7 @@ fun LibraryScreen(
                             Text(
                                 stringResource(R.string.library_my_shelf),
                                 style = MaterialTheme.typography.headlineMedium.copy(
-                                    fontFamily = FontFamily.SansSerif,
+                                    fontFamily = FontFamily.Default,
                                     fontWeight = FontWeight.Bold,
                                 ),
                             )
@@ -201,12 +207,25 @@ fun LibraryScreen(
                     },
                     actions = {
                         Box {
-                            IconButton(onClick = { showMoreActions = true }) {
+                            IconButton(onClick = {
+                                // End the search input session before the popup takes window focus.
+                                // Otherwise dismissing it can briefly restore the editor and IME
+                                // while the outgoing library is still animating away.
+                                focusManager.clearFocus(force = true)
+                                keyboard?.hide()
+                                showMoreActions = true
+                            }) {
                                 Icon(Icons.Outlined.MoreVert, stringResource(R.string.action_more))
                             }
                             DropdownMenu(
                                 expanded = showMoreActions,
                                 onDismissRequest = { showMoreActions = false },
+                                // This menu has actions only. Keep keyboard/Back focus without
+                                // transferring the IME target to its temporary popup window.
+                                properties = PopupProperties(
+                                    flags = WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+                                        WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
+                                ),
                             ) {
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.library_change_skin)) },
@@ -243,7 +262,7 @@ fun LibraryScreen(
                         text = {
                             Text(
                                 stringResource(R.string.library_import_action),
-                                style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.SansSerif),
+                                style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Default),
                             )
                         },
                         shape = RoundedCornerShape(LightReaderShapeTokens.large),
@@ -264,6 +283,7 @@ fun LibraryScreen(
                         onValueChange = { searchQuery = it },
                         modifier = Modifier.fillMaxWidth()
                             .padding(horizontal = ReaderUiTokens.pagePadding, vertical = LightReaderSpacing.xs)
+                            .focusProperties { canFocus = screenActive && !showMoreActions }
                             .testTag(ReaderTestTags.LIBRARY_SEARCH),
                         placeholder = { Text(stringResource(R.string.library_search_hint)) },
                         leadingIcon = { Icon(Icons.Outlined.Search, null) },
@@ -287,7 +307,7 @@ fun LibraryScreen(
                         Text(
                             pluralStringResource(R.plurals.library_book_count, shelf.books.size, shelf.books.size),
                             modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.SansSerif),
+                            style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Default),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Box {
@@ -365,7 +385,7 @@ fun LibraryScreen(
                                     stringResource(R.string.library_all_books),
                                     modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
                                     style = MaterialTheme.typography.titleMedium.copy(
-                                        fontFamily = FontFamily.SansSerif,
+                                        fontFamily = FontFamily.Default,
                                         fontWeight = FontWeight.Bold,
                                     ),
                                 )
@@ -767,7 +787,7 @@ private fun AppSettingsSection(title: String, content: @Composable ColumnScope.(
         Text(
             title,
             style = MaterialTheme.typography.titleMedium.copy(
-                fontFamily = FontFamily.SansSerif,
+                fontFamily = FontFamily.Default,
                 fontWeight = FontWeight.Bold,
             ),
         )
@@ -954,7 +974,7 @@ private fun EmptyLibrary(
                 Text(
                     stringResource(R.string.library_empty_title),
                     style = MaterialTheme.typography.titleLarge.copy(
-                        fontFamily = FontFamily.SansSerif,
+                        fontFamily = FontFamily.Default,
                         fontWeight = FontWeight.Bold,
                     ),
                 )
@@ -963,7 +983,7 @@ private fun EmptyLibrary(
                     stringResource(R.string.library_empty_body),
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.SansSerif),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Default),
                 )
                 Spacer(Modifier.height(if (compact) 8.dp else 18.dp))
                 Button(
@@ -1122,7 +1142,7 @@ private fun BookCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit: () -> U
             book.title,
             modifier = Modifier.fillMaxWidth(),
             style = MaterialTheme.typography.titleMedium.copy(
-                fontFamily = FontFamily.SansSerif,
+                fontFamily = FontFamily.Default,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 14.sp,
                 lineHeight = 18.sp,
@@ -1136,7 +1156,7 @@ private fun BookCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit: () -> U
                 author,
                 modifier = Modifier.fillMaxWidth(),
                 style = MaterialTheme.typography.labelMedium.copy(
-                    fontFamily = FontFamily.SansSerif,
+                    fontFamily = FontFamily.Default,
                     fontSize = 12.sp,
                     lineHeight = 15.sp,
                 ),
@@ -1152,7 +1172,7 @@ private fun BookCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit: () -> U
             } ?: stringResource(R.string.library_not_started, book.chapterCount, book.format.name),
             modifier = Modifier.fillMaxWidth(),
             style = MaterialTheme.typography.labelSmall.copy(
-                fontFamily = FontFamily.SansSerif,
+                fontFamily = FontFamily.Default,
                 fontSize = 12.sp,
                 lineHeight = 15.sp,
             ),
@@ -1171,7 +1191,7 @@ private fun BookCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit: () -> U
             },
             modifier = Modifier.fillMaxWidth(),
             style = MaterialTheme.typography.labelSmall.copy(
-                fontFamily = FontFamily.SansSerif,
+                fontFamily = FontFamily.Default,
                 fontWeight = FontWeight.Medium,
                 fontSize = 11.sp,
             ),
@@ -1212,7 +1232,7 @@ private fun RecentReadingCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.titleLarge.copy(
-                            fontFamily = FontFamily.SansSerif,
+                            fontFamily = FontFamily.Default,
                             fontWeight = FontWeight.Bold,
                             fontSize = 20.sp,
                             lineHeight = 25.sp,
@@ -1223,7 +1243,7 @@ private fun RecentReadingCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit
                             author,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.SansSerif),
+                            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Default),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -1232,7 +1252,7 @@ private fun RecentReadingCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit
                             ?: stringResource(R.string.library_not_started, book.chapterCount, book.format.name),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.SansSerif),
+                        style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Default),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     ShelfProgressBar(progressPercent = shelfBook.progressPercent, modifier = Modifier.fillMaxWidth())
@@ -1246,7 +1266,7 @@ private fun RecentReadingCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit
                             modifier = Modifier.padding(end = 12.dp),
                             color = MaterialTheme.colorScheme.primary,
                             style = MaterialTheme.typography.labelMedium.copy(
-                                fontFamily = FontFamily.SansSerif,
+                                fontFamily = FontFamily.Default,
                                 fontWeight = FontWeight.Bold,
                             ),
                         )
@@ -1256,7 +1276,7 @@ private fun RecentReadingCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit
                                 color = MaterialTheme.colorScheme.primary,
                                 maxLines = 2,
                                 style = MaterialTheme.typography.labelLarge.copy(
-                                    fontFamily = FontFamily.SansSerif,
+                                    fontFamily = FontFamily.Default,
                                     fontWeight = FontWeight.Bold,
                                 ),
                             )
@@ -1267,7 +1287,7 @@ private fun RecentReadingCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     style = MaterialTheme.typography.labelSmall.copy(
-                                        fontFamily = FontFamily.SansSerif,
+                                        fontFamily = FontFamily.Default,
                                         fontSize = 10.sp,
                                         lineHeight = 12.sp,
                                     ),
@@ -1373,7 +1393,7 @@ private fun PastelBookCover(book: Book, compact: Boolean = false) {
                     Text(
                         book.format.name,
                         style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.SansSerif,
+                            fontFamily = FontFamily.Default,
                             fontWeight = FontWeight.Bold,
                             fontSize = if (compact) 8.sp else 9.sp,
                         ),
@@ -1384,7 +1404,7 @@ private fun PastelBookCover(book: Book, compact: Boolean = false) {
                     Text(
                         coverTitle,
                         style = MaterialTheme.typography.titleMedium.copy(
-                            fontFamily = FontFamily.SansSerif,
+                            fontFamily = FontFamily.Default,
                             fontWeight = FontWeight.Bold,
                             fontSize = if (compact) 13.sp else 15.sp,
                             lineHeight = if (compact) 17.sp else 20.sp,
@@ -1399,7 +1419,7 @@ private fun PastelBookCover(book: Book, compact: Boolean = false) {
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.labelSmall.copy(
-                                fontFamily = FontFamily.SansSerif,
+                                fontFamily = FontFamily.Default,
                                 fontSize = if (compact) 8.sp else 10.sp,
                             ),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1411,7 +1431,7 @@ private fun PastelBookCover(book: Book, compact: Boolean = false) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.SansSerif,
+                        fontFamily = FontFamily.Default,
                         fontSize = if (compact) 7.sp else 9.sp,
                         lineHeight = if (compact) 9.sp else 11.sp,
                     ),

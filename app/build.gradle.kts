@@ -31,8 +31,8 @@ android {
         applicationId = "com.lightreader.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 19
-        versionName = "0.3.5"
+        versionCode = 20
+        versionName = "0.3.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         testApplicationId = "com.lightreader.app.qa.test"
         testInstrumentationRunnerArguments["clearPackageData"] = "true"

@@ -169,16 +169,26 @@ internal fun appColorScheme(skin: AppSkin) = skin.palette().let { palette ->
     )
 }
 
-val LightReaderTypography = Typography(
-    displaySmall = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = 34.sp, lineHeight = 42.sp),
-    headlineLarge = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = 30.sp, lineHeight = 38.sp),
-    headlineMedium = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = 26.sp, lineHeight = 34.sp),
-    titleLarge = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = 22.sp, lineHeight = 30.sp),
-    titleMedium = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 17.sp, lineHeight = 24.sp),
-    bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 25.sp),
-    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 22.sp),
-    labelLarge = TextStyle(fontWeight = FontWeight.Medium, fontSize = 14.sp),
-)
+// Interface typography follows the device; book typography is selected separately.
+val LightReaderTypography = Typography().let { defaults ->
+    Typography(
+        displayLarge = defaults.displayLarge.copy(fontFamily = FontFamily.Default),
+        displayMedium = defaults.displayMedium.copy(fontFamily = FontFamily.Default),
+        displaySmall = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.SemiBold, fontSize = 34.sp, lineHeight = 42.sp),
+        headlineLarge = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.SemiBold, fontSize = 30.sp, lineHeight = 38.sp),
+        headlineMedium = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.SemiBold, fontSize = 26.sp, lineHeight = 34.sp),
+        headlineSmall = defaults.headlineSmall.copy(fontFamily = FontFamily.Default),
+        titleLarge = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.SemiBold, fontSize = 22.sp, lineHeight = 30.sp),
+        titleMedium = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, lineHeight = 24.sp),
+        titleSmall = defaults.titleSmall.copy(fontFamily = FontFamily.Default),
+        bodyLarge = TextStyle(fontFamily = FontFamily.Default, fontSize = 16.sp, lineHeight = 25.sp),
+        bodyMedium = TextStyle(fontFamily = FontFamily.Default, fontSize = 14.sp, lineHeight = 22.sp),
+        bodySmall = defaults.bodySmall.copy(fontFamily = FontFamily.Default),
+        labelLarge = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.Medium, fontSize = 14.sp),
+        labelMedium = defaults.labelMedium.copy(fontFamily = FontFamily.Default),
+        labelSmall = defaults.labelSmall.copy(fontFamily = FontFamily.Default),
+    )
+}
 
 val LightReaderShapes = Shapes(
     extraSmall = RoundedCornerShape(LightReaderShapeTokens.small),

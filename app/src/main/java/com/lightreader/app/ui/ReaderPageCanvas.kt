@@ -7,6 +7,8 @@ import android.text.TextUtils
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -14,11 +16,13 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import com.lightreader.app.core.reader.readerFontMetrics
+import com.lightreader.app.core.reader.ReaderTypefaces
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import com.lightreader.app.R
 import com.lightreader.app.core.model.FontFamilyOption
 import com.lightreader.app.core.model.ReaderPage
@@ -47,6 +51,10 @@ fun ReaderPageCanvas(
     val layoutValues = layoutPreferences.effectiveLayout()
     val displayStyle = displayPreferences.toReaderStyle()
     val actualFonts = page.fontMetrics ?: readerFontMetrics(layoutValues.fontSizeSp, LocalContext.current.resources.displayMetrics)
+    // The engine awaited the same cache before publishing this page. Drawing must
+    // never replace its font with a fallback or trigger an asset read on the UI thread.
+    val bodyTypeface = checkNotNull(ReaderTypefaces.cachedTypeface(layoutPreferences.fontFamily, layoutPreferences.fontWeight))
+    val headingTypeface = checkNotNull(ReaderTypefaces.cachedTypeface(layoutPreferences.fontFamily, 700))
     val footerProgressText = stringResource(
         R.string.reader_footer_book_progress,
         (overallProgress.coerceIn(0f, 1f) * 100f).roundToInt().coerceIn(0, 100),
@@ -54,33 +62,17 @@ fun ReaderPageCanvas(
     val textPaint = remember(layoutPreferences, actualFonts) { TextPaint(Paint.ANTI_ALIAS_FLAG) }.apply {
         color = palette.foreground.toInt()
         textSize = actualFonts.bodyPx
-        typeface = Typeface.create(
-            when (layoutPreferences.fontFamily) {
-                FontFamilyOption.SYSTEM -> Typeface.DEFAULT
-                FontFamilyOption.SANS -> Typeface.SANS_SERIF
-                FontFamilyOption.SERIF -> Typeface.SERIF
-                FontFamilyOption.MONOSPACE -> Typeface.MONOSPACE
-            },
-            if (layoutPreferences.fontWeight >= 500) Typeface.BOLD else Typeface.NORMAL,
-        )
+        typeface = bodyTypeface
     }
     val secondaryPaint = remember(palette.secondary, density.density, density.fontScale) { TextPaint(Paint.ANTI_ALIAS_FLAG) }.apply {
         color = palette.secondary.toInt()
         textSize = actualFonts.auxiliaryPx
-        typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
+        typeface = Typeface.DEFAULT
     }
     val titlePaint = remember(layoutPreferences, actualFonts) { TextPaint(Paint.ANTI_ALIAS_FLAG) }.apply {
         color = palette.foreground.toInt()
         textSize = actualFonts.titlePx
-        typeface = Typeface.create(
-            when (layoutPreferences.fontFamily) {
-                FontFamilyOption.SYSTEM -> Typeface.DEFAULT
-                FontFamilyOption.SANS -> Typeface.SANS_SERIF
-                FontFamilyOption.SERIF -> Typeface.SERIF
-                FontFamilyOption.MONOSPACE -> Typeface.MONOSPACE
-            },
-            Typeface.BOLD,
-        )
+        typeface = headingTypeface
     }
     val horizontalPaddingPx = layoutValues.horizontalPaddingDp * density.density
     val blankPageDescription = stringResource(R.string.reader_blank_page)
@@ -116,7 +108,7 @@ fun ReaderPageCanvas(
                 canvas.nativeCanvas.drawText(
                     title,
                     horizontalPaddingPx,
-                    safeTopPx + HEADER_BASELINE_DP * density.density,
+                    safeTopPx + maxOf(HEADER_BASELINE_DP * density.density, -secondaryPaint.fontMetrics.ascent + 2f * density.density),
                     secondaryPaint,
                 )
             }
@@ -152,3 +144,13 @@ internal fun readerHeaderTitle(page: ReaderPage, bookTitle: String): String =
     }
 
 private const val HEADER_BASELINE_DP = 14f
+
+/** Reading previews share the engine's font source without delaying UI animations.
+ * Until a bundled font is ready only the preview uses a system-font placeholder. */
+@Composable
+fun rememberReaderFontFamily(family: FontFamilyOption, weight: Int = 400): FontFamily {
+    val typeface by produceState(ReaderTypefaces.cachedTypeface(family, weight), family, weight) {
+        value = ReaderTypefaces.awaitTypeface(family, weight)
+    }
+    return remember(typeface) { FontFamily(typeface ?: Typeface.DEFAULT) }
+}

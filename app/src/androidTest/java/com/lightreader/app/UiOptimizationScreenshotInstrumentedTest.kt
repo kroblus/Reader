@@ -20,6 +20,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.printToString
+import androidx.compose.ui.geometry.Offset
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.uiautomator.UiDevice
 import androidx.lifecycle.ViewModelProvider
@@ -95,6 +96,13 @@ class UiOptimizationScreenshotInstrumentedTest {
         capture("005_reader_controls")
         tapReaderCenter()
         capture("004_reader_clean")
+        val reader = ViewModelProvider(composeRule.activity)[ReaderViewModel::class.java]
+        val firstPage = reader.readerState.value.pageIndex
+        composeRule.onNodeWithTag(ReaderTestTags.READER).performTouchInput { click(Offset(width * .9f, height * .5f)) }
+        composeRule.waitUntil(10_000) { reader.readerState.value.pageIndex == firstPage + 1 }
+        capture("028_reader_body_spacing")
+        composeRule.onNodeWithTag(ReaderTestTags.READER).performTouchInput { click(Offset(width * .1f, height * .5f)) }
+        composeRule.waitUntil(10_000) { reader.readerState.value.pageIndex == firstPage }
         tapReaderCenter()
 
         composeRule.onNodeWithContentDescription(text(R.string.reader_toc)).performClick()
@@ -124,8 +132,12 @@ class UiOptimizationScreenshotInstrumentedTest {
         composeRule.onNodeWithTag(ReaderTestTags.READER_SETTINGS_PANEL).assertIsDisplayed()
         capture("009_reader_quick_settings")
         composeRule.onNodeWithTag(ReaderTestTags.READER_SETTINGS_MORE).performScrollTo().performClick()
-        composeRule.onNodeWithText(text(R.string.settings_page_turn)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_layout)).assertIsDisplayed()
         capture("reader_settings_after")
+        composeRule.onNodeWithTag("reader_layout_fine_tune").performScrollTo().performClick()
+        composeRule.onNodeWithText(text(R.string.settings_line_spacing)).performScrollTo().assertIsDisplayed()
+        capture("029_reader_layout_tuning")
+        composeRule.onNodeWithTag("reader_layout_fine_tune").performScrollTo().performClick()
         composeRule.onNodeWithTag(ReaderTestTags.READER_ADVANCED_SETTINGS).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag(ReaderTestTags.READER_ADVANCED_SETTINGS).performClick()
         composeRule.onNodeWithTag(ReaderTestTags.READER_ADVANCED_CONTENT).performScrollTo().assertIsDisplayed()

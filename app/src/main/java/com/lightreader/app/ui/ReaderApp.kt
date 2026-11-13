@@ -2,11 +2,7 @@ package com.lightreader.app.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.togetherWith
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
@@ -24,6 +20,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -31,6 +30,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.lightreader.app.feature.download.DownloadViewModel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 @Composable
 fun ReaderApp(
@@ -44,6 +45,17 @@ fun ReaderApp(
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(state.screen) {
+        // AnimatedContent keeps the outgoing editor alive during the transition. Navigation
+        // ends that input session immediately instead of waiting for its eventual disposal.
+        focusManager.clearFocus(force = true)
+        keyboard?.hide()
+    }
+    val toolbarVisible by remember(viewModel) {
+        viewModel.readerState.map { it.toolbarVisible }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = remember(viewModel) { viewModel.readerState.value.toolbarVisible })
     val searchState by searchViewModel.state.collectAsStateWithLifecycle()
     val libraryBusy by libraryViewModel.busy.collectAsStateWithLifecycle()
     val downloadBusy by downloadViewModel.busy.collectAsStateWithLifecycle()
@@ -103,34 +115,43 @@ fun ReaderApp(
         }
         BackHandler(enabled = state.screen !is AppScreen.Library) { viewModel.goBack() }
         LightReaderTheme(state.preferences.appSkin) {
-            val readerToolVisible = state.screen is AppScreen.Search || state.screen is AppScreen.ReaderSettingsDetail
-            ApplyAppSystemBars(state.preferences.appSkin, state.screen is AppScreen.Reader || readerToolVisible)
-            if (readerToolVisible) ApplyReaderSystemBars(state.preferences, visible = true)
+            val screenTransition = updateTransition(state.screen, label = "readerScreenTransition")
+            val chromeTransition = updateTransition(
+                state.screen is AppScreen.Reader && toolbarVisible,
+                label = "readerChromeTransition",
+            )
+            val readerActive = screenTransition.currentState.usesReaderPalette() ||
+                screenTransition.targetState.usesReaderPalette()
+            ApplyAppSystemBars(state.preferences.appSkin, readerActive)
+            // One owner outlives outgoing AnimatedContent screens. Disposing Reader while Search
+            // is entering must never restore decor fitting over the new screen's window policy.
+            // Keep bars until the actual chrome transition completes (also immediate at scale=0).
+            ApplyReaderSystemBars(
+                state.preferences,
+                visible = state.screen !is AppScreen.Reader || chromeTransition.currentState || chromeTransition.targetState,
+                readerActive = readerActive,
+            )
+            val screenOffsetPx = with(LocalDensity.current) { 12.dp.roundToPx() }
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background,
             ) {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-                AnimatedContent(
-                    targetState = state.screen,
+                screenTransition.AnimatedContent(
                     transitionSpec = {
-                        when {
-                            initialState is AppScreen.Library && targetState is AppScreen.Reader ->
-                                (slideInHorizontally(animationSpec = tween(140)) { it / 10 } + fadeIn(tween(140)))
-                                    .togetherWith(fadeOut(tween(90)))
-                            initialState is AppScreen.Reader && targetState is AppScreen.Library ->
-                                fadeIn(tween(120))
-                                    .togetherWith(slideOutHorizontally(animationSpec = tween(130)) { it / 10 } + fadeOut(tween(120)))
-                            else -> fadeIn(tween(100)).togetherWith(fadeOut(tween(70)))
-                        }
+                        UiMotion.enter(screenOffsetPx).togetherWith(UiMotion.exit(-screenOffsetPx))
+                            .using(null)
                     },
-                    label = "readerScreenTransition",
+                    // Every book shares one reader slot and one VM. A rapid book/navigation change
+                    // must not mount a second ReaderScreen that writes another viewport or anchor.
+                    contentKey = { if (it is AppScreen.Reader) AppScreen.Reader::class else it },
                 ) { screen ->
                     when (screen) {
                         AppScreen.Library -> screenStateHolder.SaveableStateProvider("library") {
                             val libraryState by libraryViewModel.state.collectAsStateWithLifecycle()
                             LibraryScreen(
                                 state = libraryState,
+                                screenActive = state.screen is AppScreen.Library,
                                 viewModel = libraryViewModel,
                                 onOpenAppSettings = { viewModel.navigate(AppScreen.AppSettings) },
                                 onOpenWebImport = { viewModel.navigate(AppScreen.WebImport) },
@@ -139,6 +160,7 @@ fun ReaderApp(
                         }
                         is AppScreen.Reader -> ReaderScreen(
                             preferences = state.preferences,
+                            chromeTransition = chromeTransition,
                             viewModel = viewModel,
                             downloadViewModel = downloadViewModel,
                             settingsViewModel = settingsViewModel,
@@ -195,3 +217,6 @@ fun ReaderApp(
         }
     }
 }
+
+private fun AppScreen.usesReaderPalette(): Boolean =
+    this is AppScreen.Reader || this is AppScreen.Search || this is AppScreen.ReaderSettingsDetail

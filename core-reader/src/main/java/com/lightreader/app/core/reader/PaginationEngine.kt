@@ -1,9 +1,7 @@
 package com.lightreader.app.core.reader
 
-import android.graphics.Typeface
 import android.text.TextPaint
 import com.lightreader.app.core.model.BookParagraph
-import com.lightreader.app.core.model.FontFamilyOption
 import com.lightreader.app.core.model.ReaderLayoutResult
 import com.lightreader.app.core.model.ReaderLine
 import com.lightreader.app.core.model.ReaderPage
@@ -40,7 +38,12 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
         val contentRight = contentLeft + centeredContentWidth
         val contentTop = max(
             style.verticalPaddingTopDp * viewport.density,
-            viewport.safeTopPx + TOP_CHROME_RESERVE_DP * viewport.density,
+            // Reserve the small page header, not the transient 48dp reader toolbar.
+            // Keep enough room for scaled header text without repaging when chrome toggles.
+            viewport.safeTopPx + max(
+                TOP_CHROME_RESERVE_DP * viewport.density,
+                actualFonts.auxiliaryPx * 1.25f + 8f * viewport.density,
+            ),
         )
         val bottomReserved = max(
             style.verticalPaddingBottomDp * viewport.density,
@@ -52,7 +55,7 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
         val paint = createPaint(style, actualFonts.bodyPx)
         val titlePaint = createPaint(style, actualFonts.bodyPx).apply {
             textSize = actualFonts.titlePx
-            typeface = Typeface.create(typeface, Typeface.BOLD)
+            typeface = ReaderTypefaces.forLayout(style.fontFamily, 700)
         }
         val fontMetrics = paint.fontMetrics
         val fontHeight = fontMetrics.descent - fontMetrics.ascent
@@ -182,15 +185,7 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
 
     private fun createPaint(style: ReaderStyle, bodyPx: Float) = TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
         textSize = bodyPx
-        typeface = Typeface.create(
-            when (style.fontFamily) {
-                FontFamilyOption.SYSTEM -> Typeface.DEFAULT
-                FontFamilyOption.SANS -> Typeface.SANS_SERIF
-                FontFamilyOption.SERIF -> Typeface.SERIF
-                FontFamilyOption.MONOSPACE -> Typeface.MONOSPACE
-            },
-            if (style.fontWeight >= 500) Typeface.BOLD else Typeface.NORMAL,
-        )
+        typeface = ReaderTypefaces.forLayout(style.fontFamily, style.fontWeight)
     }
 
     private fun findLineEnd(paint: TextPaint, text: String, start: Int, width: Float): Int {
@@ -225,13 +220,12 @@ class PaintReaderLayoutEngine : ReaderLayoutEngine {
     }
 
     private companion object {
-        // The reader toolbar overlays the page while visible. Reserve its full
-        // height once so page boundaries never change when chrome auto-hides.
-        const val TOP_CHROME_RESERVE_DP = 52f
+        // Small persistent header space; transient toolbar visibility never changes pagination.
+        const val TOP_CHROME_RESERVE_DP = 28f
         const val FOOTER_SAFE_RESERVE_DP = 22f
         const val TITLE_TEXT_SCALE = 1.45f
         const val TITLE_LINE_HEIGHT_MULTIPLIER = 1.2f
-        const val TITLE_BOTTOM_SPACING_DP = 30f
+        const val TITLE_BOTTOM_SPACING_DP = 16f
         const val FORBIDDEN_LINE_START = "，。！？；：、”’）】》〉」』〕］｝…—·～"
         const val FORBIDDEN_LINE_END = "“‘（【《〈「『〔［｛"
         const val PAIRED_PUNCTUATION = "…—"

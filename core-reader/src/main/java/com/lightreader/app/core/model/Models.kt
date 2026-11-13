@@ -55,7 +55,7 @@ enum class ReaderTheme { EYE_CARE, SEPIA, LIGHT_GRAY, WARM_BROWN, FROST_BLUE, SA
 enum class AppSkin { MINT, OCEAN, APRICOT, SAKURA }
 enum class AppLanguage { SYSTEM, ZH_CN, EN }
 enum class PageTurnMode { NONE, HORIZONTAL, SLIDE, VERTICAL, SCROLL, SIMULATION }
-enum class FontFamilyOption { SYSTEM, SANS, SERIF, MONOSPACE }
+enum class FontFamilyOption { SYSTEM, SANS, SERIF, MONOSPACE, LXGW_WENKAI, ZHUQUE_FANGSONG }
 enum class ReaderLayoutPreset { COMFORT, COMPACT, IMMERSIVE, CUSTOM }
 
 @kotlinx.serialization.Serializable
@@ -91,7 +91,7 @@ data class ReaderPreferences(
     val minimalMode: Boolean = false,
     val autoReadIntervalSeconds: Int = 8,
     val volumeKeys: Boolean = true,
-    val fontFamily: FontFamilyOption = FontFamilyOption.SERIF,
+    val fontFamily: FontFamilyOption = FontFamilyOption.SYSTEM,
     val pageTurnMode: PageTurnMode = PageTurnMode.HORIZONTAL,
     val fullScreenTapNext: Boolean = false,
 )
