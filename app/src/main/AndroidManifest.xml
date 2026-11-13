@@ -19,6 +19,7 @@
         <profileable
             android:shell="true"
             tools:targetApi="29" />
+        <receiver android:name=".feature.download.DownloadActionReceiver" android:exported="false" />
         <!-- WorkManager owns this service; the override supplies the type required by Android 14+. -->
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"

@@ -1,0 +1,29 @@
+<resources>
+    <string name="backup_title">备份与恢复</string>
+    <string name="backup_description">导出书籍、原始正文、阅读进度、书签和阅读设置。不包含 API Key、安全密钥、日志或未完成下载。</string>
+    <string name="backup_export">导出备份</string>
+    <string name="backup_import">选择备份并预览</string>
+    <string name="backup_working">正在准备并校验文件…</string>
+    <string name="backup_preview">可恢复 %1$d · 重复 %2$d · 无效 %3$d</string>
+    <string name="backup_duplicate_rule">默认跳过重复书籍，保留本机已有阅读进度。</string>
+    <string name="backup_invalid">无效，跳过</string>
+    <string name="backup_duplicate">已在书库，跳过</string>
+    <string name="backup_ready">可恢复</string>
+    <string name="backup_settings">同时恢复阅读与外观设置</string>
+    <string name="backup_confirm">确认恢复此归档</string>
+    <string name="backup_result">已恢复 %1$d 本，跳过 %2$d 本重复书籍和 %3$d 本无效书籍。</string>
+    <string name="backup_exported">已导出 %1$d 本书籍。</string>
+    <string name="backup_error">备份操作失败：%1$s</string>
+    <string name="backup_settings_failed">书籍已恢复，但设置保存失败。已恢复的书库不受影响。</string>
+    <string name="search_partial_results">已找到 %1$d 处 · 尚未检索完毕</string>
+    <string name="search_continue">继续检索</string>
+    <string name="search_return_results">返回搜索结果</string>
+    <string name="search_return_origin">回到查找前</string>
+    <string name="web_not_found">内容或地址已失效（404）。</string>
+    <string name="web_rate_limited">站点限制了请求频率，请等待后重试（429）。</string>
+    <string name="web_retry_after">请至少等待 %1$d 秒。</string>
+    <string name="web_ai_configuration">AI 解析尚未启用或未配置 API Key，请检查 AI 设置。</string>
+    <string name="web_ai_failure">AI 服务未能解析此页面，请检查服务配置或稍后重试。</string>
+    <string name="web_submission_failed">创建任务失败，预览已保留，可重试。</string>
+    <string name="web_task_reused">已有追更任务，已打开下载列表。</string>
+</resources>

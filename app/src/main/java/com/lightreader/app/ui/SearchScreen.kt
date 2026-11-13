@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -28,6 +29,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -45,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import com.lightreader.app.R
 import com.lightreader.app.core.model.Chapter
 import com.lightreader.app.core.model.SearchResult
+import com.lightreader.app.core.reader.toReaderStyle
 
 @Composable
 fun SearchRoute(bookId: String, readerViewModel: ReaderViewModel, searchViewModel: BookSearchViewModel) {
@@ -52,6 +59,27 @@ fun SearchRoute(bookId: String, readerViewModel: ReaderViewModel, searchViewMode
     // read only inside the matching-book branch would not subscribe this route to later updates.
     val state = searchViewModel.state.collectAsStateWithLifecycle().value
     val readerState by readerViewModel.readerState.collectAsStateWithLifecycle()
+    val appState by readerViewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(bookId) {
+        searchViewModel.openBook(bookId)
+        searchViewModel.captureOrigin(readerViewModel.currentSearchOrigin())
+        searchViewModel.restoreResultsIfNeeded()
+    }
+    val palette = appState.preferences.toReaderStyle().palette
+    val background = Color(palette.background)
+    val foreground = Color(palette.foreground)
+    val surface = Color(palette.overlay)
+    val secondary = Color(palette.secondary)
+    MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(background = background, surface = background,
+        surfaceContainer = surface, surfaceContainerLow = surface, surfaceContainerHigh = surface,
+        surfaceContainerLowest = background, surfaceContainerHighest = surface,
+        surfaceBright = surface, surfaceDim = background, surfaceTint = Color.Transparent,
+        surfaceVariant = surface, onBackground = foreground, onSurface = foreground,
+        onSurfaceVariant = secondary, primary = foreground, onPrimary = background,
+        primaryContainer = surface, onPrimaryContainer = foreground,
+        secondary = secondary, onSecondary = background, secondaryContainer = surface, onSecondaryContainer = foreground,
+        outline = secondary, outlineVariant = secondary.copy(alpha = .4f),
+        error = readableTextColor(MaterialTheme.colorScheme.error, background))) {
     SearchScreen(
         state = if (searchViewModel.isForBook(bookId)) state else SearchUiState(),
         chapters = readerState.chapters,
@@ -70,7 +98,13 @@ fun SearchRoute(bookId: String, readerViewModel: ReaderViewModel, searchViewMode
         },
         onBack = readerViewModel::goBack,
         onResultClick = readerViewModel::jumpToSearchResult,
+        onLoadMore = searchViewModel::loadMore,
+        onListPosition = searchViewModel::updateListPosition,
+        onReturnOrigin = state.origin?.takeIf { it.bookId == bookId }?.let { origin ->
+            { readerViewModel.restoreSearchOrigin(origin) }
+        },
     )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -83,7 +117,22 @@ internal fun SearchScreen(
     onSearch: () -> Unit,
     onBack: () -> Unit,
     onResultClick: (SearchResult) -> Unit,
+    onLoadMore: () -> Unit = {},
+    onListPosition: (Int, Int) -> Unit = { _, _ -> },
+    onReturnOrigin: (() -> Unit)? = null,
 ) {
+    val listState = rememberLazyListState(state.listIndex, state.listOffset)
+    var restoredPosition by remember(state.query) { mutableStateOf(false) }
+    LaunchedEffect(state.results.size, state.hasSearched) {
+        if (!restoredPosition && state.hasSearched && state.results.isNotEmpty()) {
+            listState.scrollToItem(state.listIndex.coerceAtMost(state.results.lastIndex), state.listOffset)
+            restoredPosition = true
+        }
+    }
+    LaunchedEffect(listState, restoredPosition) {
+        if (restoredPosition) snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+            .collect { (index, offset) -> onListPosition(index, offset) }
+    }
     Scaffold(
         modifier = Modifier.testTag(ReaderTestTags.SEARCH),
         topBar = {
@@ -129,12 +178,22 @@ internal fun SearchScreen(
             val resultsLabel = when {
                 state.searching -> stringResource(R.string.searching)
                 state.failed -> stringResource(R.string.message_search_failed)
+                state.hasSearched && !state.complete -> stringResource(R.string.search_partial_results, state.results.size)
                 state.hasSearched -> pluralStringResource(R.plurals.search_results_found, state.results.size, state.results.size)
                 else -> stringResource(R.string.search_prompt)
             }
             Text(resultsLabel, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
+            onReturnOrigin?.let { action ->
+                androidx.compose.material3.TextButton(onClick = action) { Text(stringResource(R.string.search_return_origin)) }
+            }
+            if (state.hasMore) {
+                Button(onClick = onLoadMore, enabled = !state.searching, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.search_continue))
+                }
+            }
             LazyColumn(
-                Modifier.fillMaxSize(),
+                Modifier.fillMaxSize().testTag("search_results_list"),
+                state = listState,
                 contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -154,7 +213,7 @@ internal fun SearchScreen(
                             Modifier.testTag(ReaderTestTags.SEARCH_ERROR),
                         )
                     }
-                } else if (!state.searching && state.hasSearched && state.results.isEmpty()) {
+                } else if (!state.searching && state.hasSearched && state.complete && state.results.isEmpty()) {
                     item {
                         EmptyStateCard(
                             stringResource(R.string.search_no_result_title),

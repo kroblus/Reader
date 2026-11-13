@@ -23,6 +23,10 @@ import com.lightreader.app.feature.download.DownloadImportFailure
 import com.lightreader.app.feature.download.DownloadPreviewResult
 import com.lightreader.app.ui.BookSearchGateway
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
@@ -41,10 +45,15 @@ class AppContainer(context: Context) {
     val paginationEngine: ReaderLayoutEngine = PaintReaderLayoutEngine()
     val engineMetrics = ReaderEngineMetrics(context)
     val bookRepository = BookRepository(context, database.readerDao())
-    val bookSearchGateway = BookSearchGateway { bookId, query ->
-        engineMetrics.measure("search_book", mapOf("query_chars" to query.length)) {
-            bookRepository.search(bookId, query)
-        }
+    val bookSearchGateway = object : BookSearchGateway {
+        override suspend fun search(bookId: String, query: String) = bookRepository.search(bookId, query)
+        override suspend fun page(bookId: String, query: String, cursor: com.lightreader.app.core.data.SearchCursor?) =
+            engineMetrics.measure("search_page", mapOf("query_chars" to query.length)) {
+                bookRepository.searchPage(bookId, query, cursor)
+            }
+    }
+    val backupRepository by lazy {
+        com.lightreader.app.core.backup.ReaderBackupRepository(context, database, settingsRepository)
     }
     val aiProvider = DeepSeekAiExtractionProvider(keyStore, client, aiConfigurationStore)
     private val genericWebSource = JsoupWebSourceParser(client, aiProvider)
@@ -57,6 +66,13 @@ class AppContainer(context: Context) {
         webSourceParser,
         scheduler = DownloadWorkScheduler(context),
     )
+    private val maintenanceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    init {
+        maintenanceScope.launch {
+            backupRepository.awaitReady()
+            downloadRepository.reconcile()
+        }
+    }
     val downloadFeatureGateway: DownloadFeatureGateway = object : DownloadFeatureGateway {
         override val tasks = downloadRepository.tasks
 
@@ -65,7 +81,9 @@ class AppContainer(context: Context) {
         } catch (error: kotlinx.coroutines.CancellationException) {
             throw error
         } catch (error: Throwable) {
-            DownloadPreviewResult.Failure(error.toDownloadImportFailure())
+            val webError = error as? WebImportException
+            DownloadPreviewResult.Failure(error.toDownloadImportFailure(),
+                httpStatus = webError?.httpStatus, retryAfterMillis = webError?.retryAfterMillis, sourceUrl = webError?.sourceUrl)
         }
 
         override suspend fun start(preview: com.lightreader.app.core.model.WebBookPreview) {
@@ -81,9 +99,16 @@ class AppContainer(context: Context) {
 
 private fun Throwable.toDownloadImportFailure(): DownloadImportFailure = when ((this as? WebImportException)?.failure) {
     WebImportFailure.NETWORK -> DownloadImportFailure.NETWORK
-    WebImportFailure.HTTP -> DownloadImportFailure.HTTP
+    WebImportFailure.HTTP -> when ((this as WebImportException).httpStatus) {
+        401, 403 -> DownloadImportFailure.ACCESS_RESTRICTED
+        404 -> DownloadImportFailure.NOT_FOUND
+        429 -> DownloadImportFailure.RATE_LIMITED
+        else -> DownloadImportFailure.HTTP
+    }
     WebImportFailure.RESPONSE_TOO_LARGE -> DownloadImportFailure.RESPONSE_TOO_LARGE
     WebImportFailure.NON_HTML_RESPONSE -> DownloadImportFailure.NON_HTML_RESPONSE
     WebImportFailure.ACCESS_RESTRICTED -> DownloadImportFailure.ACCESS_RESTRICTED
+    WebImportFailure.AI_CONFIGURATION -> DownloadImportFailure.AI_CONFIGURATION
+    WebImportFailure.AI_FAILURE -> DownloadImportFailure.AI_FAILURE
     null -> if (this is IllegalArgumentException) DownloadImportFailure.INVALID_URL else DownloadImportFailure.PARSE
 }

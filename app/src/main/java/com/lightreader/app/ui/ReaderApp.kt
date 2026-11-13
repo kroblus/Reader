@@ -40,9 +40,11 @@ fun ReaderApp(
     aiSettingsViewModel: AiSettingsViewModel,
     settingsViewModel: SettingsViewModel,
     searchViewModel: BookSearchViewModel,
+    backupViewModel: BackupRestoreViewModel,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val searchState by searchViewModel.state.collectAsStateWithLifecycle()
     val libraryBusy by libraryViewModel.busy.collectAsStateWithLifecycle()
     val downloadBusy by downloadViewModel.busy.collectAsStateWithLifecycle()
     val aiSettingsBusy by aiSettingsViewModel.busy.collectAsStateWithLifecycle()
@@ -58,13 +60,24 @@ fun ReaderApp(
     val screenStateHolder = rememberSaveableStateHolder()
     LaunchedEffect(searchViewModel, state.screen) {
         val search = state.screen as? AppScreen.Search
-        if (search != null) searchViewModel.openBook(search.bookId) else searchViewModel.cancelSearch()
+        if (search != null) {
+            searchViewModel.openBook(search.bookId)
+            searchViewModel.captureOrigin(viewModel.currentSearchOrigin())
+        } else {
+            searchViewModel.cancelSearch()
+            if (state.screen is AppScreen.Library) searchViewModel.clearOrigin()
+        }
     }
     LocalizedApp(state.preferences.appLanguage) {
         LaunchedEffect(lifecycle, viewModel, downloadViewModel, libraryViewModel, aiSettingsViewModel, settingsViewModel) {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
-                    downloadViewModel.events.collect { event -> viewModel.showMessage(event.toUiText()) }
+                    downloadViewModel.events.collect { event ->
+                        viewModel.showMessage(event.toUiText())
+                        if (event.notice == com.lightreader.app.feature.download.DownloadNotice.TASK_REUSED) {
+                            viewModel.navigate(AppScreen.WebImport)
+                        }
+                    }
                 }
                 launch {
                     libraryViewModel.events.collect { event ->
@@ -90,7 +103,9 @@ fun ReaderApp(
         }
         BackHandler(enabled = state.screen !is AppScreen.Library) { viewModel.goBack() }
         LightReaderTheme(state.preferences.appSkin) {
-            ApplyAppSystemBars(state.preferences.appSkin, state.screen is AppScreen.Reader)
+            val readerToolVisible = state.screen is AppScreen.Search || state.screen is AppScreen.ReaderSettingsDetail
+            ApplyAppSystemBars(state.preferences.appSkin, state.screen is AppScreen.Reader || readerToolVisible)
+            if (readerToolVisible) ApplyReaderSystemBars(state.preferences, visible = true)
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background,
@@ -119,7 +134,7 @@ fun ReaderApp(
                                 viewModel = libraryViewModel,
                                 onOpenAppSettings = { viewModel.navigate(AppScreen.AppSettings) },
                                 onOpenWebImport = { viewModel.navigate(AppScreen.WebImport) },
-                                onSavePreferences = settingsViewModel::savePreferences,
+                                onSavePreferences = { settingsViewModel.savePreferences(it, state.preferences) },
                             )
                         }
                         is AppScreen.Reader -> ReaderScreen(
@@ -127,13 +142,19 @@ fun ReaderApp(
                             viewModel = viewModel,
                             downloadViewModel = downloadViewModel,
                             settingsViewModel = settingsViewModel,
+                            onReturnSearchResults = if (searchState.origin?.bookId == screen.bookId) {
+                                { viewModel.navigate(AppScreen.Search(screen.bookId)) }
+                            } else null,
+                            onReturnSearchOrigin = searchState.origin?.takeIf { it.bookId == screen.bookId }?.let { origin ->
+                                { viewModel.restoreSearchOrigin(origin) }
+                            },
                         )
                         is AppScreen.ReaderSettingsDetail -> {
                             val readerState by viewModel.readerState.collectAsStateWithLifecycle()
                             ReaderSettingsDetailScreen(
                                 preferences = state.preferences,
                                 autoReading = readerState.autoReading,
-                                onChange = settingsViewModel::savePreferences,
+                                onChange = { settingsViewModel.savePreferences(it, state.preferences) },
                                 onToggleAutoReading = viewModel::toggleAutoReading,
                                 onBack = viewModel::goBack,
                             )
@@ -158,6 +179,7 @@ fun ReaderApp(
                             readerViewModel = viewModel,
                             settingsViewModel = settingsViewModel,
                         )
+                        AppScreen.Backup -> BackupRestoreScreen(backupViewModel, viewModel::goBack)
                     }
                 }
                 SnackbarHost(

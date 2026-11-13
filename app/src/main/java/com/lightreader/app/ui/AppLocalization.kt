@@ -3,6 +3,7 @@ package com.lightreader.app.ui
 import android.content.Context
 import android.content.res.Configuration
 import android.os.LocaleList
+import android.view.ContextThemeWrapper
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -47,5 +48,7 @@ private fun Context.localizedContext(language: AppLanguage): Context {
     val configuration = Configuration(resources.configuration).apply {
         setLocales(LocaleList(locale))
     }
-    return createConfigurationContext(configuration)
+    // Keep the Activity in the ContextWrapper chain. A standalone configuration
+    // context loses activity-result/system-bar owners when changing or restoring language.
+    return ContextThemeWrapper(this, theme).apply { applyOverrideConfiguration(configuration) }
 }

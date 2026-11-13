@@ -1,0 +1,29 @@
+<resources>
+    <string name="backup_title">Backup and restore</string>
+    <string name="backup_description">Export books, original text, progress, bookmarks and reading settings. API keys, security keys, logs and unfinished downloads are excluded.</string>
+    <string name="backup_export">Export backup</string>
+    <string name="backup_import">Choose backup to preview</string>
+    <string name="backup_working">Preparing and verifying files…</string>
+    <string name="backup_preview">Ready: %1$d · Duplicates: %2$d · Invalid: %3$d</string>
+    <string name="backup_duplicate_rule">Duplicate books are skipped. Existing reading progress is kept.</string>
+    <string name="backup_invalid">Invalid, skipped</string>
+    <string name="backup_duplicate">Already in library, skipped</string>
+    <string name="backup_ready">Ready to restore</string>
+    <string name="backup_settings">Also restore reading and appearance settings</string>
+    <string name="backup_confirm">Restore selected archive</string>
+    <string name="backup_result">Restored %1$d books, skipped %2$d duplicates and %3$d invalid books.</string>
+    <string name="backup_exported">Exported %1$d books.</string>
+    <string name="backup_error">Backup operation failed: %1$s</string>
+    <string name="backup_settings_failed">Books were restored, but settings could not be saved. Your library is intact.</string>
+    <string name="search_partial_results">Found %1$d so far · search is incomplete</string>
+    <string name="search_continue">Continue searching</string>
+    <string name="search_return_results">Return to search results</string>
+    <string name="search_return_origin">Return to before search</string>
+    <string name="web_not_found">The content or address is no longer available (404).</string>
+    <string name="web_rate_limited">The site is limiting requests. Wait before retrying (429).</string>
+    <string name="web_retry_after">Please wait at least %1$d seconds.</string>
+    <string name="web_ai_configuration">AI fallback is disabled or no API key is configured. Check AI settings.</string>
+    <string name="web_ai_failure">The AI service could not parse this page. Check the service configuration or retry later.</string>
+    <string name="web_submission_failed">Task creation failed. The preview is kept so you can retry.</string>
+    <string name="web_task_reused">An update task already exists. Opened downloads.</string>
+</resources>

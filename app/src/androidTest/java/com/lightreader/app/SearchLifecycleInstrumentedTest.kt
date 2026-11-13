@@ -5,6 +5,11 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.printToString
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -14,6 +19,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.text.AnnotatedString
 import androidx.lifecycle.ViewModelProvider
@@ -27,6 +33,7 @@ import com.lightreader.app.ui.ReaderViewModel
 import com.lightreader.app.ui.BookSearchViewModel
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -54,11 +61,29 @@ class SearchLifecycleInstrumentedTest {
         composeRule.waitUntil(10_000) {
             composeRule.onAllNodesWithText(BOOK_TITLE).fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithText(BOOK_TITLE).performClick()
-        composeRule.waitUntil(10_000) {
-            composeRule.onAllNodesWithContentDescription(text(R.string.action_search)).fetchSemanticsNodes().isNotEmpty()
+        composeRule.onNodeWithText(BOOK_TITLE).performScrollTo().assertIsDisplayed().performClick()
+        val openingReader = ViewModelProvider(composeRule.activity)[ReaderViewModel::class.java]
+        try {
+            // Presence of an icon is not the completion signal: first-page preview keeps
+            // loading=true, while the reader's five-second chrome timer runs independently.
+            // Wait for the book's actual ready state, then reveal chrome as a reader would.
+            composeRule.waitUntil(10_000) {
+                val value = openingReader.readerState.value
+                value.book?.id == BOOK_ID && !value.loading && value.pages.isNotEmpty() &&
+                    composeRule.onAllNodesWithTag(ReaderTestTags.READER).fetchSemanticsNodes().isNotEmpty()
+            }
+            if (!openingReader.readerState.value.toolbarVisible) {
+                composeRule.onNodeWithTag(ReaderTestTags.READER).performTouchInput { click(center) }
+            }
+            composeRule.onNodeWithContentDescription(text(R.string.action_search)).assertIsDisplayed().assertIsEnabled()
+        } catch (failure: Throwable) {
+            val value = openingReader.readerState.value
+            val tree = runCatching { composeRule.onRoot(useUnmergedTree = true).printToString(maxDepth = 8) }
+                .getOrElse { "UI tree unavailable: ${it.javaClass.simpleName}" }
+            throw AssertionError("Before search: screen=${openingReader.uiState.value.screen}, book=${value.book?.id}, loading=${value.loading}, pages=${value.pages.size}, toolbar=${value.toolbarVisible}, error=${value.error}\n$tree", failure)
         }
         composeRule.onNodeWithContentDescription(text(R.string.action_search)).performClick()
+        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag(ReaderTestTags.SEARCH_INPUT).fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithTag(ReaderTestTags.SEARCH_INPUT).performTextReplacement(QUERY)
         composeRule.waitUntil(5_000) {
             !composeRule.onNodeWithTag(ReaderTestTags.SEARCH_SUBMIT).fetchSemanticsNode()
@@ -99,12 +124,57 @@ class SearchLifecycleInstrumentedTest {
         assertEquals(expectedChapterId, reader.chapters[reader.chapterIndex].id)
     }
 
-    private fun seedBook(): Long = runBlocking {
+    @Test fun pagedResultsReturnToListAndOriginalSavedAnchor() {
+        seedBook(matches = 131)
+        val reader = ViewModelProvider(composeRule.activity)[ReaderViewModel::class.java]
+        val search = ViewModelProvider(composeRule.activity)[BookSearchViewModel::class.java]
+        composeRule.runOnIdle { reader.openBook(BOOK_ID) }
+        composeRule.waitUntil(10_000) { !reader.readerState.value.loading && reader.readerState.value.pages.size > 2 }
+        composeRule.runOnIdle { reader.pageSelected(2) }
+        val origin = reader.currentSearchOrigin()!!
+        composeRule.runOnIdle { reader.openSearch(BOOK_ID) }
+        composeRule.onNodeWithTag(ReaderTestTags.SEARCH_INPUT).performTextReplacement(QUERY)
+        composeRule.onNodeWithTag(ReaderTestTags.SEARCH_SUBMIT).performClick()
+        composeRule.waitUntil(15_000) { !search.state.value.searching && search.state.value.results.size == 100 }
+        assertTrue(search.state.value.hasMore)
+        composeRule.onNodeWithText(text(R.string.search_continue)).performClick()
+        composeRule.waitUntil(15_000) { search.state.value.complete }
+        assertEquals(131, search.state.value.results.size)
+        composeRule.onNodeWithTag("search_results_list").performScrollToIndex(80)
+        composeRule.waitUntil(5_000) { search.state.value.listIndex >= 79 }
+        val selectedNode = composeRule.onAllNodesWithTag(ReaderTestTags.SEARCH_RESULT)[0]
+        selectedNode.performScrollTo().assertIsDisplayed()
+        composeRule.waitForIdle()
+        val savedIndex = search.state.value.listIndex
+        selectedNode.performClick()
+        try {
+            composeRule.waitUntil(10_000) { !reader.readerState.value.loading && reader.readerState.value.chapterIndex == 1 }
+        } catch (timeout: Throwable) {
+            val value = reader.readerState.value
+            throw AssertionError("Result navigation: screen=${reader.uiState.value.screen}, book=${value.book?.id}, chapter=${value.chapterIndex}, loading=${value.loading}, pages=${value.pages.size}, error=${value.error}", timeout)
+        }
+        composeRule.runOnIdle { reader.setToolbarVisible(true) }
+        composeRule.onNodeWithText(text(R.string.reader_return_results)).performClick()
+        composeRule.onNodeWithTag(ReaderTestTags.SEARCH).assertIsDisplayed()
+        assertEquals(savedIndex, search.state.value.listIndex)
+        composeRule.activityRule.scenario.recreate()
+        composeRule.onNodeWithTag(ReaderTestTags.SEARCH).assertIsDisplayed()
+        assertEquals(savedIndex, search.state.value.listIndex)
+        composeRule.onNodeWithText(text(R.string.search_return_origin)).performClick()
+        composeRule.waitUntil(10_000) {
+            val current = reader.readerState.value
+            !current.loading && current.chapters.getOrNull(current.chapterIndex)?.id == origin.chapterId
+        }
+        composeRule.waitUntil(10_000) { runBlocking { application.container.bookRepository.progress(BOOK_ID)?.charOffset == origin.charOffset } }
+        assertEquals(origin, reader.currentSearchOrigin())
+    }
+
+    private fun seedBook(matches: Int = 1): Long = runBlocking {
         val directory = File(application.filesDir, "books/$BOOK_ID/chapters").apply { mkdirs() }
         val chapters = (0..1).map { index ->
             val title = if (index == 0) "First Chapter" else "Second Chapter"
             val content = "$title\n" + "Morning light falls across the quiet river. ".repeat(40) +
-                if (index == 1) "\nThe lighthouse opens the way home.\n" else "\nThe journey begins.\n"
+                if (index == 1) "\nThe lighthouse opens the way home.\n".repeat(matches) else "\nThe journey begins.\n"
             val file = File(directory, "$index.txt").apply { writeText(content) }
             ChapterEntity(
                 bookId = BOOK_ID,
