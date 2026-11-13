@@ -23,23 +23,24 @@ internal class SystemPickerWindowProbe(private val activity: () -> MainActivity)
         automation.serviceInfo = info
     }
 
-    fun awaitAppWindow() {
+    fun awaitAppWindow(beforeSnapshot: () -> Unit = {}) {
         instrumentation.waitForIdleSync()
-        await("Reader resumed with window/input focus") { it.appReady }
+        await("Reader resumed with window/input focus", beforeSnapshot) { it.appReady }
     }
 
-    fun awaitDocumentsUi() {
-        await("actual DocumentsUI input window") { it.focusedPackage in DOCUMENT_PACKAGES }
+    fun awaitDocumentsUi(beforeSnapshot: () -> Unit = {}) {
+        await("actual DocumentsUI input window", beforeSnapshot) { it.focusedPackage in DOCUMENT_PACKAGES }
     }
 
     fun documentsUiHasFocus(): Boolean = snapshot().focusedPackage in DOCUMENT_PACKAGES
 
     fun appHasFocus(): Boolean = snapshot().appReady
 
-    private fun await(description: String, ready: (Snapshot) -> Boolean) {
+    private fun await(description: String, beforeSnapshot: () -> Unit, ready: (Snapshot) -> Boolean) {
         val deadline = SystemClock.uptimeMillis() + 5_000
         var previous: Snapshot? = null
         do {
+            beforeSnapshot()
             // Always read both sides: a missing Activity focus must not short-circuit window evidence.
             val current = snapshot()
             if (current != previous) Log.i(TAG, "$description: $current")

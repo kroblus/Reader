@@ -44,3 +44,13 @@
 失败脚本只识别旧版`Signer #1 certificate SHA-256 digest:`；仓库已发布v0.3.4的成功日志已经使用新版`V3.0 Signer: certificate SHA-256 digest:`，旧解析返回空值而无法继续核验。增加严格解析器与8项正反用例，兼容两种格式，仍要求APK验证成功、唯一签名身份、完整SHA-256，并拒绝未知格式和冲突证书。新APK与配置证书、已发布v0.3.4的证书一致性检查均保留，并输出公开指纹及具体失败环节；不打印私钥或口令。
 
 本轮报告与签名失败日志保留于`build/reports/github-release-v0.3.5/final-ci/`、`ci-failure-third.log`。修正仅涉及发布验证脚本、CI调用和本文；最终标签仍重新执行完整门禁。
+
+## 第四轮系统选择器观察修复
+
+运行[43460475613](https://github.com/kroblus/Reader/actions/runs/43460475613)，源码`ed2f1be95f5bff9dd83ac8c9f5f8a7793de1f43e`。单元/Lint/构建与8项证书解析回归通过；设备测试108/109通过、1失败、0跳过，发布被阻止。失败为旧系统边界用例仍直接断言`pressBack()`回执；Logcat显示16:34:08.521 Reader已RESUMED，16:34:09.519辅助事件等待1000ms超时，并非DocumentsUI未关闭。
+
+系统边界测试统一采用已有输入窗口探针，取消后仍要求Activity恢复、真实前台输入窗口、空书架可见且数据库无变化；导入、Home与音量键路径全部保留。保持5秒窗口等待以及已知系统遮罩处理，不新增skip或重试。检查所有`pressBack`及活动包名观察点，并核对UI Automator 2.4.0实现：Back调用`sendKeyAndWaitForEvent`，音量键调用`sendKeys`，不将两者混为一谈。
+
+本地QA/test构建39秒通过；API35对应5项（系统边界3项、备份1项、语言切换1项）全部通过，0失败/跳过，报告`20261113T164132Z-4deb08bb-ed2f1be95f5b-04754c6fd0e9`。第四轮原始失败保留于`failed-ci-fourth/`和`ci-failure-fourth.log`，应用生产代码没有变化。
+
+API36同组5/5通过，0失败/跳过，报告`20261113T164409Z-01ed60c4-ed2f1be95f5b-04754c6fd0e9`。两组报告的181份源文件摘要与提交前工作区逐项匹配。

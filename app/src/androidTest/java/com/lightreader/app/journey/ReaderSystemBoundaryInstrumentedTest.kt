@@ -19,12 +19,11 @@ import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.Lifecycle
-import androidx.test.platform.app.InstrumentationRegistry
 import com.lightreader.app.BuildConfig
 import com.lightreader.app.MainActivity
 import com.lightreader.app.ReaderApplication
 import com.lightreader.app.R
+import com.lightreader.app.SystemPickerWindowProbe
 import com.lightreader.app.ui.ReaderTestTags
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -47,13 +46,14 @@ class ReaderSystemBoundaryInstrumentedTest {
 
     private val application: ReaderApplication
         get() = composeRule.activity.application as ReaderApplication
+    private val windows by lazy { SystemPickerWindowProbe { composeRule.activity } }
     private var stagedUri: Uri? = null
     @Before
     fun assertIsolatedQaPackage() = runBlocking {
         assertTrue("System-boundary tests must never target production data", BuildConfig.APPLICATION_ID.endsWith(".qa"))
         application.container.database.clearAllTables()
         application.container.keyStore.clear()
-        awaitAppWindow(UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()))
+        awaitAppWindow(windows.device)
     }
 
     @After
@@ -66,12 +66,16 @@ class ReaderSystemBoundaryInstrumentedTest {
     fun systemFilePickerCancelReturnsToUntouchedEmptyShelf() {
         evidence.step("Open the system document picker from the empty shelf")
         composeRule.onNodeWithText(composeRule.activity.getString(R.string.library_import_file)).performClick()
-        val uiDevice = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        val uiDevice = windows.device
         awaitSystemPickerWindow(uiDevice)
 
         evidence.step("Cancel with the Android system back action")
-        assertTrue("UI Automator should inject Back", uiDevice.pressBack())
+        // pressBack also waits for a generic accessibility event; that event may time out
+        // after DocumentsUI has already closed. Require the real Reader window and shelf.
+        val reportedSuccess = uiDevice.pressBack()
         awaitAppWindow(uiDevice)
+        assertTrue("Back must report success or restore Reader's actual input window",
+            reportedSuccess || windows.appHasFocus())
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithTag(ReaderTestTags.LIBRARY_EMPTY).fetchSemanticsNodes().isNotEmpty()
         }
@@ -82,7 +86,7 @@ class ReaderSystemBoundaryInstrumentedTest {
     @Test
     fun systemFilePickerImportsQaFixtureWithoutTouchingProductionPackage() {
         assumeTrue("MediaStore Downloads staging requires Android 10+", Build.VERSION.SDK_INT >= 29)
-        val uiDevice = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        val uiDevice = windows.device
         val fileName = "reader_qa_system.txt"
         stageDownloadFixture(uiDevice, fileName)
 
@@ -123,7 +127,7 @@ class ReaderSystemBoundaryInstrumentedTest {
         }
 
         evidence.step("Turn a page with the physical volume-down key")
-        val uiDevice = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        val uiDevice = windows.device
         awaitAppWindow(uiDevice)
         repeat(2) {
             val expectedPage = readerViewModel.readerState.value.pageIndex + 1
@@ -162,23 +166,12 @@ class ReaderSystemBoundaryInstrumentedTest {
     }
 
     private fun awaitAppWindow(uiDevice: UiDevice) {
-        val activity = composeRule.activity
-        composeRule.waitUntil(5_000) {
-            dismissKnownSystemOverlays(uiDevice)
-            var ready = false
-            InstrumentationRegistry.getInstrumentation().runOnMainSync {
-                ready = activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
-                    activity.hasWindowFocus()
-            }
-            ready && uiDevice.hasObject(By.pkg(BuildConfig.APPLICATION_ID))
-        }
+        composeRule.waitForIdle()
+        windows.awaitAppWindow { dismissKnownSystemOverlays(uiDevice) }
     }
 
     private fun awaitSystemPickerWindow(uiDevice: UiDevice) {
-        composeRule.waitUntil(5_000) {
-            dismissKnownSystemOverlays(uiDevice)
-            uiDevice.currentPackageName in setOf("com.android.documentsui", "com.google.android.documentsui")
-        }
+        windows.awaitDocumentsUi { dismissKnownSystemOverlays(uiDevice) }
     }
 
     private fun dismissKnownSystemOverlays(uiDevice: UiDevice) {
