@@ -95,7 +95,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
@@ -119,8 +118,6 @@ import com.lightreader.app.core.model.AppLanguage
 import com.lightreader.app.core.model.AppSkin
 import com.lightreader.app.core.model.Book
 import com.lightreader.app.core.model.ReaderPreferences
-import java.text.DateFormat
-import java.util.Date
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -134,7 +131,6 @@ fun LibraryScreen(
 ) {
     var pendingDelete by remember { mutableStateOf<Book?>(null) }
     var pendingEdit by remember { mutableStateOf<Book?>(null) }
-    var showMoreActions by remember { mutableStateOf(false) }
     var showSkinPicker by remember { mutableStateOf(false) }
     var showImportPicker by remember { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -145,7 +141,6 @@ fun LibraryScreen(
         projectLibraryShelf(state.shelfBooks, searchQuery, sortOrder, locale)
     }
     val focusManager = LocalFocusManager.current
-    val keyboard = LocalSoftwareKeyboardController.current
     val dismissTextInput = rememberDismissTextInput()
     val fontScale = LocalDensity.current.fontScale
     val sortLabel = stringResource(sortOrder.labelResource())
@@ -177,9 +172,11 @@ fun LibraryScreen(
                                         modifier = Modifier.size(30.dp),
                                     )
                                 }
-                                Column(Modifier.padding(start = LightReaderSpacing.sm)) {
+                                Column(Modifier.weight(1f).padding(start = LightReaderSpacing.sm)) {
                                     Text(
                                         stringResource(R.string.brand_name),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                         style = MaterialTheme.typography.headlineMedium.copy(
                                             fontFamily = FontFamily.Default,
                                             fontWeight = FontWeight.Bold,
@@ -187,6 +184,8 @@ fun LibraryScreen(
                                     )
                                     Text(
                                         taglines.taglineAt(state.libraryTaglineIndex),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                         style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Default),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -195,6 +194,8 @@ fun LibraryScreen(
                         } else {
                             Text(
                                 stringResource(R.string.library_my_shelf),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.headlineMedium.copy(
                                     fontFamily = FontFamily.Default,
                                     fontWeight = FontWeight.Bold,
@@ -203,41 +204,17 @@ fun LibraryScreen(
                         }
                     },
                     actions = {
-                        Box {
-                            IconButton(onClick = {
-                                // End the search input session before the popup takes window focus.
-                                // Otherwise dismissing it can briefly restore the editor and IME
-                                // while the outgoing library is still animating away.
-                                focusManager.clearFocus(force = true)
-                                keyboard?.hide()
-                                showMoreActions = true
-                            }) {
-                                Icon(Icons.Outlined.MoreVert, stringResource(R.string.action_more))
-                            }
-                            DropdownMenu(
-                                expanded = showMoreActions,
-                                onDismissRequest = { showMoreActions = false },
-                                // This menu has actions only. Keep keyboard/Back focus without
-                                // transferring the IME target to its temporary popup window.
-                                properties = ActionMenuProperties,
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.library_change_skin)) },
-                                    leadingIcon = { Icon(Icons.Outlined.Palette, null) },
-                                    onClick = {
-                                        showMoreActions = false
-                                        showSkinPicker = true
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.library_app_settings)) },
-                                    leadingIcon = { Icon(Icons.Outlined.Settings, null) },
-                                    onClick = {
-                                        showMoreActions = false
-                                        onOpenAppSettings()
-                                    },
-                                )
-                            }
+                        IconButton(onClick = {
+                            dismissTextInput()
+                            showSkinPicker = true
+                        }) {
+                            Icon(Icons.Outlined.Palette, stringResource(R.string.library_change_skin))
+                        }
+                        IconButton(onClick = {
+                            dismissTextInput()
+                            onOpenAppSettings()
+                        }) {
+                            Icon(Icons.Outlined.Settings, stringResource(R.string.library_app_settings))
                         }
                     },
                 )
@@ -278,7 +255,7 @@ fun LibraryScreen(
                         modifier = Modifier.fillMaxWidth()
                             .padding(horizontal = ReaderUiTokens.pagePadding, vertical = LightReaderSpacing.xs)
                             .focusProperties {
-                                canFocus = screenActive && !showMoreActions && !showSkinPicker &&
+                                canFocus = screenActive && !showSkinPicker &&
                                     !showImportPicker && !showSortMenu && pendingDelete == null && pendingEdit == null
                             }
                             .testTag(ReaderTestTags.LIBRARY_SEARCH),
@@ -378,7 +355,6 @@ fun LibraryScreen(
                             items(shelf.books, key = { "book-${it.book.id}" }) { shelfBook ->
                                 BookCard(
                                     shelfBook = shelfBook,
-                                    continueReading = shelf.recentBook?.book?.id == shelfBook.book.id,
                                     onOpen = { viewModel.openBook(shelfBook.book.id) },
                                     onEdit = { pendingEdit = shelfBook.book },
                                     onDelete = { pendingDelete = shelfBook.book },
@@ -1072,7 +1048,6 @@ private fun ImportSourceRow(
 @Composable
 private fun BookCard(
     shelfBook: ShelfBookUi,
-    continueReading: Boolean,
     onOpen: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -1084,7 +1059,6 @@ private fun BookCard(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(ReaderUiTokens.cardRadius))
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .combinedClickable(
                 role = Role.Button,
                 onClick = onOpen,
@@ -1092,119 +1066,109 @@ private fun BookCard(
                 onLongClick = { dismissTextInput(); onDelete() },
             )
             .padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-            PastelBookCover(book, modifier = Modifier.fillMaxWidth(.90f))
-            Box(Modifier.align(Alignment.TopEnd)) {
-                IconButton(
-                    onClick = { dismissTextInput(); showBookActions = true },
-                    modifier = Modifier.padding(1.dp).size(ReaderUiTokens.iconTouchTarget),
-                ) {
-                    Icon(
-                        Icons.Outlined.MoreVert,
-                        stringResource(R.string.library_book_actions),
-                        Modifier.size(17.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .58f),
-                    )
-                }
-                DropdownMenu(
-                    expanded = showBookActions,
-                    onDismissRequest = { showBookActions = false },
-                    properties = ActionMenuProperties,
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.library_edit_book_info)) },
-                        leadingIcon = { Icon(Icons.Outlined.Edit, null) },
-                        onClick = {
-                            showBookActions = false
-                            onEdit()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.action_delete)) },
-                        leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null) },
-                        onClick = {
-                            showBookActions = false
-                            onDelete()
-                        },
-                    )
+        // Keep the cover and its metadata on the same compact column.
+        Column(Modifier.fillMaxWidth(.76f)) {
+            Box(Modifier.fillMaxWidth()) {
+                PastelBookCover(book)
+                Box(Modifier.align(Alignment.TopEnd)) {
+                    IconButton(
+                        onClick = { dismissTextInput(); showBookActions = true },
+                        modifier = Modifier.size(ReaderUiTokens.iconTouchTarget),
+                    ) {
+                        Icon(
+                            Icons.Outlined.MoreVert,
+                            stringResource(R.string.library_book_actions),
+                            Modifier.size(17.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .72f),
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showBookActions,
+                        onDismissRequest = { showBookActions = false },
+                        properties = ActionMenuProperties,
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.library_edit_book_info)) },
+                            leadingIcon = { Icon(Icons.Outlined.Edit, null) },
+                            onClick = {
+                                showBookActions = false
+                                onEdit()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.action_delete)) },
+                            leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null) },
+                            onClick = {
+                                showBookActions = false
+                                onDelete()
+                            },
+                        )
+                    }
                 }
             }
-        }
-        Spacer(Modifier.height(10.dp))
-        Text(
-            book.title,
-            modifier = Modifier.fillMaxWidth(),
-            style = MaterialTheme.typography.titleMedium.copy(
-                fontFamily = FontFamily.Default,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 14.sp,
-                lineHeight = 18.sp,
-            ),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        book.author?.takeIf { it.isNotBlank() }?.let { author ->
-            Spacer(Modifier.height(3.dp))
-            Text(
-                author,
-                modifier = Modifier.fillMaxWidth(),
-                style = MaterialTheme.typography.labelMedium.copy(
-                    fontFamily = FontFamily.Default,
-                    fontSize = 12.sp,
-                    lineHeight = 15.sp,
-                ),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            shelfBook.currentChapterTitle?.let {
-                stringResource(R.string.library_current_chapter, it)
-            } ?: stringResource(R.string.library_not_started, book.chapterCount, book.format.name),
-            modifier = Modifier.fillMaxWidth(),
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontFamily = FontFamily.Default,
-                fontSize = 12.sp,
-                lineHeight = 15.sp,
-            ),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.height(7.dp))
-        ShelfProgressBar(progressPercent = shelfBook.progressPercent, modifier = Modifier.fillMaxWidth())
-        Spacer(Modifier.height(6.dp))
-        Text(
-            if (shelfBook.started) {
-                stringResource(R.string.library_progress_percent, shelfBook.progressPercent)
-            } else {
-                stringResource(R.string.library_ready_to_start)
-            },
-            modifier = Modifier.fillMaxWidth(),
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontFamily = FontFamily.Default,
-                fontWeight = FontWeight.Medium,
-                fontSize = 11.sp,
-            ),
-            color = MaterialTheme.colorScheme.primary,
-        )
-        if (continueReading) {
             Spacer(Modifier.height(8.dp))
             Text(
-                stringResource(R.string.library_continue_button),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
+                book.title,
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontFamily = FontFamily.Default,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    lineHeight = 17.sp,
+                ),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
-            shelfBook.updatedAt?.let { updatedAt ->
+            book.author?.takeIf { it.isNotBlank() }?.let { author ->
+                Spacer(Modifier.height(2.dp))
                 Text(
-                    stringResource(R.string.library_last_read_date, DateFormat.getDateInstance(DateFormat.SHORT).format(Date(updatedAt))),
-                    style = MaterialTheme.typography.labelSmall,
+                    author,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontFamily = FontFamily.Default,
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp,
+                    ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                shelfBook.currentChapterTitle?.let {
+                    stringResource(R.string.library_current_chapter, it)
+                } ?: stringResource(R.string.library_not_started, book.chapterCount, book.format.name),
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontFamily = FontFamily.Default,
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp,
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(6.dp))
+            ShelfProgressBar(progressPercent = shelfBook.progressPercent, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (shelfBook.started) {
+                    stringResource(R.string.library_progress_percent, shelfBook.progressPercent)
+                } else {
+                    stringResource(R.string.library_ready_to_start)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontFamily = FontFamily.Default,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                ),
+                color = MaterialTheme.colorScheme.primary,
+            )
         }
     }
 }
@@ -1214,7 +1178,7 @@ private fun ShelfProgressBar(progressPercent: Int, modifier: Modifier = Modifier
     val progress = (progressPercent.coerceIn(0, 100) / 100f)
     Box(
         modifier
-            .height(4.dp)
+            .height(3.dp)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.primary.copy(alpha = .11f)),
     ) {
@@ -1222,7 +1186,7 @@ private fun ShelfProgressBar(progressPercent: Int, modifier: Modifier = Modifier
             Box(
                 Modifier
                     .fillMaxWidth(progress)
-                    .height(4.dp)
+                    .height(3.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primary.copy(alpha = .82f)),
             )

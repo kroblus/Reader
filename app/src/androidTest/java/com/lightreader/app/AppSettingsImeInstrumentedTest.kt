@@ -98,17 +98,12 @@ class AppSettingsImeInstrumentedTest {
                     }
                 }
                 val editorFocusedBefore = searchEditor().isFocused
-                val more = requireNotNull(device.wait(Until.findObject(By.desc(activity.getString(R.string.action_more))), 5_000)) {
-                    "Library More button was not accessible"
-                }
-                recorder.phase = "menu-click"
-                val start = SystemClock.elapsedRealtimeNanos()
-                more.click()
-                val settings = requireNotNull(device.wait(Until.findObject(By.text(activity.getString(R.string.library_app_settings))), 5_000)) {
-                    "App settings menu item was not accessible"
+                val settings = requireNotNull(device.wait(Until.findObject(By.desc(activity.getString(R.string.library_app_settings))), 5_000)) {
+                    "Direct App settings button was not accessible"
                 }
                 recorder.phase = "settings-click"
-                val settingsClick = SystemClock.elapsedRealtimeNanos()
+                val start = SystemClock.elapsedRealtimeNanos()
+                val settingsClick = start
                 settings.click()
                 await("app settings route") { viewModel.uiState.value.screen is AppScreen.AppSettings }
                 assertTrue("App settings title must actually be visible", device.wait(
@@ -182,7 +177,7 @@ class AppSettingsImeInstrumentedTest {
                     .put("cleanup_failure", cleanupFailure?.toString() ?: JSONObject.NULL)
                     .put("clock", "Choreographer vsync + SystemClock.elapsedRealtimeNanos; no Compose test clock")
                     .put("observation", "read-only root WindowInsetsCompat.Type.ime; no insets listener/callback installed")
-                    .put("window", "before real More click through 800ms of stable app-settings frames")
+                    .put("window", "before direct settings click through 800ms of stable app-settings frames")
                     .put("sdk", Build.VERSION.SDK_INT).put("fingerprint", Build.FINGERPRINT)
                     .put("window_animation_scale", animationScale(Settings.Global.WINDOW_ANIMATION_SCALE))
                     .put("transition_animation_scale", animationScale(Settings.Global.TRANSITION_ANIMATION_SCALE))

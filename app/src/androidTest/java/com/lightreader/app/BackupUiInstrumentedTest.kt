@@ -58,8 +58,7 @@ class BackupUiInstrumentedTest {
         try {
             awaitAppWindow()
             compose.waitUntil(5_000) { compose.onAllNodesWithText("Backup UI fixture").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithContentDescription(text(R.string.action_more)).performClick()
-            compose.onNodeWithText(text(R.string.library_app_settings)).performClick()
+            compose.onNodeWithContentDescription(text(R.string.library_app_settings)).performClick()
             compose.onNodeWithTag(ReaderTestTags.APP_SETTINGS).assertIsDisplayed()
             compose.onNode(hasText(text(R.string.backup_title)) and hasClickAction()).performScrollTo().performClick()
             compose.onNodeWithText(text(R.string.backup_export)).assertIsDisplayed()

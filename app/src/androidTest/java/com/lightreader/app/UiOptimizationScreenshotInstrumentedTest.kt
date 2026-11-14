@@ -183,8 +183,7 @@ class UiOptimizationScreenshotInstrumentedTest {
         showReaderChrome()
         composeRule.onNodeWithContentDescription(text(R.string.action_back)).performClick()
 
-        composeRule.onNodeWithContentDescription(text(R.string.action_more)).performClick()
-        composeRule.onNodeWithText(text(R.string.library_app_settings)).performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.library_app_settings)).performClick()
         composeRule.onNodeWithTag(ReaderTestTags.APP_SETTINGS).assertIsDisplayed()
         capture("016_app_settings")
 

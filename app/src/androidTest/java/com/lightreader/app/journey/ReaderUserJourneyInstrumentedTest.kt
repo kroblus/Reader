@@ -49,9 +49,8 @@ class ReaderUserJourneyInstrumentedTest {
         composeRule.onNodeWithTag(ReaderTestTags.LIBRARY).assertIsDisplayed()
         composeRule.onNodeWithTag(ReaderTestTags.LIBRARY_EMPTY).assertIsDisplayed()
 
-        evidence.step("Open application settings from the overflow menu")
-        composeRule.onNodeWithContentDescription(text(R.string.action_more)).performClick()
-        composeRule.onNodeWithText(text(R.string.library_app_settings)).performClick()
+        evidence.step("Open application settings from the direct bookshelf button")
+        composeRule.onNodeWithContentDescription(text(R.string.library_app_settings)).performClick()
         composeRule.onNodeWithTag(ReaderTestTags.APP_SETTINGS).assertIsDisplayed()
         composeRule.onAllNodesWithText(text(R.string.library_dom_bridge)).assertCountEquals(0)
 

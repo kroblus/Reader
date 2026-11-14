@@ -52,8 +52,7 @@ class ActionSurfaceImeInstrumentedTest {
         for (preparation in Preparation.entries) {
             prepareSearch(preparation)
             measure("theme-${preparation.name}", allowInitialIme = preparation == Preparation.VISIBLE) {
-                clickDescription(R.string.action_more)
-                clickText(R.string.library_change_skin)
+                clickDescription(R.string.library_change_skin)
                 sheetOpened(R.string.library_skin_title)
                 clickText(R.string.skin_ocean)
                 settle()
@@ -64,8 +63,7 @@ class ActionSurfaceImeInstrumentedTest {
             }
         }
         measure("theme-outside-dismissal") {
-            clickDescription(R.string.action_more)
-            clickText(R.string.library_change_skin)
+            clickDescription(R.string.library_change_skin)
             sheetOpened(R.string.library_skin_title)
             // The top part of the screen is the sheet scrim, outside all sheet actions.
             device.click(device.displayWidth / 2, device.displayHeight / 8)
@@ -115,8 +113,7 @@ class ActionSurfaceImeInstrumentedTest {
     @Test fun settingsThemeLanguageAndLicenseWindowsDoNotShowIme() = exercise("settings-actions") {
         prepareSearch(Preparation.BACK_DISMISSED)
         measure("enter-settings") {
-            clickDescription(R.string.action_more)
-            clickText(R.string.library_app_settings)
+            clickDescription(R.string.library_app_settings)
             await("settings route") { viewModel.uiState.value.screen is AppScreen.AppSettings }
             settle()
         }
@@ -183,7 +180,7 @@ class ActionSurfaceImeInstrumentedTest {
         check(originalHardwareIme in listOf("null", "0", "1"))
         var failure: Throwable? = null
         try {
-            // Observe consecutive taps while popup/sheet animations are still running.
+            // Observe direct theme entry while its sheet animation is still running.
             if (name == "library-theme") Configurator.getInstance().waitForIdleTimeout = 0
             device.executeShellCommand("settings put secure show_ime_with_hard_keyboard 1")
             runBlocking {

@@ -93,8 +93,7 @@ class WebUserJourneyInstrumentedTest {
     }
 
     private fun openWebImport() {
-        composeRule.onNodeWithContentDescription(text(R.string.action_more)).performClick()
-        composeRule.onNodeWithText(text(R.string.library_app_settings)).performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.library_app_settings)).performClick()
         composeRule.onNodeWithText(text(R.string.library_web_import)).performScrollTo().performClick()
         composeRule.onNodeWithTag(ReaderTestTags.WEB_IMPORT).assertIsDisplayed()
     }

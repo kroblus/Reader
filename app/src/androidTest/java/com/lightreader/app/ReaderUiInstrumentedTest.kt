@@ -78,8 +78,7 @@ class ReaderUiInstrumentedTest {
 
     @Test
     fun globalSkinCanBeChangedFromLibrary() {
-        composeRule.onNodeWithContentDescription(text(R.string.action_more)).performClick()
-        composeRule.onNodeWithText(text(R.string.library_change_skin)).performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.library_change_skin)).performClick()
         composeRule.onNodeWithText(text(R.string.library_skin_body)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.skin_ocean)).performClick()
         composeRule.onNodeWithText(text(R.string.skin_ocean)).assertIsDisplayed()
@@ -96,8 +95,7 @@ class ReaderUiInstrumentedTest {
         composeRule.onNodeWithText(text(R.string.web_import_flow_title)).assertIsDisplayed()
         composeRule.onNodeWithContentDescription(text(R.string.action_back)).performClick()
         composeRule.onNodeWithText(text(R.string.library_empty_title)).assertIsDisplayed()
-        composeRule.onNodeWithContentDescription(text(R.string.action_more)).performClick()
-        composeRule.onNodeWithText(text(R.string.library_app_settings)).performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.library_app_settings)).performClick()
         composeRule.onNodeWithText(text(R.string.app_settings_title)).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.library_deepseek_settings)).performScrollTo().performClick()
         composeRule.onNodeWithText(text(R.string.api_settings_title)).assertIsDisplayed()
@@ -106,8 +104,7 @@ class ReaderUiInstrumentedTest {
 
     @Test
     fun apiKeyDeleteRequiresConfirmation() {
-        composeRule.onNodeWithContentDescription(text(R.string.action_more)).performClick()
-        composeRule.onNodeWithText(text(R.string.library_app_settings)).performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.library_app_settings)).performClick()
         composeRule.onNodeWithText(text(R.string.library_deepseek_settings)).performScrollTo().performClick()
         composeRule.onNode(hasSetTextAction()).performTextInput("test-key")
         composeRule.onNodeWithText(text(R.string.api_settings_save_key)).performClick()
@@ -194,8 +191,7 @@ class ReaderUiInstrumentedTest {
 
     @Test
     fun appSettingsSwitchesLanguageImmediately() {
-        composeRule.onNodeWithContentDescription(text(R.string.action_more)).performClick()
-        composeRule.onNodeWithText(text(R.string.library_app_settings)).performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.library_app_settings)).performClick()
         composeRule.onNodeWithText(text(R.string.app_settings_title)).assertIsDisplayed()
 
         composeRule.onNodeWithText(text(R.string.app_settings_language)).performClick()
@@ -556,8 +552,7 @@ class ReaderUiInstrumentedTest {
     @Test
     fun webImportDownloadTaskActionsRequireConfirmation() {
         seedDownloadTask()
-        composeRule.onNodeWithContentDescription(text(R.string.action_more)).performClick()
-        composeRule.onNodeWithText(text(R.string.library_app_settings)).performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.library_app_settings)).performClick()
         composeRule.onNodeWithText(text(R.string.library_web_import)).performScrollTo().performClick()
         composeRule.onNodeWithText(text(R.string.web_import_flow_title)).assertIsDisplayed()
         composeRule.onNodeWithText("失败任务").assertIsDisplayed()

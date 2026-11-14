@@ -14,6 +14,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -56,22 +57,27 @@ class LibraryDiscoveryInstrumentedTest {
     }
 
     @Test
-    fun continueReadingAndDiscoverySurviveNavigation() {
+    fun readingProgressAndDiscoverySurviveNavigation() {
         composeRule.onNodeWithTag(ReaderTestTags.LIBRARY_EMPTY).assertIsDisplayed()
         seedBook("reading", "Zulu River", "Mira", addedAt = 1_000, lastReadAt = 2_000)
         seedBook("imported", "Alpha Trail", "Ada", addedAt = 3_000, lastReadAt = null)
         composeRule.waitUntil(10_000) {
-            composeRule.onAllNodesWithText(text(R.string.library_continue_button)).fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithText("Zulu River").fetchSemanticsNodes().isNotEmpty()
         }
 
-        // The newer unread import must not take ownership of the continue-reading card.
-        composeRule.onNode(hasText("Zulu River") and hasText(text(R.string.library_continue_button)))
+        // Chapter and progress remain on the read book after removing the extra footer.
+        composeRule.onNode(hasText("Zulu River") and hasClickAction())
             .assertIsDisplayed()
             .assert(hasText(composeRule.activity.getString(R.string.library_current_chapter, "Chapter One")))
             // 100 characters read out of the 2,972-character fixture rounds to 3%.
             .assert(hasText(composeRule.activity.getString(R.string.library_progress_percent, 3)))
-        composeRule.onAllNodes(hasText("Alpha Trail") and hasText(text(R.string.library_continue_button)))
+        composeRule.onAllNodesWithText(text(R.string.library_continue_button))
             .assertCountEquals(0)
+        composeRule.onAllNodesWithText(text(R.string.library_last_read_date).substringBefore("%"), substring = true)
+            .assertCountEquals(0)
+        composeRule.onNodeWithContentDescription(text(R.string.library_change_skin)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(text(R.string.library_app_settings)).assertIsDisplayed()
+        composeRule.onAllNodesWithContentDescription(text(R.string.action_more)).assertCountEquals(0)
         capture("01_populated")
 
         searchFor("rIvEr")
@@ -91,7 +97,7 @@ class LibraryDiscoveryInstrumentedTest {
         composeRule.onNodeWithTag(ReaderTestTags.LIBRARY_SEARCH).assert(
             SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")),
         )
-        composeRule.onNode(hasText("Zulu River") and hasText(text(R.string.library_continue_button)))
+        composeRule.onNode(hasText("Zulu River") and hasClickAction())
             .assertIsDisplayed()
 
         // Both authors match. Verify the selected sort and access both books, including off-screen
@@ -105,8 +111,7 @@ class LibraryDiscoveryInstrumentedTest {
             .performScrollToNode(hasText("Zulu River") and hasClickAction())
         composeRule.onNode(hasText("Zulu River") and hasClickAction()).assertIsDisplayed()
 
-        composeRule.onNodeWithContentDescription(text(R.string.action_more)).performClick()
-        composeRule.onNodeWithText(text(R.string.library_app_settings)).performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.library_app_settings)).performClick()
         composeRule.onNodeWithTag(ReaderTestTags.APP_SETTINGS).assertIsDisplayed()
         composeRule.onNodeWithContentDescription(text(R.string.action_back)).performClick()
         composeRule.waitUntil(10_000) {
