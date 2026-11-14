@@ -17,6 +17,7 @@ import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Configurator
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -263,9 +264,23 @@ class ActionSurfaceImeInstrumentedTest {
                 device.displayWidth / 2, device.displayHeight / 3, 25)
             settle()
         }
-        visibleText(id).click()
+        clickCurrent { visibleText(id) }
     }
-    private fun clickDescription(@StringRes id: Int) = requireNotNull(device.wait(Until.findObject(By.desc(activity.getString(id))), 5_000)) { "Missing ${activity.getString(id)}" }.click()
+    private fun clickDescription(@StringRes id: Int) = clickCurrent {
+        requireNotNull(device.wait(Until.findObject(By.desc(activity.getString(id))), 5_000)) { "Missing ${activity.getString(id)}" }
+    }
+    private fun clickCurrent(find: () -> UiObject2) {
+        repeat(3) { attempt ->
+            try {
+                find().click()
+                return
+            } catch (stale: StaleObjectException) {
+                // Recomposition can replace a menu node between lookup and tap.
+                // Frame recording continues throughout; no IME observations are discarded.
+                if (attempt == 2) throw stale
+            }
+        }
+    }
     private fun sheetOpened(@StringRes title: Int) {
         visibleText(title)
         await("independent sheet window") { recorder.snapshot().lastOrNull()?.rootCount?.let { it >= 2 } == true }
