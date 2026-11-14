@@ -1,6 +1,5 @@
 package com.lightreader.app.ui
 
-import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -72,7 +70,6 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -99,7 +96,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
@@ -150,6 +146,7 @@ fun LibraryScreen(
     }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val dismissTextInput = rememberDismissTextInput()
     val fontScale = LocalDensity.current.fontScale
     val sortLabel = stringResource(sortOrder.labelResource())
     val taglines = stringArrayResource(R.array.brand_taglines)
@@ -222,10 +219,7 @@ fun LibraryScreen(
                                 onDismissRequest = { showMoreActions = false },
                                 // This menu has actions only. Keep keyboard/Back focus without
                                 // transferring the IME target to its temporary popup window.
-                                properties = PopupProperties(
-                                    flags = WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
-                                        WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
-                                ),
+                                properties = ActionMenuProperties,
                             ) {
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.library_change_skin)) },
@@ -257,7 +251,7 @@ fun LibraryScreen(
                                 contentDescription = importNovelLabel
                                 role = Role.Button
                             },
-                        onClick = { showImportPicker = true },
+                        onClick = { dismissTextInput(); showImportPicker = true },
                         icon = { Icon(Icons.Outlined.Add, null) },
                         text = {
                             Text(
@@ -283,7 +277,10 @@ fun LibraryScreen(
                         onValueChange = { searchQuery = it },
                         modifier = Modifier.fillMaxWidth()
                             .padding(horizontal = ReaderUiTokens.pagePadding, vertical = LightReaderSpacing.xs)
-                            .focusProperties { canFocus = screenActive && !showMoreActions }
+                            .focusProperties {
+                                canFocus = screenActive && !showMoreActions && !showSkinPicker &&
+                                    !showImportPicker && !showSortMenu && pendingDelete == null && pendingEdit == null
+                            }
                             .testTag(ReaderTestTags.LIBRARY_SEARCH),
                         placeholder = { Text(stringResource(R.string.library_search_hint)) },
                         leadingIcon = { Icon(Icons.Outlined.Search, null) },
@@ -312,13 +309,17 @@ fun LibraryScreen(
                         )
                         Box {
                             IconButton(
-                                onClick = { showSortMenu = true },
+                                onClick = { dismissTextInput(); showSortMenu = true },
                                 modifier = Modifier.testTag(ReaderTestTags.LIBRARY_SORT)
                                     .semantics { stateDescription = sortLabel },
                             ) {
                                 Icon(Icons.AutoMirrored.Outlined.Sort, stringResource(R.string.library_sort))
                             }
-                            DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                            DropdownMenu(
+                                expanded = showSortMenu,
+                                onDismissRequest = { showSortMenu = false },
+                                properties = ActionMenuProperties,
+                            ) {
                                 LibrarySortOrder.entries.forEach { order ->
                                     DropdownMenuItem(
                                         text = { Text(stringResource(order.labelResource())) },
@@ -343,22 +344,6 @@ fun LibraryScreen(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        shelf.recentBook?.let { recent ->
-                            item(key = "recent-heading", span = { GridItemSpan(maxLineSpan) }) {
-                                Text(
-                                    stringResource(R.string.library_recent_reading),
-                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                )
-                            }
-                            item(key = "recent-book", span = { GridItemSpan(maxLineSpan) }) {
-                                RecentReadingCard(
-                                    shelfBook = recent,
-                                    onOpen = { viewModel.openBook(recent.book.id) },
-                                    onEdit = { pendingEdit = recent.book },
-                                    onDelete = { pendingDelete = recent.book },
-                                )
-                            }
-                        }
                         if (shelf.books.isEmpty()) {
                             item(key = "no-results", span = { GridItemSpan(maxLineSpan) }) {
                                 Column(
@@ -379,7 +364,7 @@ fun LibraryScreen(
                                     }
                                 }
                             }
-                        } else if (shelf.books.size > 1 || shelf.recentBook == null) {
+                        } else {
                             item(key = "all-books-heading", span = { GridItemSpan(maxLineSpan) }) {
                                 Text(
                                     stringResource(R.string.library_all_books),
@@ -393,6 +378,7 @@ fun LibraryScreen(
                             items(shelf.books, key = { "book-${it.book.id}" }) { shelfBook ->
                                 BookCard(
                                     shelfBook = shelfBook,
+                                    continueReading = shelf.recentBook?.book?.id == shelfBook.book.id,
                                     onOpen = { viewModel.openBook(shelfBook.book.id) },
                                     onEdit = { pendingEdit = shelfBook.book },
                                     onDelete = { pendingDelete = shelfBook.book },
@@ -417,7 +403,7 @@ fun LibraryScreen(
     }
 
     pendingDelete?.let { book ->
-        AlertDialog(
+        ActionAlertDialog(
             onDismissRequest = { pendingDelete = null },
             title = { Text(stringResource(R.string.library_delete_book_title)) },
             text = { Text(stringResource(R.string.library_delete_book_message, book.title)) },
@@ -430,7 +416,7 @@ fun LibraryScreen(
 
     state.pendingDuplicateImport?.let { duplicate ->
         val existing = duplicate.candidate.existingBook ?: return@let
-        AlertDialog(
+        ActionAlertDialog(
             onDismissRequest = viewModel::dismissDuplicateImport,
             title = { Text(stringResource(R.string.library_duplicate_import_title)) },
             text = { Text(stringResource(R.string.library_duplicate_import_body, existing.title)) },
@@ -448,7 +434,7 @@ fun LibraryScreen(
     }
 
     if (showSkinPicker) {
-        ModalBottomSheet(
+        ActionModalBottomSheet(
             onDismissRequest = { showSkinPicker = false },
             containerColor = MaterialTheme.colorScheme.surface,
         ) {
@@ -460,7 +446,7 @@ fun LibraryScreen(
     }
 
     if (showImportPicker) {
-        ModalBottomSheet(
+        ActionModalBottomSheet(
             onDismissRequest = { showImportPicker = false },
             containerColor = MaterialTheme.colorScheme.surface,
         ) {
@@ -608,7 +594,7 @@ fun AppSettingsScreen(
     }
 
     if (showLanguagePicker) {
-        ModalBottomSheet(
+        ActionModalBottomSheet(
             onDismissRequest = { showLanguagePicker = false },
             containerColor = MaterialTheme.colorScheme.surface,
         ) {
@@ -632,7 +618,7 @@ fun AppSettingsScreen(
     }
 
     if (showSkinPicker) {
-        ModalBottomSheet(
+        ActionModalBottomSheet(
             onDismissRequest = { showSkinPicker = false },
             containerColor = MaterialTheme.colorScheme.surface,
         ) {
@@ -644,7 +630,7 @@ fun AppSettingsScreen(
     }
 
     if (showLicenses) {
-        AlertDialog(
+        ActionAlertDialog(
             onDismissRequest = { showLicenses = false },
             title = { Text(stringResource(R.string.app_settings_licenses)) },
             text = { Text(stringResource(R.string.app_settings_licenses_body)) },
@@ -1084,9 +1070,16 @@ private fun ImportSourceRow(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun BookCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
+private fun BookCard(
+    shelfBook: ShelfBookUi,
+    continueReading: Boolean,
+    onOpen: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
     val book = shelfBook.book
     var showBookActions by remember { mutableStateOf(false) }
+    val dismissTextInput = rememberDismissTextInput()
     Column(
         Modifier
             .fillMaxWidth()
@@ -1096,7 +1089,7 @@ private fun BookCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit: () -> U
                 role = Role.Button,
                 onClick = onOpen,
                 onLongClickLabel = stringResource(R.string.action_delete),
-                onLongClick = onDelete,
+                onLongClick = { dismissTextInput(); onDelete() },
             )
             .padding(8.dp),
     ) {
@@ -1104,7 +1097,7 @@ private fun BookCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit: () -> U
             PastelBookCover(book, modifier = Modifier.fillMaxWidth(.90f))
             Box(Modifier.align(Alignment.TopEnd)) {
                 IconButton(
-                    onClick = { showBookActions = true },
+                    onClick = { dismissTextInput(); showBookActions = true },
                     modifier = Modifier.padding(1.dp).size(ReaderUiTokens.iconTouchTarget),
                 ) {
                     Icon(
@@ -1117,6 +1110,7 @@ private fun BookCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit: () -> U
                 DropdownMenu(
                     expanded = showBookActions,
                     onDismissRequest = { showBookActions = false },
+                    properties = ActionMenuProperties,
                 ) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.library_edit_book_info)) },
@@ -1177,7 +1171,7 @@ private fun BookCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit: () -> U
                 lineHeight = 15.sp,
             ),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.height(7.dp))
@@ -1197,139 +1191,19 @@ private fun BookCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit: () -> U
             ),
             color = MaterialTheme.colorScheme.primary,
         )
-    }
-}
-
-@Composable
-private fun RecentReadingCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
-    val book = shelfBook.book
-    var showBookActions by remember { mutableStateOf(false) }
-    val cardShape = RoundedCornerShape(ReaderUiTokens.cardRadius)
-    val lastReadDate = shelfBook.updatedAt?.let { DateFormat.getDateInstance(DateFormat.SHORT).format(Date(it)) }
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(cardShape)
-            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .10f), cardShape)
-            .clickable(role = Role.Button, onClick = onOpen),
-        shape = cardShape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Box {
-            Row(
-                Modifier.fillMaxWidth().padding(start = 14.dp, top = 14.dp, end = 14.dp, bottom = 13.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(width = 56.dp, height = 78.dp)) {
-                    PastelBookCover(book, compact = true)
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(
-                        book.title,
-                        modifier = Modifier.padding(end = 36.dp),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontFamily = FontFamily.Default,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
-                            lineHeight = 25.sp,
-                        ),
-                    )
-                    book.author?.takeIf { it.isNotBlank() }?.let { author ->
-                        Text(
-                            author,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Default),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Text(
-                        shelfBook.currentChapterTitle?.let { stringResource(R.string.library_current_chapter, it) }
-                            ?: stringResource(R.string.library_not_started, book.chapterCount, book.format.name),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Default),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    ShelfProgressBar(progressPercent = shelfBook.progressPercent, modifier = Modifier.fillMaxWidth())
-                    FlowRow(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            stringResource(R.string.library_progress_percent, shelfBook.progressPercent),
-                            modifier = Modifier.padding(end = 12.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontFamily = FontFamily.Default,
-                                fontWeight = FontWeight.Bold,
-                            ),
-                        )
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                stringResource(R.string.library_continue_button),
-                                color = MaterialTheme.colorScheme.primary,
-                                maxLines = 2,
-                                style = MaterialTheme.typography.labelLarge.copy(
-                                    fontFamily = FontFamily.Default,
-                                    fontWeight = FontWeight.Bold,
-                                ),
-                            )
-                            lastReadDate?.let {
-                                Text(
-                                    stringResource(R.string.library_last_read_date, it),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontFamily = FontFamily.Default,
-                                        fontSize = 10.sp,
-                                        lineHeight = 12.sp,
-                                    ),
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-            Box(Modifier.align(Alignment.TopEnd).padding(6.dp)) {
-                IconButton(
-                    onClick = { showBookActions = true },
-                    modifier = Modifier.size(ReaderUiTokens.iconTouchTarget),
-                ) {
-                    Icon(
-                        Icons.Outlined.MoreVert,
-                        stringResource(R.string.library_book_actions),
-                        Modifier.size(17.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .58f),
-                    )
-                }
-                DropdownMenu(
-                    expanded = showBookActions,
-                    onDismissRequest = { showBookActions = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.library_edit_book_info)) },
-                        leadingIcon = { Icon(Icons.Outlined.Edit, null) },
-                        onClick = {
-                            showBookActions = false
-                            onEdit()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.action_delete)) },
-                        leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null) },
-                        onClick = {
-                            showBookActions = false
-                            onDelete()
-                        },
-                    )
-                }
+        if (continueReading) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.library_continue_button),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            shelfBook.updatedAt?.let { updatedAt ->
+                Text(
+                    stringResource(R.string.library_last_read_date, DateFormat.getDateInstance(DateFormat.SHORT).format(Date(updatedAt))),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

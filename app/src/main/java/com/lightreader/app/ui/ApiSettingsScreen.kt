@@ -14,7 +14,6 @@ import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
@@ -55,6 +54,7 @@ fun ApiSettingsScreen(viewModel: AiSettingsViewModel, onBack: () -> Unit) {
     val api by viewModel.state.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     DisposableEffect(viewModel) { onDispose { viewModel.cancelConnectionTest() } }
+    val dismissTextInput = rememberDismissTextInput()
     var confirmDeleteKey by remember { mutableStateOf(false) }
     var securityExpanded by remember { mutableStateOf(false) }
     Scaffold(
@@ -130,14 +130,14 @@ fun ApiSettingsScreen(viewModel: AiSettingsViewModel, onBack: () -> Unit) {
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                         OutlinedButton(
-                            onClick = viewModel::testApiKey,
+                            onClick = { dismissTextInput(); viewModel.testApiKey() },
                             enabled = api.hasApiKey && !busy.active,
                             modifier = Modifier.weight(1f),
                         ) {
                             Text(stringResource(R.string.api_settings_test_connection))
                         }
                         OutlinedButton(
-                            onClick = { confirmDeleteKey = true },
+                            onClick = { dismissTextInput(); confirmDeleteKey = true },
                             enabled = api.hasApiKey,
                             modifier = Modifier.weight(1f),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
@@ -177,7 +177,7 @@ fun ApiSettingsScreen(viewModel: AiSettingsViewModel, onBack: () -> Unit) {
         }
     }
     if (confirmDeleteKey) {
-        AlertDialog(
+        ActionAlertDialog(
             onDismissRequest = { confirmDeleteKey = false },
             title = { Text(stringResource(R.string.api_settings_delete_title)) },
             text = { Text(stringResource(R.string.api_settings_delete_message)) },

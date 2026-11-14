@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,10 +26,13 @@ import com.lightreader.app.R
 @Composable
 internal fun AppBusyOverlay(state: BusyState, onCancel: (() -> Unit)?) {
     if (!state.active) return
+    val dismissTextInput = rememberDismissTextInput()
+    LaunchedEffect(Unit) { dismissTextInput() }
     Dialog(
         onDismissRequest = {},
         properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
     ) {
+        ActionWindowPolicy()
         Surface(
             modifier = Modifier.widthIn(max = 360.dp),
             shape = RoundedCornerShape(LightReaderShapeTokens.small),

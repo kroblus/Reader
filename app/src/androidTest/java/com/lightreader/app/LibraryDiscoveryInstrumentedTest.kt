@@ -67,6 +67,9 @@ class LibraryDiscoveryInstrumentedTest {
         // The newer unread import must not take ownership of the continue-reading card.
         composeRule.onNode(hasText("Zulu River") and hasText(text(R.string.library_continue_button)))
             .assertIsDisplayed()
+            .assert(hasText(composeRule.activity.getString(R.string.library_current_chapter, "Chapter One")))
+            // 100 characters read out of the 2,972-character fixture rounds to 3%.
+            .assert(hasText(composeRule.activity.getString(R.string.library_progress_percent, 3)))
         composeRule.onAllNodes(hasText("Alpha Trail") and hasText(text(R.string.library_continue_button)))
             .assertCountEquals(0)
         capture("01_populated")

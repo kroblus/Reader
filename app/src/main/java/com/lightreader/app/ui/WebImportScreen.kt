@@ -22,7 +22,6 @@ import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -78,6 +77,7 @@ fun WebImportScreen(
     var pendingTaskAction by remember { mutableStateOf<DownloadTaskAction?>(null) }
     val clipboard = LocalClipboardManager.current
     val uriHandler = LocalUriHandler.current
+    val dismissTextInput = rememberDismissTextInput()
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(state.preview) { if (state.preview != null) keyboard?.hide() }
     DisposableEffect(viewModel) { onDispose { viewModel.dismissWebPreview() } }
@@ -137,14 +137,17 @@ fun WebImportScreen(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(
                         onDone = {
-                            if (trimmedUrl.isNotBlank() && !urlError && !state.loading) viewModel.previewWebBook()
+                            if (trimmedUrl.isNotBlank() && !urlError && !state.loading) {
+                                dismissTextInput()
+                                viewModel.previewWebBook()
+                            }
                         },
                     ),
                 )
             }
             item {
                 Button(
-                    onClick = viewModel::previewWebBook,
+                    onClick = { dismissTextInput(); viewModel.previewWebBook() },
                     enabled = trimmedUrl.isNotBlank() && !urlError && !state.loading && !state.submitting,
                     modifier = Modifier.fillMaxWidth().testTag(ReaderTestTags.WEB_IMPORT_PARSE),
                 ) {
@@ -217,7 +220,7 @@ fun WebImportScreen(
                         task = task,
                         viewModel = viewModel,
                         onOpenDownloadedBook = onOpenDownloadedBook,
-                        onConfirmAction = { pendingTaskAction = it },
+                        onConfirmAction = { dismissTextInput(); pendingTaskAction = it },
                     )
                 }
             }
@@ -225,7 +228,7 @@ fun WebImportScreen(
     }
 
     pendingTaskAction?.let { action ->
-        AlertDialog(
+        ActionAlertDialog(
             onDismissRequest = { pendingTaskAction = null },
             title = { Text(stringResource(if (action.delete) R.string.web_import_delete_task_title else R.string.web_import_cancel_task_title)) },
             text = {

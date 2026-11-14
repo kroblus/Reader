@@ -905,6 +905,7 @@ private fun ReaderBottomControls(
                     )
                     DropdownMenu(
                         expanded = moreExpanded,
+                        properties = ActionMenuProperties,
                         onDismissRequest = { onMoreExpandedChange(false) },
                         containerColor = Color(palette.overlay),
                     ) {
