@@ -265,7 +265,7 @@ fun LibraryScreen(
                                 style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Default),
                             )
                         },
-                        shape = RoundedCornerShape(LightReaderShapeTokens.large),
+                        shape = RoundedCornerShape(LightReaderShapeTokens.control),
                     )
                 }
             },
@@ -295,7 +295,7 @@ fun LibraryScreen(
                             }
                         } else null,
                         singleLine = true,
-                        shape = RoundedCornerShape(LightReaderShapeTokens.large),
+                        shape = RoundedCornerShape(LightReaderShapeTokens.control),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
                     )
@@ -719,7 +719,7 @@ private fun AppImportSettings(
         ) { readerViewModel.navigate(AppScreen.WebImport) }
         SettingsNavigationRow(
             title = stringResource(R.string.backup_title),
-            description = stringResource(R.string.backup_title),
+            description = stringResource(R.string.app_settings_backup_description),
             icon = Icons.Outlined.CloudDownload,
         ) { readerViewModel.navigate(AppScreen.Backup) }
     }
@@ -786,16 +786,16 @@ private fun AppSettingsSection(title: String, content: @Composable ColumnScope.(
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
             title,
-            style = MaterialTheme.typography.titleMedium.copy(
+            modifier = Modifier.padding(start = 4.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.titleSmall.copy(
                 fontFamily = FontFamily.Default,
                 fontWeight = FontWeight.Bold,
             ),
         )
-        Column(
-            Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-            content = content,
-        )
+        AppCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp), content = content)
+        }
     }
 }
 
@@ -847,8 +847,7 @@ private fun SettingRow(
     Row(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(LightReaderShapeTokens.medium))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .46f))
+            .clip(RoundedCornerShape(LightReaderShapeTokens.control))
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = LightReaderSpacing.sm, vertical = LightReaderSpacing.sm),
         horizontalArrangement = Arrangement.spacedBy(LightReaderSpacing.sm),
@@ -856,12 +855,12 @@ private fun SettingRow(
     ) {
         Box(
             Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
+                .size(36.dp)
+                .clip(RoundedCornerShape(LightReaderShapeTokens.medium))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
@@ -947,8 +946,9 @@ private fun EmptyLibrary(
         ) {
             Card(
                 modifier = Modifier.widthIn(max = 520.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .96f)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                shape = RoundedCornerShape(ReaderUiTokens.cardRadius),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             ) {
                 Column(
                     Modifier.padding(
@@ -959,7 +959,7 @@ private fun EmptyLibrary(
                 ) {
                 Box(
                     Modifier
-                        .size(if (compact) 56.dp else 88.dp)
+                        .size(if (compact) 52.dp else 76.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primaryContainer),
                     contentAlignment = Alignment.Center,
@@ -967,7 +967,7 @@ private fun EmptyLibrary(
                     Image(
                         painter = painterResource(R.drawable.ic_logo_lined),
                         contentDescription = null,
-                        modifier = Modifier.size(if (compact) 38.dp else 58.dp),
+                        modifier = Modifier.size(if (compact) 34.dp else 50.dp),
                     )
                 }
                 Spacer(Modifier.height(if (compact) 10.dp else 20.dp))
@@ -1091,7 +1091,7 @@ private fun BookCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit: () -> U
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(ReaderUiTokens.cardRadius))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = .58f))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .combinedClickable(
                 role = Role.Button,
                 onClick = onOpen,
@@ -1100,8 +1100,8 @@ private fun BookCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit: () -> U
             )
             .padding(8.dp),
     ) {
-        Box {
-            PastelBookCover(book)
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+            PastelBookCover(book, modifier = Modifier.fillMaxWidth(.90f))
             Box(Modifier.align(Alignment.TopEnd)) {
                 IconButton(
                     onClick = { showBookActions = true },
@@ -1213,7 +1213,7 @@ private fun RecentReadingCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit
             .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .10f), cardShape)
             .clickable(role = Role.Button, onClick = onOpen),
         shape = cardShape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .72f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Box {
@@ -1222,7 +1222,7 @@ private fun RecentReadingCard(shelfBook: ShelfBookUi, onOpen: () -> Unit, onEdit
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(width = 64.dp, height = 88.dp)) {
+                Box(Modifier.size(width = 56.dp, height = 78.dp)) {
                     PastelBookCover(book, compact = true)
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -1357,7 +1357,7 @@ private fun ShelfProgressBar(progressPercent: Int, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun PastelBookCover(book: Book, compact: Boolean = false) {
+private fun PastelBookCover(book: Book, modifier: Modifier = Modifier, compact: Boolean = false) {
     val variants = listOf(
         MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.tertiaryContainer,
         MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.primaryContainer,
@@ -1367,11 +1367,11 @@ private fun PastelBookCover(book: Book, compact: Boolean = false) {
     val colors = variants[(book.title.hashCode() and Int.MAX_VALUE) % variants.size]
     val coverTitle = remember(book.title) { book.title.coverDisplayTitle() }
     Card(
-        modifier = Modifier.fillMaxWidth().aspectRatio(.72f),
+        modifier = modifier.fillMaxWidth().aspectRatio(.72f),
         shape = RoundedCornerShape(
-            if (compact) LightReaderShapeTokens.medium else LightReaderShapeTokens.large,
+            if (compact) LightReaderShapeTokens.medium else LightReaderShapeTokens.control,
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (compact) 1.dp else 2.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Box(
             Modifier.fillMaxSize().background(Brush.linearGradient(listOf(colors.first, colors.second))),

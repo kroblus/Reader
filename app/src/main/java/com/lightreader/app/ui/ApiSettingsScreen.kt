@@ -17,7 +17,6 @@ import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -46,6 +45,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.lightreader.app.R
 import com.lightreader.app.core.settings.AiConfiguration
 
@@ -75,8 +75,8 @@ fun ApiSettingsScreen(viewModel: AiSettingsViewModel, onBack: () -> Unit) {
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .68f)),
+            AppCard(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
             ) {
                 Text(
                     stringResource(if (api.hasApiKey) R.string.api_settings_configured else R.string.api_settings_not_configured),
@@ -85,57 +85,66 @@ fun ApiSettingsScreen(viewModel: AiSettingsViewModel, onBack: () -> Unit) {
                     style = MaterialTheme.typography.titleMedium,
                 )
             }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.web_ai_enable), Modifier.weight(1f))
-                Switch(checked = api.configuration.enabled, onCheckedChange = viewModel::setAiEnabled)
-            }
-            Text(stringResource(R.string.web_ai_disclosure, api.configuration.baseUrl, api.configuration.model),
-                style = MaterialTheme.typography.bodyMedium)
-            Text(stringResource(if (api.connectionSucceeded) R.string.web_ai_test_succeeded else R.string.web_ai_not_tested),
-                style = MaterialTheme.typography.bodyMedium)
-            OutlinedTextField(
-                value = api.keyDraft,
-                onValueChange = viewModel::updateApiKeyDraft,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(stringResource(R.string.api_settings_key_label)) },
-                visualTransformation = if (api.showKey) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    IconButton(onClick = viewModel::toggleApiKeyVisibility) {
-                        Icon(
-                            if (api.showKey) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                            stringResource(if (api.showKey) R.string.api_settings_hide_key else R.string.api_settings_show_key),
-                        )
+            AppCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.web_ai_enable), Modifier.weight(1f))
+                        Switch(checked = api.configuration.enabled, onCheckedChange = viewModel::setAiEnabled)
                     }
-                },
-                singleLine = true,
-            )
-            Text(
-                stringResource(R.string.api_settings_security_summary),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Button(
-                onClick = viewModel::saveApiKeyDraft,
-                enabled = api.keyDraft.isNotBlank(),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.api_settings_save_key))
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(
-                    onClick = viewModel::testApiKey,
-                    enabled = api.hasApiKey && !busy.active,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(stringResource(R.string.api_settings_test_connection))
+                    Text(stringResource(R.string.web_ai_disclosure, api.configuration.baseUrl, api.configuration.model),
+                        style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(if (api.connectionSucceeded) R.string.web_ai_test_succeeded else R.string.web_ai_not_tested),
+                        style = MaterialTheme.typography.bodyMedium)
                 }
-                OutlinedButton(
-                    onClick = { confirmDeleteKey = true },
-                    enabled = api.hasApiKey,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) {
-                    Text(stringResource(R.string.api_settings_delete_key))
+            }
+            AppCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = api.keyDraft,
+                        onValueChange = viewModel::updateApiKeyDraft,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(LightReaderShapeTokens.control),
+                        label = { Text(stringResource(R.string.api_settings_key_label)) },
+                        visualTransformation = if (api.showKey) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = viewModel::toggleApiKeyVisibility) {
+                                Icon(
+                                    if (api.showKey) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                    stringResource(if (api.showKey) R.string.api_settings_hide_key else R.string.api_settings_show_key),
+                                )
+                            }
+                        },
+                        singleLine = true,
+                    )
+                    Text(
+                        stringResource(R.string.api_settings_security_summary),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Button(
+                        onClick = viewModel::saveApiKeyDraft,
+                        enabled = api.keyDraft.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.api_settings_save_key))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(
+                            onClick = viewModel::testApiKey,
+                            enabled = api.hasApiKey && !busy.active,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(stringResource(R.string.api_settings_test_connection))
+                        }
+                        OutlinedButton(
+                            onClick = { confirmDeleteKey = true },
+                            enabled = api.hasApiKey,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        ) {
+                            Text(stringResource(R.string.api_settings_delete_key))
+                        }
+                    }
                 }
             }
             TextButton(onClick = viewModel::toggleAiAdvancedSettings) {

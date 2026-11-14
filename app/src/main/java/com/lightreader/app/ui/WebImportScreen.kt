@@ -24,7 +24,6 @@ import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -173,7 +172,7 @@ fun WebImportScreen(
             }
             state.preview?.let { preview ->
                 item {
-                    Card(Modifier.fillMaxWidth()) {
+                    AppCard(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(preview.title, style = MaterialTheme.typography.titleLarge)
                             preview.author?.takeIf { it.isNotBlank() }?.let { Text(stringResource(R.string.web_import_author, it)) }
@@ -252,8 +251,8 @@ fun WebImportScreen(
 
 @Composable
 private fun WebImportLoadingCard() {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .64f)),
+    AppCard(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -276,9 +275,9 @@ private fun WebImportErrorCard(
     onOpenBrowser: () -> Unit,
     onChangeUrl: () -> Unit,
 ) {
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth().testTag(ReaderTestTags.WEB_IMPORT_ERROR),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = .72f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
     ) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
@@ -308,7 +307,7 @@ private fun WebImportErrorCard(
 
 @Composable
 private fun ImportGuideCard(expanded: Boolean, onToggle: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .86f))) {
+    AppCard(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Info, null, tint = MaterialTheme.colorScheme.primary)
@@ -341,7 +340,7 @@ private fun PreviewWarnings(preview: WebBookPreview) {
         if (preview.extractionPlan.chapterLinkSelector == "a[href]" || preview.parseWarnings.isNotEmpty()) add(broadSelector)
     }
     if (warnings.isEmpty()) return
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = .62f))) {
+    AppCard(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             warnings.distinct().forEach { warning ->
                 Text(warning, color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodySmall)
@@ -358,7 +357,7 @@ private fun DownloadTaskCard(
     onConfirmAction: (DownloadTaskAction) -> Unit,
 ) {
     var showErrorDetail by remember(task.id) { mutableStateOf(false) }
-    Card(Modifier.fillMaxWidth()) {
+    AppCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {

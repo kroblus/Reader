@@ -1,11 +1,9 @@
 package com.lightreader.app.ui
 
 import androidx.activity.compose.LocalActivity
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -14,11 +12,9 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -54,6 +50,7 @@ data class LightReaderColorTokens(
 object LightReaderShapeTokens {
     val small = 8.dp
     val medium = 12.dp
+    val control = 16.dp
     val large = 20.dp
     val extraLarge = 24.dp
 }
@@ -72,8 +69,8 @@ object ReaderUiTokens {
     val iconTouchTarget = 48.dp
     val pagePadding = LightReaderSpacing.lg
     val compactPagePadding = 20.dp
-    val cardRadius = LightReaderShapeTokens.large
-    val dialogRadius = LightReaderShapeTokens.large
+    val cardRadius = LightReaderShapeTokens.extraLarge
+    val dialogRadius = LightReaderShapeTokens.extraLarge
     val bottomSheetRadius = LightReaderShapeTokens.extraLarge
     val listItemMinHeight = 58.dp
     val primaryButtonHeight = 46.dp
@@ -85,14 +82,14 @@ val AppSkinPalette.uiColors: LightReaderColorTokens
     get() = LightReaderColorTokens(
         background = background,
         surface = surface,
-        surfaceVariant = soft.copy(alpha = .78f).compositeOver(surface),
-        selectedSurface = primary.copy(alpha = .18f).compositeOver(surface),
+        surfaceVariant = soft.copy(alpha = .42f).compositeOver(surface),
+        selectedSurface = primary.copy(alpha = .12f).compositeOver(surface),
         primaryText = ink,
         secondaryText = mutedInk,
         tertiaryText = mutedInk,
         disabledContent = mutedInk.copy(alpha = .38f),
-        selectedBorder = primary.copy(alpha = .82f),
-        divider = primary.copy(alpha = .18f),
+        selectedBorder = primary.copy(alpha = .74f),
+        divider = primary.copy(alpha = .12f),
     )
 
 val AppSkinPalette.cardBackground: Color get() = uiColors.surfaceVariant
@@ -136,11 +133,11 @@ internal fun appColorScheme(skin: AppSkin) = skin.palette().let { palette ->
         onPrimaryContainer = tokens.primaryText,
         secondary = tokens.secondaryText,
         onSecondary = Color.White,
-        secondaryContainer = palette.accent.copy(alpha = .48f),
+        secondaryContainer = palette.accent.copy(alpha = .48f).compositeOver(palette.surface),
         onSecondaryContainer = palette.ink,
         tertiary = palette.accent,
         onTertiary = palette.ink,
-        tertiaryContainer = palette.accent.copy(alpha = .35f),
+        tertiaryContainer = palette.accent.copy(alpha = .35f).compositeOver(palette.surface),
         onTertiaryContainer = palette.ink,
         background = tokens.background,
         onBackground = tokens.primaryText,
@@ -154,7 +151,7 @@ internal fun appColorScheme(skin: AppSkin) = skin.palette().let { palette ->
         inversePrimary = palette.accent,
         surfaceDim = palette.soft,
         surfaceBright = palette.surface,
-        surfaceContainerLowest = Color.White,
+        surfaceContainerLowest = palette.surface,
         surfaceContainerLow = palette.surface,
         surfaceContainer = palette.soft.copy(alpha = .42f).compositeOver(palette.surface),
         surfaceContainerHigh = palette.soft.copy(alpha = .62f).compositeOver(palette.surface),
@@ -193,7 +190,7 @@ val LightReaderTypography = Typography().let { defaults ->
 val LightReaderShapes = Shapes(
     extraSmall = RoundedCornerShape(LightReaderShapeTokens.small),
     small = RoundedCornerShape(LightReaderShapeTokens.medium),
-    medium = RoundedCornerShape(LightReaderShapeTokens.large),
+    medium = RoundedCornerShape(LightReaderShapeTokens.control),
     large = RoundedCornerShape(LightReaderShapeTokens.extraLarge),
     extraLarge = RoundedCornerShape(LightReaderShapeTokens.extraLarge),
 )
@@ -214,22 +211,7 @@ fun FreshBackdrop(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val palette = skin.palette()
-    Box(modifier.background(palette.background)) {
-        Canvas(Modifier.fillMaxSize()) {
-            drawCircle(
-                brush = Brush.radialGradient(listOf(palette.soft.copy(alpha = .9f), Color.Transparent)),
-                radius = size.minDimension * .55f,
-                center = Offset(size.width * .9f, size.height * .08f),
-            )
-            drawCircle(
-                color = palette.accent.copy(alpha = .11f),
-                radius = size.minDimension * .34f,
-                center = Offset(size.width * .04f, size.height * .84f),
-            )
-        }
-        content()
-    }
+    Box(modifier.background(skin.palette().background), content = content)
 }
 
 @Composable

@@ -1,4 +1,5 @@
 <resources>
+    <string name="app_settings_backup_description">Save or restore your books and reading progress</string>
     <string name="backup_title">Backup and restore</string>
     <string name="backup_description">Export books, original text, progress, bookmarks and reading settings. API keys, security keys, logs and unfinished downloads are excluded.</string>
     <string name="backup_export">Export backup</string>

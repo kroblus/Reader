@@ -17,7 +17,6 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Clear
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -242,7 +241,7 @@ private fun SearchResultCard(result: SearchResult, chapters: List<Chapter>, onCl
         stringResource(R.string.search_chapter_position, it.orderIndex + 1, chapterProgress(result, it))
     } ?: stringResource(R.string.search_char_position, result.charOffset)
     val highlightColor = MaterialTheme.colorScheme.primary
-    Card(modifier.fillMaxWidth().clickable { onClick() }) {
+    AppCard(modifier.fillMaxWidth().clickable { onClick() }) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(result.chapterTitle, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(highlightedExcerpt(result.excerpt, highlightColor), maxLines = 3, overflow = TextOverflow.Ellipsis)

@@ -1,4 +1,5 @@
 <resources>
+    <string name="app_settings_backup_description">保存或恢复书籍与阅读进度</string>
     <string name="backup_title">备份与恢复</string>
     <string name="backup_description">导出书籍、原始正文、阅读进度、书签和阅读设置。不包含 API Key、安全密钥、日志或未完成下载。</string>
     <string name="backup_export">导出备份</string>

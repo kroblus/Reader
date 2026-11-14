@@ -125,11 +125,24 @@ class SearchLifecycleInstrumentedTest {
     }
 
     @Test fun pagedResultsReturnToListAndOriginalSavedAnchor() {
-        seedBook(matches = 131)
+        // This journey starts on the third page. Keep the fixture comfortably longer
+        // than three screens with the system font and the reader's current margins.
+        seedBook(matches = 131, firstChapterRepeats = 400)
         val reader = ViewModelProvider(composeRule.activity)[ReaderViewModel::class.java]
         val search = ViewModelProvider(composeRule.activity)[BookSearchViewModel::class.java]
         composeRule.runOnIdle { reader.openBook(BOOK_ID) }
-        composeRule.waitUntil(10_000) { !reader.readerState.value.loading && reader.readerState.value.pages.size > 2 }
+        try {
+            composeRule.waitUntil(10_000) {
+                !reader.readerState.value.loading && reader.readerState.value.pages.size > 2
+            }
+        } catch (timeout: Throwable) {
+            val value = reader.readerState.value
+            throw AssertionError(
+                "Before selecting origin page: book=${value.book?.id}, loading=${value.loading}, " +
+                    "pages=${value.pages.size}, chapter=${value.chapterIndex}, error=${value.error}",
+                timeout,
+            )
+        }
         composeRule.runOnIdle { reader.pageSelected(2) }
         val origin = reader.currentSearchOrigin()!!
         composeRule.runOnIdle { reader.openSearch(BOOK_ID) }
@@ -182,11 +195,12 @@ class SearchLifecycleInstrumentedTest {
         assertEquals(origin, reader.currentSearchOrigin())
     }
 
-    private fun seedBook(matches: Int = 1): Long = runBlocking {
+    private fun seedBook(matches: Int = 1, firstChapterRepeats: Int = 40): Long = runBlocking {
         val directory = File(application.filesDir, "books/$BOOK_ID/chapters").apply { mkdirs() }
         val chapters = (0..1).map { index ->
             val title = if (index == 0) "First Chapter" else "Second Chapter"
-            val content = "$title\n" + "Morning light falls across the quiet river. ".repeat(40) +
+            val repeats = if (index == 0) firstChapterRepeats else 40
+            val content = "$title\n" + "Morning light falls across the quiet river. ".repeat(repeats) +
                 if (index == 1) "\nThe lighthouse opens the way home.\n".repeat(matches) else "\nThe journey begins.\n"
             val file = File(directory, "$index.txt").apply { writeText(content) }
             ChapterEntity(

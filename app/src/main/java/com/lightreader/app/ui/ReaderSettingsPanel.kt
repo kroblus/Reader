@@ -300,11 +300,11 @@ private fun PresetQuickCard(
     Column(
         modifier
             .heightIn(min = 64.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(LightReaderShapeTokens.control))
             .border(
                 1.dp,
                 if (selected) primary.copy(alpha = .6f) else Color.Transparent,
-                RoundedCornerShape(16.dp),
+                RoundedCornerShape(LightReaderShapeTokens.control),
             )
             .background(controlBackground)
             .semantics {
@@ -576,7 +576,7 @@ private fun ReaderLayoutDetail(
 @Composable
 private fun SettingsGroup(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Column(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
+        modifier.fillMaxWidth().clip(RoundedCornerShape(ReaderUiTokens.cardRadius))
             .background(LocalReaderToolBackground.current).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
         content = content,
@@ -589,7 +589,7 @@ private fun ReadingStylePreview(preferences: ReaderPreferences) {
     val palette = preferences.palette()
     Column(
         Modifier.fillMaxWidth().testTag("reader_layout_preview").animateContentSize(tween(UiMotion.DurationMillis))
-            .clip(RoundedCornerShape(16.dp)).background(Color(palette.background))
+            .clip(RoundedCornerShape(LightReaderShapeTokens.control)).background(Color(palette.background))
             .padding(horizontal = layout.horizontalPaddingDp.coerceIn(12f, 28f).dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {

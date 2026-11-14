@@ -167,7 +167,12 @@ class ReaderSystemBoundaryInstrumentedTest {
 
     private fun awaitAppWindow(uiDevice: UiDevice) {
         composeRule.waitForIdle()
-        windows.awaitAppWindow { dismissKnownSystemOverlays(uiDevice) }
+        windows.awaitAppWindow {
+            // Import finishes asynchronously after SAF returns. Keep advancing Compose's test
+            // clock so its completed busy Dialog can leave composition and release input focus.
+            composeRule.waitForIdle()
+            dismissKnownSystemOverlays(uiDevice)
+        }
     }
 
     private fun awaitSystemPickerWindow(uiDevice: UiDevice) {

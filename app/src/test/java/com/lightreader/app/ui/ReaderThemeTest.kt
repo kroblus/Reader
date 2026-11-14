@@ -16,6 +16,10 @@ class ReaderThemeTest {
             assertContrast(colors.onSurface, colors.surface, skin, "surface")
             assertContrast(colors.onSurfaceVariant, colors.surfaceVariant, skin, "surfaceVariant")
             assertContrast(colors.onPrimary, colors.primary, skin, "primary")
+            assertContrast(colors.onSurface, colors.surfaceContainerLow, skin, "card")
+            assertContrast(colors.onPrimaryContainer, colors.primaryContainer, skin, "selected card")
+            assertContrast(colors.onSecondaryContainer, colors.secondaryContainer, skin, "secondary card")
+            assertContrast(colors.onErrorContainer, colors.errorContainer, skin, "error card")
         }
     }
 

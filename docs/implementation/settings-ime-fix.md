@@ -37,8 +37,14 @@
 
 ## 交付核对
 
-最终 QA APK SHA-256：`d02742129c95f8af223a7d6306b1a410f573fb8a5b24ea4b1772ba5fece6359c`。正式发布仍由仓库同 SHA 质量检查及既有签名工作流生成，正式 APK 与这个 QA APK 的包名和签名不同。
+首轮发布检查 `43493157257` 的 JVM、Lint 和构建通过，设备回归为 118/120。两项失败均有对应测试修正：搜索返回原位置的样本首章原为 1795 字符，新默认排版不足三页，现为该用例提供更长首章，保留 10 秒超时与第三页起点；SAF 导入已完成，但等待焦点时没有继续驱动 Compose 测试时钟，现同步界面以释放已结束的忙碌弹窗，保留 Activity 和真实输入窗口的严格焦点检查。
+
+上述修正与 IME 回归在 Android 15 / API 35 模拟器定向 8/8 通过（`build/ime-regression/ci-repair-api35.log`）；按用户要求在 MEIZU 20 Pro 上追加 IME、搜索、系统导入、阅读过渡和内置字体验证，13/13 通过（`build/ime-regression/ime-ci-repair-phone-20261114T051906Z`）。随后追加的书架尺寸与全应用风格调整另见 `app-visual-consistency.md`。
+
+输入法专项修复阶段的 QA APK SHA-256：`d02742129c95f8af223a7d6306b1a410f573fb8a5b24ea4b1772ba5fece6359c`。后续外观统一版本的验证另见 `app-visual-consistency.md`。正式发布仍由仓库同 SHA 质量检查及既有签名工作流生成，正式 APK 与 QA APK 的包名和签名不同。
 
 手机清理范围限定为独立 QA 包、QA 测试包、已核对的 Reader 测试证据目录、历史 Reader UI 截图/XML 和已核对散列的旧测试安装包。删除前把文件拉取至本地 `build/ime-regression/phone-test-archive` 并逐一比对 SHA-256；不清理正式应用数据或个人备份目录。
 
 已核对并清理 232 个文件，共 98,612,852 字节，以及 `com.lightreader.app.qa` 和 `com.lightreader.app.qa.test`。清理后手机仅保留正式 `com.lightreader.app`；文件清单和结果分别存于上述归档目录的 `manifest.json`、`cleanup-result.json`。
+
+用户要求追加真机和外观验证后，再次归档并清理 104 个文件、38,413,002 字节，卸载本轮 QA 应用及测试包；本轮清单位于 `build/ime-regression/phone-final-archive`。归档以短文件名映射原始路径，绕开 Windows 长路径限制，每个文件仍逐一核对 SHA-256。两轮合计 336 个文件、137,025,854 字节，正式书库保留。

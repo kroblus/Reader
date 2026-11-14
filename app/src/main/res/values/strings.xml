@@ -322,7 +322,7 @@
     <string name="settings_first_line_indent">First-line indent</string>
     <string name="settings_keep_screen_on">Keep screen on</string>
     <string name="settings_lock_portrait">Lock portrait</string>
-    <string name="settings_clean_txt_noise">Clean TXT ad and URL lines during import</string>
+    <string name="settings_clean_txt_noise">Clean imported text</string>
     <string name="settings_show_progress">Show reading progress</string>
     <string name="settings_show_chapter_title">Show chapter title</string>
     <string name="settings_show_right_progress">Show right progress bar</string>

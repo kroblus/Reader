@@ -322,7 +322,7 @@
     <string name="settings_first_line_indent">首行空格</string>
     <string name="settings_keep_screen_on">保持屏幕常亮</string>
     <string name="settings_lock_portrait">锁定竖屏</string>
-    <string name="settings_clean_txt_noise">导入时清理 TXT 广告和网址行</string>
+    <string name="settings_clean_txt_noise">清理导入文本</string>
     <string name="settings_show_progress">显示阅读进度</string>
     <string name="settings_show_chapter_title">显示章节标题</string>
     <string name="settings_show_right_progress">显示右侧进度条</string>

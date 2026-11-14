@@ -12,6 +12,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
@@ -89,41 +90,50 @@ fun BackupRestoreScreen(viewModel: BackupRestoreViewModel, onBack: () -> Unit) {
     val create = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { it?.let(viewModel::export) }
     val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(viewModel::inspect) }
     Scaffold(topBar = {
-        TopAppBar(title = { Text(stringResource(R.string.backup_title)) }, navigationIcon = {
+        TopAppBar(colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+            title = { Text(stringResource(R.string.backup_title)) }, navigationIcon = {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.action_back)) }
         })
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text(stringResource(R.string.backup_description))
-            Button(onClick = { create.launch("LightReader-backup.zip") }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.backup_export))
+            AppCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.backup_description), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Button(onClick = { create.launch("LightReader-backup.zip") }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.backup_export))
+                    }
+                    OutlinedButton(onClick = { open.launch(arrayOf("application/zip", "application/octet-stream")) },
+                        enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.backup_import)) }
+                }
             }
-            OutlinedButton(onClick = { open.launch(arrayOf("application/zip", "application/octet-stream")) },
-                enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.backup_import)) }
             if (state.busy) {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
                 Text(stringResource(R.string.backup_working))
                 TextButton(onClick = viewModel::cancel) { Text(stringResource(R.string.action_cancel)) }
             }
             state.preview?.let { preview ->
-                Text(stringResource(R.string.backup_preview, preview.restorableBooks.size, preview.duplicateBookIds.size, preview.invalidBooks.size),
-                    style = MaterialTheme.typography.titleMedium)
-                Text(stringResource(R.string.backup_duplicate_rule))
-                preview.manifest.books.forEach { book ->
-                    val status = when (book.id) {
-                        in preview.invalidBooks -> R.string.backup_invalid
-                        in preview.duplicateBookIds -> R.string.backup_duplicate
-                        else -> R.string.backup_ready
+                AppCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(stringResource(R.string.backup_preview, preview.restorableBooks.size, preview.duplicateBookIds.size, preview.invalidBooks.size),
+                            style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.backup_duplicate_rule))
+                        preview.manifest.books.forEach { book ->
+                            val status = when (book.id) {
+                                in preview.invalidBooks -> R.string.backup_invalid
+                                in preview.duplicateBookIds -> R.string.backup_duplicate
+                                else -> R.string.backup_ready
+                            }
+                            Text("${book.title} · ${stringResource(status)}")
+                        }
+                        Row {
+                            Checkbox(checked = restoreSettings, onCheckedChange = { restoreSettings = it }, enabled = !state.busy)
+                            Text(stringResource(R.string.backup_settings), modifier = Modifier.padding(top = 12.dp))
+                        }
+                        Button(onClick = { viewModel.restore(restoreSettings) }, enabled = !state.busy && (preview.restorableBooks.isNotEmpty() || restoreSettings),
+                            modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.backup_confirm)) }
                     }
-                    Text("${book.title} · ${stringResource(status)}")
                 }
-                Row {
-                    Checkbox(checked = restoreSettings, onCheckedChange = { restoreSettings = it }, enabled = !state.busy)
-                    Text(stringResource(R.string.backup_settings), modifier = Modifier.padding(top = 12.dp))
-                }
-                Button(onClick = { viewModel.restore(restoreSettings) }, enabled = !state.busy && (preview.restorableBooks.isNotEmpty() || restoreSettings),
-                    modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.backup_confirm)) }
             }
             state.result?.let {
                 Text(stringResource(R.string.backup_result, it.restored, it.skipped, it.invalid))
